@@ -1,0 +1,45 @@
+# 구글 시트 인증 정보 (보안상 중요!)
+credentials/
+*.json
+!requirements.txt
+!package.json
+!package-lock.json
+!tsconfig.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+*.egg-info/
+dist/
+build/
+
+# 로그
+*.log
+
+# 환경변수
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 기타
+teams.csv
+*.csv.bak
+
