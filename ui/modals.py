@@ -791,11 +791,16 @@ class WarningReasonModal(Modal):
             # 즉시 응답하여 모달을 닫음
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=True)
-            
+
             # 입력 데이터 수집
             reason = self.reason_input.value.strip()
-            
+
+            target_nickname = self.target_user.display_name or self.target_user.name
+            target_id = str(self.target_user.id)
+            admin_display_name = interaction.user.display_name or interaction.user.name
+
             if not reason:
+                logger.warning(f"[모달] {self.warning_type} 부여 실패 - 사유 미입력, 대상: {target_nickname}")
                 error_embed = discord.Embed(
                     title="❌ 오류 / Error",
                     description="사유를 입력해주세요. / Please enter a reason.",
@@ -803,14 +808,12 @@ class WarningReasonModal(Modal):
                 )
                 await interaction.followup.send(embed=error_embed, ephemeral=True)
                 return
-            
+
+            logger.info(f"[모달] {self.warning_type} 추가 시작 - 관리자: {admin_display_name}, 대상: {target_nickname} (ID: {target_id}), 사유: {reason}")
+
             # WarningManager를 통해 경고 추가
             warning_manager = BotManager.get_instance().get_warning_manager()
-            
-            target_nickname = self.target_user.display_name or self.target_user.name
-            target_id = str(self.target_user.id)
-            admin_display_name = interaction.user.display_name or interaction.user.name
-            
+
             success, message, auto_warning = await warning_manager.add_warning(
                 target=target_nickname,
                 target_id=target_id,
@@ -818,8 +821,9 @@ class WarningReasonModal(Modal):
                 reason=reason,
                 admin_display_name=admin_display_name
             )
-            
+
             if success:
+                logger.info(f"[모달] {self.warning_type} 추가 완료 - 대상: {target_nickname}, 자동경고: {'있음' if auto_warning else '없음'}")
                 embed = discord.Embed(
                     title=f"✅ {self.warning_type} 추가 완료 / {self.warning_type} Added",
                     description=message,
@@ -837,16 +841,17 @@ class WarningReasonModal(Modal):
                         inline=False
                     )
             else:
+                logger.error(f"[모달] {self.warning_type} 추가 실패 - 대상: {target_nickname}, 메시지: {message}")
                 embed = discord.Embed(
                     title="❌ 오류 / Error",
                     description=message,
                     color=discord.Color.red()
                 )
-            
+
             await interaction.followup.send(embed=embed, ephemeral=True)
-            
+
         except Exception as e:
-            logger.error(f"[모달] 경고 추가 모달 처리 실패: {e}", exc_info=True)
+            logger.error(f"[모달] 경고 추가 모달 처리 실패 - 대상: {target_nickname if 'target_nickname' in locals() else 'Unknown'}, 오류: {e}")
             error_embed = discord.Embed(
                 title="❌ 오류 / Error",
                 description="경고 추가 중 오류가 발생했습니다. / An error occurred while adding warning.",

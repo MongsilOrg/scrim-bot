@@ -96,7 +96,7 @@ class WarningManager:
         except json.JSONDecodeError:
             logger.error("[구글시트] 인증 정보 파일 형식이 올바르지 않음")
         except Exception as e:
-            logger.error(f"[구글시트] 클라이언트 초기화 실패: {e}", exc_info=True)
+            logger.error(f"[구글시트] 클라이언트 초기화 실패: {e}")
     
     def _ensure_headers(self) -> None:
         """시트에 헤더가 없으면 생성합니다."""
@@ -112,7 +112,7 @@ class WarningManager:
                 # 헤더가 없거나 다르면 첫 번째 행에 헤더 추가
                 self.worksheet.insert_row(expected_headers, 1)
         except Exception as e:
-            logger.error(f"[경고관리] 헤더 확인 실패: {e}", exc_info=True)
+            logger.error(f"[경고관리] 헤더 확인 실패: {e}")
     
     def _calculate_restricted_until(self, warning_date: datetime) -> datetime:
         """
@@ -150,7 +150,7 @@ class WarningManager:
             
             return cautions
         except Exception as e:
-            logger.error(f"[경고관리] 주의 기록 조회 실패: {e}", exc_info=True)
+            logger.error(f"[경고관리] 주의 기록 조회 실패: {e}")
             return []
     
     def _find_caution_rows(self, target_id: str) -> List[int]:
@@ -175,7 +175,7 @@ class WarningManager:
             
             return caution_rows
         except Exception as e:
-            logger.error(f"[경고관리] 주의 행 찾기 실패: {e}", exc_info=True)
+            logger.error(f"[경고관리] 주의 행 찾기 실패: {e}")
             return []
     
     def _check_and_convert_cautions(self, target: str, target_id: str) -> Optional[Dict]:
@@ -211,7 +211,7 @@ class WarningManager:
                     try:
                         self.worksheet.delete_rows(row_num)
                     except Exception as e:
-                        logger.error(f"[경고관리] 주의 행 삭제 실패 - 행: {row_num}: {e}", exc_info=True)
+                        logger.error(f"[경고관리] 주의 행 삭제 실패 - 행: {row_num}: {e}")
             
             return {
                 'date': warning_date.strftime('%Y-%m-%d'),
@@ -278,10 +278,11 @@ class WarningManager:
                     ''
                 ]
                 self.worksheet.append_row(row)
-                
+                logger.info(f"[경고관리] 주의 추가됨 - 대상: {target} (ID: {target_id}), 관리자: {admin_display_name}")
+
                 # 캐시 무효화
                 self._invalidate_cache()
-                
+
                 # 주의 2회 → 경고 1회 자동 환산 확인
                 auto_warning = self._check_and_convert_cautions(target, target_id)
                 if auto_warning:
@@ -298,12 +299,13 @@ class WarningManager:
                         auto_warning['note']
                     ]
                     self.worksheet.append_row(auto_row)
-                    
+                    logger.info(f"[경고관리] 자동 경고 부여됨 - 대상: {target}, 제한 해제일: {auto_warning['restricted_until']}")
+
                     # 캐시 무효화
                     self._invalidate_cache()
-                    
+
                     return True, f"주의가 추가되었습니다. 주의 2회로 인해 경고 1회가 자동 부여되었습니다. (제한 해제일: {auto_warning['restricted_until']})", auto_warning
-                
+
                 return True, "주의가 추가되었습니다.", None
             
             # 경고 추가인 경우
@@ -317,9 +319,9 @@ class WarningManager:
                 else:
                     warning_date = current_time.date()
                     warning_datetime = current_time
-                
+
                 restricted_until = self._calculate_restricted_until(warning_datetime).date()
-                
+
                 row = [
                     date_str,
                     target,
@@ -332,10 +334,11 @@ class WarningManager:
                     ''
                 ]
                 self.worksheet.append_row(row)
-                
+                logger.info(f"[경고관리] 경고 추가됨 - 대상: {target} (ID: {target_id}), 관리자: {admin_display_name}, 제한 해제일: {restricted_until.strftime('%Y-%m-%d')}")
+
                 # 캐시 무효화
                 self._invalidate_cache()
-                
+
                 return True, f"경고가 추가되었습니다. (제한 해제일: {restricted_until.strftime('%Y-%m-%d')})", {
                     'warning_date': warning_date.strftime('%Y-%m-%d'),
                     'restricted_until': restricted_until.strftime('%Y-%m-%d')
@@ -345,7 +348,7 @@ class WarningManager:
                 return False, "유형은 '주의' 또는 '경고'만 가능합니다.", None
                 
         except Exception as e:
-            logger.error(f"[경고관리] 경고 추가 실패: {e}", exc_info=True)
+            logger.error(f"[경고관리] 경고 추가 실패 - 대상: {target}, 유형: {warning_type}, 오류: {e}")
             return False, f"경고 추가 중 오류가 발생했습니다: {str(e)}", None
     
     def _get_warnings_cache(self) -> List[Dict]:
@@ -373,7 +376,7 @@ class WarningManager:
             return warnings
             
         except Exception as e:
-            logger.error(f"[경고관리] 경고 데이터 캐시 로드 실패: {e}", exc_info=True)
+            logger.error(f"[경고관리] 경고 데이터 캐시 로드 실패: {e}")
             # 오류 발생 시 기존 캐시가 있으면 사용, 없으면 빈 리스트 반환
             if self._warnings_cache is not None:
                 logger.warning("[경고관리] API 오류 발생 - 캐시된 데이터 사용")
@@ -455,7 +458,7 @@ class WarningManager:
             return False, None
             
         except Exception as e:
-            logger.error(f"[경고관리] 제한 상태 확인 실패: {e}", exc_info=True)
+            logger.error(f"[경고관리] 제한 상태 확인 실패: {e}")
             # 오류 발생 시 캐시된 데이터로 재시도
             if self._warnings_cache is not None:
                 logger.warning("오류 발생, 캐시된 데이터로 재시도")
@@ -486,7 +489,7 @@ class WarningManager:
                                     except ValueError:
                                         continue
                 except Exception as e2:
-                    logger.error(f"캐시 데이터로 재시도 실패: {e2}", exc_info=True)
+                    logger.error(f"캐시 데이터로 재시도 실패: {e2}")
             return False, None
     
     def cleanup_expired_restrictions(self) -> int:
@@ -539,7 +542,7 @@ class WarningManager:
                     self.worksheet.delete_rows(row_num)
                     deleted_count += 1
                 except Exception as e:
-                    logger.error(f"[경고관리] 행 삭제 실패 - 행: {row_num}: {e}", exc_info=True)
+                    logger.error(f"[경고관리] 행 삭제 실패 - 행: {row_num}: {e}")
             
             if deleted_count > 0:
                 # 캐시 무효화
@@ -548,7 +551,7 @@ class WarningManager:
             return deleted_count
             
         except Exception as e:
-            logger.error(f"[경고관리] 만료된 제한 항목 정리 실패: {e}", exc_info=True)
+            logger.error(f"[경고관리] 만료된 제한 항목 정리 실패: {e}")
             return 0
     
     async def cleanup_loop(self) -> None:
@@ -560,7 +563,7 @@ class WarningManager:
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            logger.error(f"[경고관리] 정리 루프 실패: {e}", exc_info=True)
+            logger.error(f"[경고관리] 정리 루프 실패: {e}")
     
     def start_cleanup_task(self) -> None:
         """정리 태스크를 시작합니다."""
