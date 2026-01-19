@@ -320,29 +320,39 @@ class TeamProcessor:
         return [player.strip() for player in players if player and player.strip()]
     
     def _are_players_matching(self, players1: List[str], players2: List[str]) -> bool:
-        """두 선수 리스트가 매칭되는지 확인합니다 (순서 무관, 스태프 제외)."""
+        """두 선수 리스트가 매칭되는지 확인합니다 (순서 무관, 스태프 제외).
+
+        시드 적용 규칙:
+        - 시드 데이터가 3명: 신청 팀도 정확히 3명이고 전원 일치해야 함
+        - 시드 데이터가 4명: 신청 팀도 정확히 4명이고 전원 일치해야 함
+        - 인원수가 다르거나 전원 일치하지 않으면 시드 미적용
+        """
         if not players1 or not players2:
             return False
-        
+
         from utils.helpers import normalize_player_list
-        
+
         # 정규화된 플레이어 리스트 생성
         norm_players1 = set(normalize_player_list(players1))
         norm_players2 = set(normalize_player_list(players2))
-        
+
+        # 인원수가 다르면 시드 미적용
+        if len(norm_players1) != len(norm_players2):
+            return False
+
         # 교집합 계산
         common_players = norm_players1.intersection(norm_players2)
-        
-        # 매칭 조건 확인
-        if len(norm_players1) == 3 and len(norm_players2) == 3:
+
+        # 매칭 조건: 인원수가 같고, 전원 일치해야 함
+        if len(norm_players1) == 3:
             # 3명 팀: 3명 전부 일치해야 함
             return len(common_players) == 3
-        elif len(norm_players1) == 4 and len(norm_players2) == 4:
-            # 4명 팀: 4명 중 3명 일치해도 허용
-            return len(common_players) >= 3
+        elif len(norm_players1) == 4:
+            # 4명 팀: 4명 전부 일치해야 함
+            return len(common_players) == 4
         else:
-            # 다른 경우: 최소 3명 일치
-            return len(common_players) >= 3
+            # 3명 또는 4명이 아닌 경우 시드 미적용
+            return False
     
     async def _identify_seeded_teams(self, teams: Dict[str, TeamData]) -> Dict[str, int]:
         """시드팀을 식별하고 우선순위를 부여합니다.
