@@ -184,16 +184,12 @@ class TeamInputView(View):
             # 팀 정보를 튜플 형태로 구성 (TeamEditModal 형식에 맞춤)
             team_info = (team_name, team_data, team_mmr)
             
-            # 가상의 GroupRosterView 생성 (TeamEditModal에서 필요)
-            from .views import GroupRosterView
-            dummy_view = GroupRosterView("A", [team_info])  # 조는 임시로 A조 사용
-            
-            # 팀 수정 모달 표시
+            # 팀 수정 모달 표시 (TeamInputView를 직접 전달하여 일반 참가자 수정임을 명확히 함)
             from .modals import TeamEditModal
             if not interaction.response.is_done():
-                await interaction.response.send_modal(TeamEditModal(dummy_view, team_info))
+                await interaction.response.send_modal(TeamEditModal(self, team_info))
             else:
-                await interaction.followup.send_modal(TeamEditModal(dummy_view, team_info))
+                await interaction.followup.send_modal(TeamEditModal(self, team_info))
                 
         except Exception as e:
             logger.error(f"[뷰] 팀 수정 모달 표시 실패: {e}", exc_info=True)

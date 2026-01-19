@@ -1,7 +1,7 @@
 """
 Discord Modal 컴포넌트들
 """
-from typing import TYPE_CHECKING, Dict, List, Tuple
+from typing import TYPE_CHECKING, Dict, List, Tuple, Union
 
 import discord
 from discord import SelectOption
@@ -185,7 +185,7 @@ class TeamEditModal(Modal):
     팀명, 선수, 스태프 정보를 변경할 수 있으며, MMR 재계산 및 중복 검사를 수행합니다.
     """
     
-    def __init__(self, view: 'GroupRosterView', team_data: Tuple[str, 'TeamData', float]):
+    def __init__(self, view: Union['GroupRosterView', 'TeamInputView'], team_data: Tuple[str, 'TeamData', float]):
         super().__init__(title="팀 정보 수정 / Edit Team Info")
         self.view = view
         self.original_team_name, self.original_team_data, self.original_mmr = team_data
