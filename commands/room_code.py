@@ -15,10 +15,6 @@ from utils.helpers import get_current_kst_time
 
 logger = get_logger('room_code')
 
-# 전역 락 및 처리 중인 작업 추적
-room_code_lock = asyncio.Lock()
-processing_room_codes = {}
-
 
 def clean_room_code(room_code: str) -> str:
     """방코드에서 빈칸을 제거하고 정리"""
@@ -131,76 +127,38 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
         
         # 빈칸 제거된 방코드
         cleaned_room_code = clean_room_code(room_code)
-        
+
         now = get_current_kst_time()
         round_start_time = calculate_round_start_time(now)
+
+        # 라운드 번호 계산
         round_number = await get_round_number(interaction.channel)
-        
-        # 전역 락을 사용하여 동시 실행 방지
-        room_code_key = f"roomcode_{interaction.channel.id}_{round_number}"
-        async with room_code_lock:
-            if room_code_key in processing_room_codes:
-                error_embed = Embed(
-                    title="❌ 오류 / Error",
-                    description="이미 처리 중인 방코드 요청이 있습니다. 잠시 후 다시 시도해주세요. / A room code request is already being processed. Please try again later.",
-                    color=Color.red()
-                )
-                try:
-                    if interaction.response.is_done():
-                        await interaction.followup.send(embed=error_embed, ephemeral=True)
-                    else:
-                        await interaction.response.send_message(embed=error_embed, ephemeral=True)
-                except:
-                    pass
-                return
-            processing_room_codes[room_code_key] = True
-        
+
+        # 임베드 생성 및 메시지 전송
         try:
-            # 중복 방지: 채널의 최근 메시지에서 이미 같은 라운드의 방코드 embed가 있는지 확인
-            try:
-                async for message in interaction.channel.history(limit=50):
-                    if message.author.bot and message.embeds:
-                        for embed in message.embeds:
-                            if embed.title and f"Round {round_number}" in embed.title and "Scrim Announcement" in embed.title:
-                                error_embed = Embed(
-                                    title="❌ 오류 / Error",
-                                    description=f"Round {round_number}의 방코드가 이미 공지되었습니다. / Room code for Round {round_number} has already been announced.",
-                                    color=Color.red()
-                                )
-                                try:
-                                    if interaction.response.is_done():
-                                        await interaction.followup.send(embed=error_embed, ephemeral=True)
-                                    else:
-                                        await interaction.response.send_message(embed=error_embed, ephemeral=True)
-                                except:
-                                    pass
-                                return
-            except Exception as e:
-                logger.warning(f"[명령어] 채널 히스토리 확인 중 오류 발생 - 계속 진행: {e}")
-            
             # 공지 임베드 생성
             embed = Embed(
                 title=f"📢 Scrim Announcement - Round {round_number}",
                 description=f"**#️⃣ 방 코드 / Room Code**\n# `{cleaned_room_code}`",
                 color=Color.blue()
             )
-            
+
             embed.add_field(
                 name="⏱️ 라운드 시작 / Round Start",
                 value=f"**`{round_start_time.strftime('%H:%M')}`**",
-                    inline=False
-                )
-            
+                inline=False
+            )
+
             embed.set_footer(text="ER Scrim", icon_url=settings.THUMBNAIL_URL)
-            
+
             # 조별 역할 멘션 메시지 생성
             role_mention = await get_group_role_mention(interaction.guild, interaction.channel)
-            
+
             # Interaction 응답 전송 (만료 처리 및 네트워크 오류 재시도)
             import aiohttp
             max_retries = 3
             retry_delay = 1.0
-            
+
             for attempt in range(max_retries):
                 try:
                     if interaction.response.is_done():
@@ -220,10 +178,11 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                             )
                         else:
                             await interaction.response.send_message(embed=embed)
-                    
+
                     # 성공적으로 전송됨
+                    logger.info(f"[명령어] Round {round_number} 방코드 공지 완료: {cleaned_room_code}")
                     break
-                    
+
                 except discord.NotFound:
                     logger.warning("[명령어] Interaction 만료되어 응답 전송 불가")
                     # 채널에 직접 메시지 전송 시도
@@ -236,10 +195,11 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                             )
                         else:
                             await interaction.channel.send(embed=embed)
+                        logger.info(f"[명령어] Round {round_number} 방코드 공지 완료 (채널 직접 전송): {cleaned_room_code}")
                     except Exception as e:
                         logger.error(f"[명령어] 채널에 메시지 전송 실패: {e}", exc_info=True)
                     break  # NotFound는 재시도하지 않음
-                    
+
                 except (aiohttp.client_exceptions.ClientOSError, ConnectionResetError) as e:
                     if attempt < max_retries - 1:
                         logger.warning(f"[명령어] 네트워크 연결 오류 발생 - 시도 {attempt + 1}/{max_retries}, 재시도 중: {e}")
@@ -257,10 +217,11 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                                 )
                             else:
                                 await interaction.channel.send(embed=embed)
+                            logger.info(f"[명령어] Round {round_number} 방코드 공지 완료 (재시도 후): {cleaned_room_code}")
                         except Exception as send_error:
-                            logger.error(f"채널에 메시지 전송 실패: {send_error}", exc_info=True)
+                            logger.error(f"[명령어] 채널에 메시지 전송 최종 실패: {send_error}", exc_info=True)
                         break
-                        
+
                 except Exception as e:
                     logger.error(f"[명령어] Interaction 응답 전송 실패: {e}", exc_info=True)
                     if attempt < max_retries - 1:
@@ -277,10 +238,10 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                                 )
                             else:
                                 await interaction.channel.send(embed=embed)
+                            logger.info(f"[명령어] Round {round_number} 방코드 공지 완료 (예외 후): {cleaned_room_code}")
                         except Exception as send_error:
-                            logger.error(f"채널에 메시지 전송 실패: {send_error}", exc_info=True)
+                            logger.error(f"[명령어] 채널에 메시지 전송 최종 실패: {send_error}", exc_info=True)
                         break
-            
-        finally:
-            async with room_code_lock:
-                processing_room_codes.pop(room_code_key, None)
+
+        except Exception as e:
+            logger.error(f"[명령어] 방코드 처리 중 예상치 못한 오류: {e}", exc_info=True)
