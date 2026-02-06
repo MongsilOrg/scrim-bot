@@ -67,7 +67,11 @@ class ScrimbotLogger:
         root_logger.setLevel(level)
         root_logger.addHandler(file_handler)
         root_logger.addHandler(console_handler)
-        
+
+        # 외부 라이브러리 로거 레벨 제한 (불필요한 로그 억제)
+        for lib_logger_name in ('discord', 'discord.http', 'discord.gateway', 'aiohttp', 'asyncio'):
+            logging.getLogger(lib_logger_name).setLevel(logging.ERROR)
+
         cls._initialized = True
     
     @classmethod

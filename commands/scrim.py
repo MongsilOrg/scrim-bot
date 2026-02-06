@@ -18,7 +18,7 @@ async def 스크림(interaction: discord.Interaction) -> None:
     try:
         # 관리자 권한 확인
         if not _is_admin(interaction.user):
-            await _send_error_message(interaction, "관리자 권한이 없습니다. / Admin access required")
+            await _send_error_message(interaction, "관리자 권한이 없습니다.")
             return
         
         # 현재 시간 기준으로 다음 스크림 날짜 자동 계산
@@ -75,7 +75,7 @@ async def 스크림(interaction: discord.Interaction) -> None:
         
     except Exception as e:
         logger.error(f"[명령어] 스크림 명령어 처리 실패: {e}", exc_info=True)
-        await _send_error_message(interaction, "스크림 명령어 처리 중 오류가 발생했습니다. / An error occurred while processing scrim command.")
+        await _send_error_message(interaction, "스크림 명령어 처리 중 오류가 발생했습니다.")
 
 
 
@@ -83,23 +83,23 @@ async def 스크림(interaction: discord.Interaction) -> None:
 def _create_scrim_embed(day: int, month: int, weekday: str, date_info: dict = None) -> Embed:
     """스크림 임베드를 생성합니다"""
     # 날짜 정보를 title에 포함
-    title = f"🏆 Scrim Registration - {month}/{day} ({weekday})"
-    
+    title = f"🏆 스크림 참가 신청 - {month}/{day} ({weekday})"
+
     embed = Embed(
         title=title,
         color=Color.green()
     )
-    
+
     # 핵심 정보만 간결하게
     embed.add_field(
-        name="📅 스크림 정보 / Scrim Info",
-        value="• 조 편성 / Group Assignment: `17:00`\n"
-              "• 스크림 / Scrim: `20:00 ~ 4R`",
+        name="📅 스크림 정보",
+        value="• 조 편성: `17:00`\n"
+              "• 스크림: `20:00 ~ 4R`",
         inline=True
     )
-    
+
     embed.set_footer(text="ER Scrim", icon_url=settings.THUMBNAIL_URL)
-    
+
     return embed
 
 
@@ -112,11 +112,11 @@ async def _send_error_message(interaction: discord.Interaction, message: str) ->
     """에러 메시지를 전송합니다."""
     try:
         error_embed = Embed(
-            title="오류 / Error",
+            title="오류",
             description=message,
             color=Color.red()
         )
-        
+
         # 상호작용이 이미 응답되었는지 확인
         if not interaction.response.is_done():
             await interaction.response.send_message(embed=error_embed, ephemeral=True)
@@ -128,8 +128,8 @@ async def _send_error_message(interaction: discord.Interaction, message: str) ->
         # 최후의 수단으로 일반 메시지 전송 시도
         try:
             if not interaction.response.is_done():
-                await interaction.response.send_message(f"오류 / Error: {message}", ephemeral=True)
+                await interaction.response.send_message(f"오류: {message}", ephemeral=True)
             else:
-                await interaction.followup.send(f"오류 / Error: {message}", ephemeral=True)
+                await interaction.followup.send(f"오류: {message}", ephemeral=True)
         except Exception as e2:
             logger.error(f"[명령어] 최후의 수단 메시지 전송 실패: {e2}", exc_info=True)

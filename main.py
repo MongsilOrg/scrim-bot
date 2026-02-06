@@ -124,6 +124,23 @@ async def main():
         ):
             await 경고부여(interaction, user)
 
+        # 앱 명령어 전역 에러 핸들러 (컨텍스트 메뉴 등)
+        @client.tree.error
+        async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+            logger.error(f"[시작] 앱 명령어 오류: {error}", exc_info=True)
+            try:
+                error_embed = discord.Embed(
+                    title="❌ 오류",
+                    description="명령어 처리 중 오류가 발생했습니다.",
+                    color=discord.Color.red()
+                )
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(embed=error_embed, ephemeral=True)
+                else:
+                    await interaction.followup.send(embed=error_embed, ephemeral=True)
+            except Exception:
+                pass
+
         # 봇 실행
         await client.start(settings.DISCORD_TOKEN)
 

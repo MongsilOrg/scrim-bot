@@ -83,6 +83,8 @@ class Settings:
         'REDACTED-SHEET-ID'
     )
     GOOGLE_SHEETS_WARNING_WORKSHEET_NAME: str = '패널티'
+    # 경고로그 시트 설정 (외부 공개용 - 영구 보관)
+    GOOGLE_SHEETS_WARNING_LOG_WORKSHEET_NAME: str = '패널티로그'
     # 시드팀 시트 설정
     GOOGLE_SHEETS_SEEDS_WORKSHEET_NAME: str = '시드팀'
     # 테스트 계정 시트 설정

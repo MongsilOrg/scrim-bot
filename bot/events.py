@@ -180,7 +180,7 @@ async def _process_csv_attachments(message: discord.Message) -> None:
         ban_list = list(ban_candidates.index)
     
     # 누적 점수표 임베드 생성
-    title = f"📊 Scrim Result - {current_round_count}R - {group_info} {date_str}"
+    title = f"📊 스크림 결과 - {current_round_count}R - {group_info} {date_str}"
     
     embed = discord.Embed(
         title=title,

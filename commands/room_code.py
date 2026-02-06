@@ -51,7 +51,7 @@ async def get_round_number(channel: discord.TextChannel) -> int:
                 continue
             embed = message.embeds[0]
             title = embed.title or ""
-            if "Scrim Announcement" in title or "스크림 방 코드 공지" in title:
+            if "스크림 공지" in title:
                 round_count += 1
         return round_count + 1  # 현재 메시지를 포함하여 +1
     except discord.Forbidden:
@@ -96,8 +96,8 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
         # 채널 타입 검증
         if not isinstance(interaction.channel, discord.TextChannel):
             error_embed = Embed(
-                title="❌ 오류 / Error",
-                description="이 명령어는 텍스트 채널에서만 사용할 수 있습니다. / This command can only be used in text channels.",
+                title="❌ 오류",
+                description="이 명령어는 텍스트 채널에서만 사용할 수 있습니다.",
                 color=Color.red()
             )
             try:
@@ -112,8 +112,8 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
         # 방코드 검증
         if not validate_room_code(room_code):
             error_embed = Embed(
-                title="❌ 잘못된 방코드 / Invalid Room Code",
-                description="방코드는 6자리 숫자여야 합니다. / Room code must be 6 digits.",
+                title="❌ 잘못된 방코드",
+                description="방코드는 6자리 숫자여야 합니다.",
                 color=Color.red()
             )
             try:
@@ -138,13 +138,13 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
         try:
             # 공지 임베드 생성
             embed = Embed(
-                title=f"📢 Scrim Announcement - Round {round_number}",
-                description=f"**#️⃣ 방 코드 / Room Code**\n# `{cleaned_room_code}`",
+                title=f"📢 스크림 공지 - {round_number}라운드",
+                description=f"**#️⃣ 방 코드**\n# `{cleaned_room_code}`",
                 color=Color.blue()
             )
 
             embed.add_field(
-                name="⏱️ 라운드 시작 / Round Start",
+                name="⏱️ 라운드 시작",
                 value=f"**`{round_start_time.strftime('%H:%M')}`**",
                 inline=False
             )
@@ -180,7 +180,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                             await interaction.response.send_message(embed=embed)
 
                     # 성공적으로 전송됨
-                    logger.info(f"[명령어] Round {round_number} 방코드 공지 완료: {cleaned_room_code}")
+                    logger.debug(f"[명령어] Round {round_number} 방코드 공지 완료: {cleaned_room_code}")
                     break
 
                 except discord.NotFound:
@@ -195,7 +195,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                             )
                         else:
                             await interaction.channel.send(embed=embed)
-                        logger.info(f"[명령어] Round {round_number} 방코드 공지 완료 (채널 직접 전송): {cleaned_room_code}")
+                        logger.debug(f"[명령어] Round {round_number} 방코드 공지 완료 (채널 직접 전송): {cleaned_room_code}")
                     except Exception as e:
                         logger.error(f"[명령어] 채널에 메시지 전송 실패: {e}", exc_info=True)
                     break  # NotFound는 재시도하지 않음
@@ -217,7 +217,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                                 )
                             else:
                                 await interaction.channel.send(embed=embed)
-                            logger.info(f"[명령어] Round {round_number} 방코드 공지 완료 (재시도 후): {cleaned_room_code}")
+                            logger.debug(f"[명령어] Round {round_number} 방코드 공지 완료 (재시도 후): {cleaned_room_code}")
                         except Exception as send_error:
                             logger.error(f"[명령어] 채널에 메시지 전송 최종 실패: {send_error}", exc_info=True)
                         break
@@ -238,7 +238,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                                 )
                             else:
                                 await interaction.channel.send(embed=embed)
-                            logger.info(f"[명령어] Round {round_number} 방코드 공지 완료 (예외 후): {cleaned_room_code}")
+                            logger.debug(f"[명령어] Round {round_number} 방코드 공지 완료 (예외 후): {cleaned_room_code}")
                         except Exception as send_error:
                             logger.error(f"[명령어] 채널에 메시지 전송 최종 실패: {send_error}", exc_info=True)
                         break
