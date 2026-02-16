@@ -7,7 +7,7 @@ from discord import Color, Embed
 from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
-from ui.views import TeamInputView
+from ui.views import ScrimResetConfirmView, TeamInputView
 from utils.helpers import get_current_kst_time, get_next_scrim_date, is_admin
 
 logger = get_logger('scrim')
@@ -27,10 +27,32 @@ async def 스크림(interaction: discord.Interaction) -> None:
         scrim_day = date_info["day"]
         scrim_month = date_info["month"]
         scrim_weekday = date_info["weekday_name"]
-        
+
+        bot_manager = BotManager.get_instance()
+
+        # 진행 중인 스크림이 있으면 확인 요청
+        existing_tdm = bot_manager.get_team_data_manager()
+        if existing_tdm and existing_tdm.teams:
+            confirm_embed = Embed(
+                title="⚠️ 진행 중인 스크림이 있습니다",
+                description=(
+                    f"현재 **{len(existing_tdm.teams)}개 팀**이 등록되어 있습니다.\n"
+                    f"초기화하면 모든 팀 데이터가 삭제됩니다.\n\n"
+                    f"초기화하시겠습니까?"
+                ),
+                color=Color.orange()
+            )
+            confirm_view = ScrimResetConfirmView()
+            await interaction.response.send_message(embed=confirm_embed, view=confirm_view, ephemeral=True)
+            confirm_view.message = await interaction.original_response()
+
+            # 사용자 응답 대기
+            await confirm_view.wait()
+            if not confirm_view.confirmed:
+                return
+
         # 전역 team_data_manager 새로 생성하여 이전 스크림 데이터 완전 초기화
         # 이전 태스크가 완전히 종료될 때까지 대기합니다
-        bot_manager = BotManager.get_instance()
         team_data_manager = await bot_manager.reset_team_data_manager(interaction.client)
         
         # 새 스크림 세팅 (이전 데이터가 완전히 초기화된 후 실행)
@@ -54,12 +76,15 @@ async def 스크림(interaction: discord.Interaction) -> None:
         
         # 스크림 임베드 생성
         embed = _create_scrim_embed(scrim_day, scrim_month, scrim_weekday, date_info)
-        
+
         # 팀 입력 뷰 생성
         view = TeamInputView(embed)
-        
-        # 응답 전송
-        await interaction.response.send_message(embed=embed, view=view)
+
+        # 응답 전송 (확인 뷰로 이미 응답한 경우 channel.send 사용)
+        if interaction.response.is_done():
+            await interaction.channel.send(embed=embed, view=view)
+        else:
+            await interaction.response.send_message(embed=embed, view=view)
         
         # MMR 메시지 즉시 전송 (팀 여부와 상관없이)
         try:
@@ -82,7 +107,6 @@ async def 스크림(interaction: discord.Interaction) -> None:
 
 def _create_scrim_embed(day: int, month: int, weekday: str, date_info: dict = None) -> Embed:
     """스크림 임베드를 생성합니다"""
-    # 날짜 정보를 title에 포함
     title = f"🏆 스크림 참가 신청 - {month}/{day} ({weekday})"
 
     embed = Embed(
@@ -90,11 +114,27 @@ def _create_scrim_embed(day: int, month: int, weekday: str, date_info: dict = No
         color=Color.green()
     )
 
-    # 핵심 정보만 간결하게
     embed.add_field(
-        name="📅 스크림 정보",
+        name="📅 스크림 일정",
         value="• 조 편성: `17:00`\n"
               "• 스크림: `20:00 ~ 4R`",
+        inline=True
+    )
+
+    # 현재 신청 현황
+    bot_manager = BotManager.get_instance()
+    tdm = bot_manager.get_team_data_manager()
+    team_count = len(tdm.teams) if tdm else 0
+    total_teams, num_groups, spare_teams = tdm.get_team_counts() if tdm else (0, 0, 0)
+
+    status_lines = [f"• 신청 팀: **{team_count}**팀"]
+    if num_groups > 0:
+        status_lines.append(f"• 편성 가능: **{num_groups}**조 ({spare_teams}팀 대기)")
+    status_lines.append("• 마감: `17:00` 자동 조편성")
+
+    embed.add_field(
+        name="📋 신청 현황",
+        value="\n".join(status_lines),
         inline=True
     )
 
@@ -107,7 +147,7 @@ async def _send_error_message(interaction: discord.Interaction, message: str) ->
     """에러 메시지를 전송합니다."""
     try:
         error_embed = Embed(
-            title="오류",
+            title="❌ 오류",
             description=message,
             color=Color.red()
         )

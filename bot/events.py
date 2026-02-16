@@ -158,14 +158,10 @@ async def _process_csv_attachments(message: discord.Message) -> None:
         team['rank'] = idx + 1
 
     # 누적 점수표 이미지 생성
-    image = ScoreImageGenerator().generate_score_table_image(team_data)
-    if not image:
+    img_buf = ScoreImageGenerator().generate_score_table_image(team_data)
+    if not img_buf:
         logger.error("[이벤트] 점수표 이미지 생성 실패", exc_info=True)
         return
-
-    img_buf = io.BytesIO()
-    image.save(img_buf, format='PNG')
-    img_buf.seek(0)
 
     # 밴 리스트: 3회 이상 등장한 캐릭터 (마지막 라운드 기준)
     ban_list = []
@@ -178,21 +174,19 @@ async def _process_csv_attachments(message: discord.Message) -> None:
         )
         ban_candidates = char_counts[char_counts >= 3]
         ban_list = list(ban_candidates.index)
-    
+
+    # 밴 리스트를 BotManager에 저장 (방코드 공지에서 사용)
+    if group_letter and ban_list:
+        from bot.manager import BotManager
+        BotManager.get_instance().set_ban_list(group_letter, ban_list)
+
     # 누적 점수표 임베드 생성
     title = f"📊 스크림 결과 - {current_round_count}R - {group_info} {date_str}"
-    
+
     embed = discord.Embed(
         title=title,
         color=discord.Color.blue()
     )
-
-    if ban_list:
-        embed.add_field(
-            name="🚫 밴 목록",
-            value=" • " + "\n • ".join(ban_list),
-            inline=False
-        )
 
     file = discord.File(img_buf, filename='score_table.png')
     embed.set_image(url="attachment://score_table.png")

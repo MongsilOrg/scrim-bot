@@ -326,7 +326,7 @@ class TeamDataManager:
         """팀 등록이 가능한지 확인합니다."""
         # 조편성 시작 이후인지 확인 (관리자 오버라이드 시 건너뜀)
         if self.is_team_assignment_started and not allow_admin_override:
-            return False, "❌ 조편성이 이미 시작되어 팀 등록이 불가능합니다.\n\n❌ Team registration is not available as group assignment has already started."
+            return False, "❌ 조편성이 이미 시작되어 팀 등록이 불가능합니다."
 
         # 경고 제한 확인
         from bot.manager import BotManager
@@ -345,9 +345,7 @@ class TeamDataManager:
                     if is_restricted:
                         return False, (
                             f"⚠️ 팀원 '{member}'이(가) 경고로 인해 스크림 참가가 제한되었습니다.\n"
-                            f"제한 해제일: {restricted_until}\n\n"
-                            f"⚠️ Team member '{member}' is restricted from participating in scrims due to a warning.\n"
-                            f"Restriction lifted on: {restricted_until}"
+                            f"제한 해제일: {restricted_until}"
                         )
             
             # 이미 등록된 팀 멤버별 제한 확인
@@ -361,9 +359,7 @@ class TeamDataManager:
                     if is_restricted:
                         return False, (
                             f"⚠️ 팀원 '{member}'이(가) 경고로 인해 스크림 참가가 제한되었습니다.\n"
-                            f"제한 해제일: {restricted_until}\n\n"
-                            f"⚠️ Team member '{member}' is restricted from participating in scrims due to a warning.\n"
-                            f"Restriction lifted on: {restricted_until}"
+                            f"제한 해제일: {restricted_until}"
                         )
         
         # 스크림 날짜가 다른 경우 등록 가능 (관리자 오버라이드와 무관)
@@ -376,10 +372,7 @@ class TeamDataManager:
 
         # 17시 이후 로직
         if current_time.hour >= 17 and not allow_admin_override:
-            return False, (
-                "⏰ 17:00 이후에는 추가 등록이 불가능합니다.\n\n"
-                "⏰ Team registration is closed after 17:00."
-            )
+            return False, "⏰ 17:00 이후에는 추가 등록이 불가능합니다.\n💡 관리자에게 문의하세요."
 
         return True, ""
 
@@ -398,10 +391,7 @@ class TeamDataManager:
         """팀 수정이 가능한지 확인합니다."""
         # 조편성 시작/완료 이후인지 확인 (가장 우선)
         if self.is_team_assignment_started:
-            return False, (
-                "❌ 조편성이 이미 시작되어 팀 수정이 불가능합니다.\n\n"
-                "❌ Team edit is not available as group assignment has already started."
-            )
+            return False, "❌ 조편성이 이미 시작되어 팀 수정이 불가능합니다."
         
         # 스크림 날짜가 다른 경우 수정 가능
         if self.scrim_day != current_time.day:
@@ -413,10 +403,7 @@ class TeamDataManager:
         
         # 17시 이후 로직
         if current_time.hour >= 17:
-            return False, (
-                "⏰ 17:00 이후에는 팀 수정이 불가능합니다.\n\n"
-                "⏰ Team edit is not available after 17:00."
-            )
+            return False, "⏰ 17:00 이후에는 팀 수정이 불가능합니다.\n💡 관리자에게 문의하세요."
         
         return True, ""
 
@@ -543,7 +530,7 @@ class TeamDataManager:
             async with self._teams_lock:
                 # 팀 존재 확인
                 if team_name not in self.teams:
-                    return False, "등록되지 않은 팀명입니다. / Team name not registered."
+                    return False, "등록되지 않은 팀명입니다."
 
                 team = self.teams[team_name]
 
@@ -664,18 +651,9 @@ class TeamDataManager:
             from bot.manager import BotManager
             team_data_manager = BotManager.get_instance().get_team_data_manager()
             
-            # 날짜 검증 강화: 현재 날짜와 스크림 날짜가 일치하는지 재확인
+            # 날짜 검증: 현재 날짜와 스크림 날짜가 일치하는지 확인
             current_time = get_current_kst_time()
             if not team_data_manager._is_scrim_date_today():
-                logger.warning(
-                    f"[조편성] 날짜 불일치로 중단 - scrim_date: {team_data_manager.scrim_month}/{team_data_manager.scrim_day}, "
-                    f"현재 날짜: {current_time.month}/{current_time.day}"
-                )
-                return
-            
-            # 추가 검증: 날짜가 정확히 일치하는지 확인
-            if (team_data_manager.scrim_day != current_time.day or 
-                team_data_manager.scrim_month != current_time.month):
                 logger.warning(
                     f"[조편성] 날짜 불일치로 중단 - scrim_date: {team_data_manager.scrim_month}/{team_data_manager.scrim_day}, "
                     f"현재 날짜: {current_time.month}/{current_time.day}"
@@ -742,7 +720,7 @@ class TeamDataManager:
             
             if start_channel:
                 error_embed = discord.Embed(
-                    title="❌ 오류 발생",
+                    title="❌ 오류",
                     description=error_msg,
                     color=discord.Color.red()
                 )
@@ -795,7 +773,7 @@ class TeamDataManager:
                     channel = client.get_channel(team_data_manager.scrim_channel_id)
                     if channel:
                         error_embed = discord.Embed(
-                            title="❌ 조편성 오류",
+                            title="❌ 오류",
                             description=error_msg,
                             color=discord.Color.red()
                         )
@@ -832,38 +810,42 @@ class TeamDataManager:
         except Exception as e:
             logger.error(f"[Discord] 서비스 실행 실패: {e}", exc_info=True)
     
-    async def update_mmr_message(self, channel: discord.TextChannel) -> None:
+    async def update_mmr_message(self, channel: discord.TextChannel, mmr_fail_count: int = 0) -> None:
         """MMR 메시지를 이미지로 업데이트합니다."""
         try:
             # 조편성 시작 이후인지 확인
             if self.is_team_assignment_started:
                 logger.warning("[MMR메시지] 조편성 시작 이후이므로 갱신 불가")
                 return
-            
+
             # 이미지 생성
             from services.image_generator import ImageGenerator
             img_io = ImageGenerator.generate_mmr_image(self.teams)
-            
+
             if not img_io:
                 logger.error("[MMR메시지] 이미지 생성 실패", exc_info=True)
                 return
-            
+
             # 임베드 생성
+            desc_parts = [f"총 **{len(self.teams)}**팀 • 마지막 갱신: `{get_current_kst_time().strftime('%H:%M')}`"]
+            if mmr_fail_count > 0:
+                desc_parts.append(f"⚠️ {mmr_fail_count}개 팀 MMR 갱신 실패")
+
             embed = discord.Embed(
-                title="📊 팀 MMR 정보 / Team MMR Info",
-                description=f"Total {len(self.teams)} teams • Last updated: {get_current_kst_time().strftime('%H:%M')}",
+                title="📊 팀 MMR 정보",
+                description="\n".join(desc_parts),
                 color=discord.Color.blue()
             )
-            embed.set_image(url="attachment://mmr_table.png")
-            
-            # 공지사항 추가 (설정에서 가져오기)
+
+            # 공지사항 추가 (설정에서 가져오기) - 이미지 위에 배치
             if settings.ANNOUNCEMENT_MESSAGE:
                 embed.add_field(
-                    name="📢 공지사항 / Announcement",
+                    name="📢 공지사항",
                     value=settings.ANNOUNCEMENT_MESSAGE,
                     inline=False
                 )
-            
+
+            embed.set_image(url="attachment://mmr_table.png")
             embed.set_footer(text="ER Scrim", icon_url=settings.THUMBNAIL_URL)
             
             # 기존 메시지가 있는지 확인하고 업데이트 시도
@@ -929,8 +911,11 @@ class TeamDataManager:
                     # 팀이 있고 MMR 메시지가 있는 경우에만 업데이트
                     if team_data_manager.teams and team_data_manager.mmr_message and team_data_manager.mmr_message.channel:
                         # 모든 팀의 MMR을 주기적으로 갱신
-                        await team_data_manager._update_all_team_mmr()
-                        await team_data_manager.update_mmr_message(team_data_manager.mmr_message.channel)
+                        success, fail = await team_data_manager._update_all_team_mmr()
+                        await team_data_manager.update_mmr_message(
+                            team_data_manager.mmr_message.channel,
+                            mmr_fail_count=fail
+                        )
                 except discord.NotFound:
                     # 최신 인스턴스에서 메시지 참조 제거
                     from bot.manager import BotManager
@@ -946,13 +931,19 @@ class TeamDataManager:
             team_data_manager.mmr_update_task = None
         except Exception as e:
             logger.error(f"[MMR갱신] 업데이트 루프 종료: {e}", exc_info=True)
-            # 태스크 재시작 (최신 인스턴스에서)
+            # 태스크 참조만 정리 (재시작은 외부에서 관리)
             from bot.manager import BotManager
             team_data_manager = BotManager.get_instance().get_team_data_manager()
-            asyncio.create_task(team_data_manager.mmr_update_loop())
+            team_data_manager.mmr_update_task = None
     
-    async def _update_all_team_mmr(self) -> None:
-        """모든 팀의 MMR을 갱신합니다 (최근 10분 이내 갱신된 팀은 스킵)."""
+    async def _update_all_team_mmr(self) -> Tuple[int, int]:
+        """모든 팀의 MMR을 갱신합니다 (최근 10분 이내 갱신된 팀은 스킵).
+
+        Returns:
+            Tuple[int, int]: (성공 팀 수, 실패 팀 수)
+        """
+        success_count = 0
+        fail_count = 0
         try:
             # ✅ BotManager에서 싱글톤 TeamProcessor 가져오기
             from bot.manager import BotManager
@@ -971,14 +962,17 @@ class TeamDataManager:
                         elapsed = (current_time - team_data.mmr_updated_at).total_seconds()
                         if elapsed < 600:  # 10분 = 600초
                             skipped += 1
+                            success_count += 1
                             continue
 
                     # MMR 계산
                     _, _, team_mmr = await team_processor.fetch_team_mmr(team_name, team_data)
                     await self.set_team_mmr(team_name, team_mmr)
+                    success_count += 1
 
                 except Exception as e:
                     logger.error(f"[MMR갱신] 팀 MMR 갱신 실패 - 팀명: {team_name}: {e}", exc_info=True)
+                    fail_count += 1
                     continue
 
             if skipped > 0:
@@ -986,6 +980,8 @@ class TeamDataManager:
 
         except Exception as e:
             logger.error(f"[MMR갱신] 전체 팀 MMR 갱신 실패: {e}", exc_info=True)
+
+        return success_count, fail_count
     def check_duplicate_with_bot_teams(self, team_name: str, team_members: List[str], exclude_team: str = None) -> Tuple[bool, str]:
         """봇 신청 팀이 이미 봇으로 등록된 팀들과 중복되는지 검사합니다. (대소문자 구별 없이)"""
         try:
@@ -1021,7 +1017,7 @@ class TeamDataManager:
                         if normalize_nickname_for_comparison(new_member) in duplicate_members:
                             duplicate_details.append(f"• {new_member} → {existing_team_name}")
                     detail_str = "\n".join(duplicate_details)
-                    return False, f"❌ 이미 등록된 팀원이 있어요.\n{detail_str}"
+                    return False, f"❌ 이미 등록된 팀원이 있습니다.\n{detail_str}"
             
             return True, ""  # 중복 없음
             

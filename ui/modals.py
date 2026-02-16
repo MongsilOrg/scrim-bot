@@ -74,7 +74,7 @@ class TeamModal(Modal):
             
             # 임시 메시지 전송
             temp_embed = discord.Embed(
-                title="팀 등록 처리 중...",
+                title="⏳ 처리 중...",
                 description="팀 정보를 확인하고 등록하고 있습니다.\n잠시만 기다려주세요.",
                 color=discord.Color.blue()
             )
@@ -99,7 +99,7 @@ class TeamModal(Modal):
             
             # 유효성 검사
             if not validate_team_name(team_name):
-                await self._update_temp_message(temp_message, f"❌ 팀명은 2글자 이상 8글자 이하여야 해요.\n현재 입력: \"{team_name}\" ({len(team_name)}글자)\n\n💡 올바른 예시: \"Team ER\"", discord.Color.red())
+                await self._update_temp_message(temp_message, f"❌ 팀명은 2글자 이상 8글자 이하여야 합니다.\n현재 입력: \"{team_name}\" ({len(team_name)}글자)\n\n💡 올바른 예시: \"Team ER\"", discord.Color.red())
                 return
             
             # 팀원 중복 검사
@@ -124,7 +124,7 @@ class TeamModal(Modal):
             if not has_test_account:
                 submitter_name = self.user.display_name
                 if not validate_discord_user_in_team(team_data, submitter_name):
-                    error_msg = (f"❌ 본인의 디스코드 닉네임이 팀원 목록에 포함되어 있지 않아요.\n\n"
+                    error_msg = (f"❌ 본인의 디스코드 닉네임이 팀원 목록에 포함되어 있지 않습니다.\n\n"
                                f"📌 **참가팀의 팀원만 신청할 수 있습니다.**\n\n"
                                f"**현재 디스코드 닉네임**: {submitter_name}\n"
                                f"**입력된 팀원**: {', '.join(players + staff) if players and staff and isinstance(players, (list, tuple)) and isinstance(staff, (list, tuple)) else '정보 없음'}\n\n"
@@ -137,7 +137,7 @@ class TeamModal(Modal):
             
         except Exception as e:
             logger.error(f"[모달] 팀 모달 제출 처리 실패: {e}", exc_info=True)
-            await self._send_error_message(interaction, "팀 등록 중 오류가 발생하였습니다.")
+            await self._send_error_message(interaction, "팀 등록 중 오류가 발생했습니다.")
     
     async def _update_temp_message(self, temp_message: discord.Message, message: str, color: discord.Color) -> None:
         """임시 메시지를 업데이트합니다."""
@@ -246,7 +246,7 @@ class TeamEditModal(Modal):
             
             # 임시 메시지 전송
             temp_embed = discord.Embed(
-                title="팀 정보 수정 처리 중...",
+                title="⏳ 처리 중...",
                 description="변경된 팀 정보를 확인하고 업데이트하고 있습니다.\n잠시만 기다려주세요.",
                 color=discord.Color.blue()
             )
@@ -276,7 +276,7 @@ class TeamEditModal(Modal):
             if not is_roster_change:
                 # 유효성 검사
                 if not validate_team_name(new_team_name):
-                    await self._update_temp_message(temp_message, f"❌ 팀명은 2글자 이상 8글자 이하여야 해요.\n현재 입력: \"{new_team_name}\" ({len(new_team_name)}글자)\n\n💡 올바른 예시: \"Team ER\"", discord.Color.red())
+                    await self._update_temp_message(temp_message, f"❌ 팀명은 2글자 이상 8글자 이하여야 합니다.\n현재 입력: \"{new_team_name}\" ({len(new_team_name)}글자)\n\n💡 올바른 예시: \"Team ER\"", discord.Color.red())
                     return
                 
                 # 팀원 중복 검사
@@ -295,7 +295,7 @@ class TeamEditModal(Modal):
             
         except Exception as e:
             logger.error(f"[모달] 팀 정보 수정 모달 제출 처리 실패: {e}", exc_info=True)
-            await self._send_error_message(interaction, "팀 정보 수정 중 오류가 발생하였습니다.")
+            await self._send_error_message(interaction, "팀 정보 수정 중 오류가 발생했습니다.")
     
     async def _process_team_edit(self, interaction: discord.Interaction, new_team_name: str, new_team_data: dict, temp_message: discord.Message) -> None:
         """팀 정보 수정 처리"""
@@ -313,7 +313,7 @@ class TeamEditModal(Modal):
             if team_data_manager.is_team_assignment_started:
                 # 조편성 이후에는 개별 팀 수정 불가 (관리자 로스터 변경만 가능)
                 if not is_roster_change:
-                    await self._update_temp_message(temp_message, "조 편성이 이미 시작되어 팀 수정이 불가능해요.", discord.Color.red())
+                    await self._update_temp_message(temp_message, "조 편성이 이미 시작되어 팀 수정이 불가능합니다.", discord.Color.red())
                     return
             
             # 조별 공지 로스터 변경(admin) 시 모든 검증을 건너뜀
@@ -371,7 +371,7 @@ class TeamEditModal(Modal):
                         if not is_guild_valid:
                             not_found_str = ', '.join(not_found_members)
                             error_msg = (
-                                f"❌ 다음 닉네임이 디스코드 서버에서 확인되지 않아요.\n\n"
+                                f"❌ 다음 닉네임이 디스코드 서버에서 확인되지 않습니다.\n\n"
                                 f"**{not_found_str}**\n\n"
                                 f"💡 디스코드 서버 닉네임과 동일하게 입력해주세요."
                             )
@@ -388,13 +388,13 @@ class TeamEditModal(Modal):
                                     api_invalid_members.append(member)
                     except Exception as e:
                         logger.error(f"[모달] API 닉네임 검증 실패: {e}", exc_info=True)
-                        await self._update_temp_message(temp_message, "⚠️ 닉네임 확인 중 문제가 발생했습니다.\n\n잠시 후 다시 시도해주세요.", discord.Color.red())
+                        await self._update_temp_message(temp_message, "⚠️ 닉네임 확인 중 문제가 발생했습니다.\n\n💡 잠시 후 다시 시도해주세요.", discord.Color.red())
                         return
 
                     if api_invalid_members:
                         await self._update_temp_message(
                             temp_message,
-                            f"❌ 다음 닉네임들을 찾을 수 없어요.\n**{', '.join(api_invalid_members) if api_invalid_members and isinstance(api_invalid_members, (list, tuple)) else str(api_invalid_members)}**\n\n💡 게임 내 닉네임을 정확히 입력했는지 확인해주세요.",
+                            f"❌ 다음 닉네임들을 찾을 수 없습니다.\n**{', '.join(api_invalid_members) if api_invalid_members and isinstance(api_invalid_members, (list, tuple)) else str(api_invalid_members)}**\n\n💡 게임 내 닉네임을 정확히 입력했는지 확인해주세요.",
                             discord.Color.red()
                         )
                         return
@@ -468,7 +468,7 @@ class TeamEditModal(Modal):
             
         except Exception as e:
             logger.error(f"[모달] 팀 정보 수정 실패: {e}", exc_info=True)
-            await self._send_error_message(interaction, "팀 정보 수정 중 오류가 발생했어요.")
+            await self._send_error_message(interaction, "팀 정보 수정 중 오류가 발생했습니다.")
     
     def _check_duplicate_within_group(self, new_team_name: str, new_team_members: List[str]) -> Tuple[bool, str]:
         """같은 조 내에서만 중복 검사"""
@@ -507,7 +507,7 @@ class TeamEditModal(Modal):
             
         except Exception as e:
             logger.error(f"[모달] 조 내 중복 검사 실패: {e}", exc_info=True)
-            return False, "중복 검사 중 오류가 발생했어요."
+            return False, "중복 검사 중 오류가 발생했습니다."
     
     async def _update_mmr_message_for_individual_team(self, team_data_manager) -> None:
         """개별 팀 수정 시 MMR 메시지 업데이트"""
@@ -764,7 +764,7 @@ class TeamEditModal(Modal):
         """임시 메시지를 업데이트합니다."""
         try:
             embed = discord.Embed(
-                title="팀 정보 수정 완료" if color == discord.Color.green() else "오류",
+                title="✅ 완료" if color == discord.Color.green() else "❌ 오류",
                 description=message,
                 color=color
             )
@@ -776,7 +776,7 @@ class TeamEditModal(Modal):
         """에러 메시지를 전송합니다."""
         try:
             error_embed = discord.Embed(
-                title="오류",
+                title="❌ 오류",
                 description=message,
                 color=discord.Color.red()
             )
@@ -889,7 +889,7 @@ class WarningReasonModal(Modal):
                 if auto_warning and converted_cautions:
                     embed = discord.Embed(
                         title="🚨 경고 자동 부여 완료",
-                        description="주의 2회 누적으로 경고가 자동 부여되었어요.",
+                        description="주의 2회 누적으로 경고가 자동 부여되었습니다.",
                         color=0xED4245
                     )
                     embed.add_field(
@@ -988,7 +988,7 @@ class WarningReasonModal(Modal):
             logger.error(f"[모달] 제재 모달 처리 실패 - 대상: {self.target_user.display_name if self.target_user else 'Unknown'}, 오류: {e}", exc_info=True)
             error_embed = discord.Embed(
                 title="❌ 오류",
-                description="제재 처리 중 오류가 발생했어요.",
+                description="제재 처리 중 오류가 발생했습니다.",
                 color=discord.Color.red()
             )
             if not interaction.response.is_done():
@@ -1016,7 +1016,7 @@ class WarningReasonModal(Modal):
 
                 embed = discord.Embed(
                     title="🚨 경고 알림",
-                    description="주의 2회 누적으로 인해 **경고**가 부여되었어요.",
+                    description="주의 2회 누적으로 인해 **경고**가 부여되었습니다.",
                     color=0xED4245
                 )
 
@@ -1046,7 +1046,7 @@ class WarningReasonModal(Modal):
 
                 embed = discord.Embed(
                     title="🚨 경고 알림",
-                    description="**경고**가 부여되었어요.",
+                    description="**경고**가 부여되었습니다.",
                     color=0xED4245
                 )
 
@@ -1068,7 +1068,7 @@ class WarningReasonModal(Modal):
             else:
                 embed = discord.Embed(
                     title="⚡ 주의 알림",
-                    description="**주의**가 부여되었어요.",
+                    description="**주의**가 부여되었습니다.",
                     color=0xFEE75C
                 )
 
@@ -1126,7 +1126,7 @@ class CSVImportModal(Modal):
             
             # 임시 메시지 전송
             temp_embed = discord.Embed(
-                title="CSV 팀 입력 처리 중...",
+                title="⏳ 처리 중...",
                 description="CSV를 파싱하고 팀을 등록하고 있습니다.\n잠시만 기다려주세요.",
                 color=discord.Color.blue()
             )
@@ -1144,7 +1144,7 @@ class CSVImportModal(Modal):
             
         except Exception as e:
             logger.error(f"[모달] CSV 팀 입력 모달 제출 처리 실패: {e}", exc_info=True)
-            await self._send_error_message(interaction, "CSV 팀 입력 중 오류가 발생하였습니다.")
+            await self._send_error_message(interaction, "CSV 팀 입력 중 오류가 발생했습니다.")
     
     async def _process_csv_import(self, interaction: discord.Interaction, csv_content: str, temp_message: discord.Message) -> None:
         """CSV 파싱 및 팀 추가 처리"""
@@ -1203,7 +1203,7 @@ class CSVImportModal(Modal):
                 }
             
             if not teams_payload:
-                error_msg = "❌ 유효한 팀을 찾을 수 없어요."
+                error_msg = "❌ 유효한 팀을 찾을 수 없습니다."
                 if errors:
                     error_msg += f"\n\n오류 내역:\n{chr(10).join(errors[:5])}"  # 최대 5개 오류만 표시
                 await self._update_temp_message(temp_message, error_msg, discord.Color.red())
@@ -1233,15 +1233,26 @@ class CSVImportModal(Modal):
                     fail_count += 1
                     fail_messages.append(f"{team_name}: {str(e)}")
             
+            # 파싱 오류도 fail로 합산
+            fail_count += len(errors)
+            fail_messages = errors + fail_messages
+
             # 결과 메시지 생성
-            result_msg = f"✅ **팀 추가 완료**\n\n"
-            result_msg += f"성공: {success_count}개 팀\n"
-            if fail_count > 0:
-                result_msg += f"실패: {fail_count}개 팀\n"
+            if success_count > 0 and fail_count == 0:
+                result_msg = f"✅ **{success_count}개 팀 등록 완료**"
+                result_color = discord.Color.green()
+            elif success_count > 0 and fail_count > 0:
+                result_msg = f"⚠️ **부분 성공**\n\n성공: {success_count}개 팀\n실패: {fail_count}개 팀"
                 if fail_messages:
-                    result_msg += f"\n실패 상세:\n{chr(10).join(fail_messages[:5])}"  # 최대 5개만 표시
-            
-            await self._update_temp_message(temp_message, result_msg, discord.Color.green())
+                    result_msg += f"\n\n**실패 상세:**\n{chr(10).join(fail_messages[:10])}"
+                result_color = discord.Color.orange()
+            else:
+                result_msg = f"❌ **모든 팀 등록 실패** ({fail_count}개 팀)"
+                if fail_messages:
+                    result_msg += f"\n\n**실패 상세:**\n{chr(10).join(fail_messages[:10])}"
+                result_color = discord.Color.red()
+
+            await self._update_temp_message(temp_message, result_msg, result_color)
             
             # MMR 갱신 및 메시지 업데이트 (백그라운드에서 수행)
             if success_count > 0:
@@ -1252,7 +1263,7 @@ class CSVImportModal(Modal):
             logger.error(f"[모달] CSV 팀 입력 처리 실패: {e}", exc_info=True)
             await self._update_temp_message(
                 temp_message,
-                f"❌ CSV 처리 중 오류가 발생했어요.\n\n{str(e)}",
+                f"❌ CSV 처리 중 오류가 발생했습니다.\n\n{str(e)}",
                 discord.Color.red()
             )
     
@@ -1295,7 +1306,7 @@ class CSVImportModal(Modal):
         """에러 메시지를 전송합니다."""
         try:
             error_embed = discord.Embed(
-                title="오류",
+                title="❌ 오류",
                 description=message,
                 color=discord.Color.red()
             )

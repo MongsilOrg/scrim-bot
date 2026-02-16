@@ -3,9 +3,8 @@ BSER API 클라이언트 서비스
 
 캐시 전략:
 - 닉네임 → 유저ID 매칭: 24시간 장기 캐시 (변경되지 않는 데이터)
-- 유저ID → MMR 조회: 캐시 사용 안함 (실시간 데이터 필요, 조편성 시 정확성 중요)
-
-MMR 캐시는 완전히 제거되었습니다. 실시간 데이터만 사용합니다.
+- 유저ID → MMR 조회: 60초 단기 캐시 (5분 주기 갱신 시 API 부하 감소)
+  조편성 시에는 MMR 캐시를 클리어하여 실시간 데이터 사용
 """
 import asyncio
 import random
@@ -45,10 +44,11 @@ class BSERAPIClient:
     # API 관련 상수
     MAX_RETRIES = 4  # 과도한 백오프 방지
     INITIAL_WAIT = 1  # 초기 대기 시간 (초)
-    MAX_WAIT = 8  # 최대 대기 시간 (초)
+    MAX_WAIT = 30  # 최대 대기 시간 (초)
     
     # 캐시 TTL 설정
     NICKNAME_CACHE_TTL = 86400  # 닉네임-유저ID 매칭: 24시간 (장기 캐시)
+    MMR_CACHE_TTL = 60  # MMR 캐시: 60초 (단기 캐시)
     
     def __init__(self):
         self.api_key = settings.BSER_API_KEY
@@ -61,6 +61,8 @@ class BSERAPIClient:
         }
         # 닉네임-유저ID 매칭 캐시 (장기 캐시)
         self._nickname_cache: Dict[str, Dict[str, Any]] = {}
+        # MMR 캐시 (단기 캐시)
+        self._mmr_cache: Dict[str, Dict[str, Any]] = {}
         # 404 에러 로깅 추적 (같은 닉네임에 대한 반복 로그 방지)
         self._failed_nicknames: Dict[str, float] = {}  # 닉네임 -> 마지막 로그 시간
     
@@ -181,18 +183,25 @@ class BSERAPIClient:
         return None
     
     def clear_cache(self) -> None:
-        """캐시 클리어"""
+        """전체 캐시 클리어"""
         self._nickname_cache.clear()
-    
+        self._mmr_cache.clear()
+
     def clear_nickname_cache(self) -> None:
         """닉네임 캐시만 클리어"""
         self._nickname_cache.clear()
-    
+
+    def clear_mmr_cache(self) -> None:
+        """MMR 캐시만 클리어"""
+        self._mmr_cache.clear()
+
     def get_cache_stats(self) -> Dict[str, Any]:
         """캐시 통계 반환"""
         return {
             "nickname_cache_size": len(self._nickname_cache),
-            "nickname_cache_ttl": self.NICKNAME_CACHE_TTL
+            "nickname_cache_ttl": self.NICKNAME_CACHE_TTL,
+            "mmr_cache_size": len(self._mmr_cache),
+            "mmr_cache_ttl": self.MMR_CACHE_TTL
         }
     
     async def get_user_uid(self, user_nickname: str) -> Optional[str]:
@@ -282,12 +291,21 @@ class BSERAPIClient:
             return None
     
     async def get_user_mmr(self, uid: str) -> Optional[float]:
-        """사용자 MMR 조회
+        """사용자 MMR 조회 (60초 캐시 적용)
 
         Returns:
             float: MMR 값 (0.0 포함, 랭크 데이터가 없는 정상 케이스)
             None: API 오류, 네트워크 오류 등 조회 실패
         """
+        # MMR 캐시 확인
+        cache_key = f"mmr:{uid}"
+        if cache_key in self._mmr_cache:
+            entry = self._mmr_cache[cache_key]
+            if time.time() - entry.get('timestamp', 0) < self.MMR_CACHE_TTL:
+                return entry['data']
+            else:
+                del self._mmr_cache[cache_key]
+
         try:
             rank_data = await self.get_user_rank(uid)
             if rank_data is None:
@@ -296,10 +314,16 @@ class BSERAPIClient:
             if isinstance(rank_data, dict) and rank_data.get("userRank"):
                 user_rank = rank_data["userRank"]
                 if isinstance(user_rank, dict):
-                    return user_rank.get("mmr", 0.0)
-                return getattr(user_rank, "mmr", 0.0) if hasattr(user_rank, "mmr") else 0.0
+                    mmr = user_rank.get("mmr", 0.0)
+                else:
+                    mmr = getattr(user_rank, "mmr", 0.0) if hasattr(user_rank, "mmr") else 0.0
+                # 캐시에 저장
+                self._mmr_cache[cache_key] = {'data': mmr, 'timestamp': time.time()}
+                return mmr
             logger.warning(f"[API] rank_data에 userRank가 없음 - UID: {uid}")
-            return 0.0
+            mmr = 0.0
+            self._mmr_cache[cache_key] = {'data': mmr, 'timestamp': time.time()}
+            return mmr
 
         except Exception as e:
             logger.error(f"[API] 사용자 MMR 조회 실패 - UID: {uid}: {e}", exc_info=True)

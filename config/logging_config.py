@@ -5,6 +5,7 @@
 import logging
 import os
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from typing import Optional
 
 import pytz
@@ -52,8 +53,11 @@ class ScrimbotLogger:
             if log_dir:
                 os.makedirs(log_dir, exist_ok=True)
         
-        # 파일 핸들러 설정
-        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        # 파일 핸들러 설정 (10MB당 로테이션, 최대 5개 백업)
+        file_handler = RotatingFileHandler(
+            log_file, encoding='utf-8',
+            maxBytes=10 * 1024 * 1024, backupCount=5
+        )
         file_handler.setFormatter(formatter)
         file_handler.setLevel(level)
         

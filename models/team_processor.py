@@ -479,13 +479,13 @@ class TeamProcessor:
                                      channel: Union[discord.TextChannel, discord.Interaction, None]) -> None:
         """팀 처리를 백그라운드에서 실행합니다."""
         try:
-            # 조편성 시작 시 MMR 캐시 클리어 (실시간 데이터 보장)
+            # 조편성 시작 시 MMR 캐시만 클리어 (실시간 데이터 보장)
             # 닉네임 캐시는 유지 (변경되지 않는 데이터)
             try:
                 async with BSERAPIClient() as api_client:
-                    api_client.clear_cache()  # 전체 캐시 클리어
+                    api_client.clear_mmr_cache()
             except Exception as e:
-                logger.warning(f"[캐시] 캐시 클리어 중 오류: {e}")
+                logger.warning(f"[캐시] MMR 캐시 클리어 중 오류: {e}")
             
             await self._load_seeds_data()
             

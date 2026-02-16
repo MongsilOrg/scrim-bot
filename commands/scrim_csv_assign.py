@@ -18,7 +18,7 @@ async def 조편성_csv(interaction: discord.Interaction, message: discord.Messa
     try:
         # 관리자 권한 확인
         if not any(role.id in settings.ADMIN_ROLE_IDS for role in interaction.user.roles):
-            await _send_embed(interaction, "권한 오류", "관리자만 사용할 수 있습니다.", discord.Color.red())
+            await _send_embed(interaction, "❌ 오류", "관리자 권한이 없습니다.", discord.Color.red())
             return
 
         # CSV 첨부 찾기 (첫 번째 CSV 사용)
@@ -29,7 +29,7 @@ async def 조편성_csv(interaction: discord.Interaction, message: discord.Messa
                 break
 
         if not csv_attachment:
-            await _send_embed(interaction, "CSV 없음", "선택한 메시지에서 CSV 첨부를 찾을 수 없습니다.", discord.Color.red())
+            await _send_embed(interaction, "❌ 오류", "선택한 메시지에서 CSV 첨부를 찾을 수 없습니다.", discord.Color.red())
             return
 
         # CSV 읽기
@@ -41,8 +41,8 @@ async def 조편성_csv(interaction: discord.Interaction, message: discord.Messa
         if any(col not in reader.fieldnames for col in required_cols):
             await _send_embed(
                 interaction,
-                "CSV 형식 오류",
-                f"필요한 컬럼이 없습니다: {', '.join(required_cols)}",
+                "❌ 오류",
+                f"필요한 컬럼이 없습니다: {', '.join(required_cols)}\n\n💡 필요한 형식: `team_name, players, staff`",
                 discord.Color.red(),
             )
             return
@@ -62,7 +62,7 @@ async def 조편성_csv(interaction: discord.Interaction, message: discord.Messa
             }
 
         if not teams_payload:
-            await _send_embed(interaction, "팀 없음", "CSV에서 유효한 팀을 찾지 못했습니다.", discord.Color.red())
+            await _send_embed(interaction, "❌ 오류", "CSV에서 유효한 팀을 찾지 못했습니다.", discord.Color.red())
             return
 
         # 긴 작업 전에 defer로 응답 지연 (3초 타임아웃 방지)
@@ -106,7 +106,7 @@ async def 조편성_csv(interaction: discord.Interaction, message: discord.Messa
         # defer 후에는 followup으로 응답
         await interaction.followup.send(
             embed=discord.Embed(
-                title="조편성 시작",
+                title="✅ 완료",
                 description=f"CSV로 불러온 팀 {len(teams_payload)}개로 조편성을 시작했습니다.",
                 color=discord.Color.green()
             ),
@@ -119,14 +119,14 @@ async def 조편성_csv(interaction: discord.Interaction, message: discord.Messa
         if interaction.response.is_done():
             await interaction.followup.send(
                 embed=discord.Embed(
-                    title="오류",
+                    title="❌ 오류",
                     description="조편성 중 오류가 발생했습니다.",
                     color=discord.Color.red()
                 ),
                 ephemeral=True
             )
         else:
-            await _send_embed(interaction, "오류", "조편성 중 오류가 발생했습니다.", discord.Color.red())
+            await _send_embed(interaction, "❌ 오류", "조편성 중 오류가 발생했습니다.", discord.Color.red())
 
 
 async def _send_embed(
