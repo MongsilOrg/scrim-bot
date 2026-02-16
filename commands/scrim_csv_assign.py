@@ -1,14 +1,12 @@
 """CSV 컨텍스트 메뉴 기반 조편성 실행"""
 import io
 import csv
-from typing import List
 
 import discord
 
 from bot.manager import BotManager
 from config.logging_config import get_logger
-from config.settings import settings
-from utils.helpers import get_current_kst_time
+from utils.helpers import get_current_kst_time, is_admin
 
 logger = get_logger("scrim_csv_assign")
 
@@ -17,7 +15,7 @@ async def 조편성_csv(interaction: discord.Interaction, message: discord.Messa
     """메시지의 CSV 첨부를 읽어 조편성을 실행합니다."""
     try:
         # 관리자 권한 확인
-        if not any(role.id in settings.ADMIN_ROLE_IDS for role in interaction.user.roles):
+        if not is_admin(interaction.user):
             await _send_embed(interaction, "❌ 오류", "관리자 권한이 없습니다.", discord.Color.red())
             return
 

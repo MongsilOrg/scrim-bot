@@ -2,7 +2,7 @@
 유효성 검사 유틸리티 모듈
 """
 import re
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Tuple
 
 if TYPE_CHECKING:
     import discord
@@ -34,15 +34,6 @@ def validate_team_name(team_name: str) -> bool:
         return False
     
     return True
-
-
-def validate_player_name(player_name: str) -> bool:
-    """플레이어명 유효성 검사 (기본적인 검사만)"""
-    if not player_name or not player_name.strip():
-        return False
-    
-    # 빈 문자열이 아닌지만 확인
-    return len(player_name.strip()) > 0
 
 
 def validate_team_data(team_data) -> Tuple[bool, str]:
@@ -106,16 +97,6 @@ def validate_discord_user_in_team(team_data, user_name: str) -> bool:
     except Exception as e:
         logger.error(f"[유효성검사] 사용자 팀 포함 검사 실패: {e}", exc_info=True)
         return False
-
-
-def normalize_player_name(name: str) -> str:
-    """플레이어명 정규화"""
-    if not name:
-        return ""
-    
-    # 앞뒤 공백 제거 및 중간 공백 정규화
-    normalized = re.sub(r'\s+', ' ', name.strip())
-    return normalized
 
 
 def normalize_nickname_for_comparison(name: str) -> str:

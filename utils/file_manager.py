@@ -6,7 +6,7 @@ import os
 import shutil
 import tempfile
 from contextlib import contextmanager
-from typing import List, Optional, Set
+from typing import List, Set
 
 from config.logging_config import get_logger
 
@@ -165,7 +165,8 @@ def cleanup_old_files(directory: str, pattern: str = '*', max_age_hours: int = 2
                 logger.warning(f"[파일관리] 파일 삭제 실패 - 파일: {file_path}: {e}")
         
         if removed_count > 0:
-        
+            logger.info(f"[파일관리] 오래된 파일 정리 완료 - 삭제 개수: {removed_count}")
+
         return removed_count
         
     except Exception as e:

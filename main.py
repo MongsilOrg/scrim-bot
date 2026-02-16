@@ -26,6 +26,122 @@ from config.logging_config import ScrimbotLogger
 from config.settings import settings
 
 
+async def _bootstrap_on_ready(client: ScrimBot, logger) -> None:
+    """봇 준비 완료 시 초기 상태를 복구하고 명령어를 동기화합니다."""
+    logger.info(f"[시작] 봇 준비 완료 - {client.user} 온라인")
+
+    bot_manager = BotManager.get_instance()
+    bot_manager.set_client(client)
+
+    team_data_manager = bot_manager.get_team_data_manager()
+    if team_data_manager.should_restore_backup():
+        if team_data_manager.load_backup():
+            logger.info(
+                f"[시작] 백업 복구 완료 - {len(team_data_manager.teams)}개 팀, "
+                f"스크림 날짜: {team_data_manager.scrim_month}/{team_data_manager.scrim_day}"
+            )
+            if not team_data_manager.is_team_assignment_started:
+                team_data_manager.auto_assignment_task = asyncio.create_task(
+                    team_data_manager.check_and_auto_assign()
+                )
+                team_data_manager.mmr_update_task = asyncio.create_task(
+                    team_data_manager.mmr_update_loop()
+                )
+                logger.info("[시작] 자동 조편성/MMR 갱신 태스크 재시작")
+        else:
+            logger.warning("[시작] 백업 복구 실패")
+    else:
+        team_data_manager.clear_backup()
+
+    warning_manager = bot_manager.get_warning_manager()
+    if warning_manager.worksheet:
+        warning_manager.start_cleanup_task()
+        logger.info("[시작] 경고 관리 시스템 초기화 완료")
+
+    try:
+        synced = await client.tree.sync(guild=discord.Object(id=settings.GUILD_ID))
+        logger.info(f"[시작] 명령어 동기화 완료 - {len(synced)}개 명령어 등록됨")
+    except Exception as e:
+        logger.error(f"[시작] 명령어 동기화 실패: {e}", exc_info=True)
+
+
+async def _process_incoming_message(client: ScrimBot, message: discord.Message) -> None:
+    """메시지 파이프라인: 명령어 처리 후 CSV 후처리를 실행합니다."""
+    await client.process_commands(message)
+    await handle_message(message)
+
+
+async def _on_app_command_error(
+    logger,
+    interaction: discord.Interaction,
+    error: app_commands.AppCommandError,
+) -> None:
+    """앱 명령어 전역 에러 핸들러"""
+    logger.error(f"[시작] 앱 명령어 오류: {error}", exc_info=True)
+    try:
+        error_embed = discord.Embed(
+            title="❌ 오류",
+            description="명령어 처리 중 오류가 발생했습니다.",
+            color=discord.Color.red()
+        )
+        if not interaction.response.is_done():
+            await interaction.response.send_message(embed=error_embed, ephemeral=True)
+        else:
+            await interaction.followup.send(embed=error_embed, ephemeral=True)
+    except Exception:
+        pass
+
+
+def _register_client_events(client: ScrimBot, logger) -> None:
+    """클라이언트 이벤트 핸들러를 등록합니다."""
+    @client.event
+    async def on_ready():
+        await _bootstrap_on_ready(client, logger)
+
+    @client.event
+    async def on_message(message):
+        await _process_incoming_message(client, message)
+
+    @client.tree.error
+    async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+        await _on_app_command_error(logger, interaction, error)
+
+
+def _register_app_commands(client: ScrimBot) -> None:
+    """앱 명령어/컨텍스트 메뉴를 등록합니다."""
+    @client.tree.command(
+        name="방코드",
+        description="방 코드를 공지합니다",
+        guild=discord.Object(id=settings.GUILD_ID),
+    )
+    async def room_code_command(interaction: discord.Interaction, room_code: str):
+        await 방코드(interaction, room_code)
+
+    @client.tree.command(
+        name="스크림",
+        description="스크림을 시작합니다",
+        guild=discord.Object(id=settings.GUILD_ID),
+    )
+    async def scrim_command(interaction: discord.Interaction):
+        await 스크림(interaction)
+
+    @client.tree.context_menu(
+        name="조편성", guild=discord.Object(id=settings.GUILD_ID)
+    )
+    async def assign_csv_context(
+        interaction: discord.Interaction, message: discord.Message
+    ):
+        await 조편성_csv(interaction, message)
+
+    @client.tree.context_menu(
+        name="제재 부여", guild=discord.Object(id=settings.GUILD_ID)
+    )
+    async def sanction_context_menu(
+        interaction: discord.Interaction, user: discord.Member
+    ):
+        await 제재부여(interaction, user)
+
+
 async def main():
     """메인 함수"""
     try:
@@ -44,118 +160,8 @@ async def main():
         # BotManager에 클라이언트 설정
         BotManager.get_instance().set_client(client)
 
-        # 이벤트 핸들러 등록
-        @client.event
-        async def on_ready():
-            """봇 준비 완료 이벤트"""
-            logger.info(f"[시작] 봇 준비 완료 - {client.user} 온라인")
-
-            # BotManager에 클라이언트 재설정 (완전히 준비된 상태)
-            bot_manager = BotManager.get_instance()
-            bot_manager.set_client(client)
-
-            # 백업 복구 시도
-            team_data_manager = bot_manager.get_team_data_manager()
-            if team_data_manager.should_restore_backup():
-                if team_data_manager.load_backup():
-                    logger.info(
-                        f"[시작] 백업 복구 완료 - {len(team_data_manager.teams)}개 팀, "
-                        f"스크림 날짜: {team_data_manager.scrim_month}/{team_data_manager.scrim_day}"
-                    )
-                    # 조편성이 아직 시작되지 않았으면 자동 조편성/MMR 태스크 재시작
-                    if not team_data_manager.is_team_assignment_started:
-                        import asyncio
-                        team_data_manager.auto_assignment_task = asyncio.create_task(
-                            team_data_manager.check_and_auto_assign()
-                        )
-                        team_data_manager.mmr_update_task = asyncio.create_task(
-                            team_data_manager.mmr_update_loop()
-                        )
-                        logger.info("[시작] 자동 조편성/MMR 갱신 태스크 재시작")
-                else:
-                    logger.warning("[시작] 백업 복구 실패")
-            else:
-                # 만료된 백업이 있으면 삭제
-                team_data_manager.clear_backup()
-
-            # WarningManager 초기화 및 정리 태스크 시작
-            warning_manager = bot_manager.get_warning_manager()
-            if warning_manager.worksheet:
-                warning_manager.start_cleanup_task()
-                logger.info("[시작] 경고 관리 시스템 초기화 완료")
-
-            # 명령어 동기화
-            try:
-                synced = await client.tree.sync(
-                    guild=discord.Object(id=settings.GUILD_ID)
-                )
-                logger.info(f"[시작] 명령어 동기화 완료 - {len(synced)}개 명령어 등록됨")
-            except Exception as e:
-                logger.error(f"[시작] 명령어 동기화 실패: {e}", exc_info=True)
-
-            # 시드 데이터 로드는 TeamDataManager에서 처리
-
-        @client.event
-        async def on_message(message):
-            """메시지 이벤트 처리"""
-            # 명령어 처리
-            await client.process_commands(message)
-
-            # 추가 메시지 처리
-            await handle_message(message)
-
-        # 명령어 등록
-        @client.tree.command(
-            name="방코드",
-            description="방 코드를 공지합니다",
-            guild=discord.Object(id=settings.GUILD_ID),
-        )
-        async def room_code_command(
-            interaction: discord.Interaction, room_code: str
-        ):
-            await 방코드(interaction, room_code)
-
-        @client.tree.command(
-            name="스크림",
-            description="스크림을 시작합니다",
-            guild=discord.Object(id=settings.GUILD_ID),
-        )
-        async def scrim_command(interaction: discord.Interaction):
-            await 스크림(interaction)
-
-        @client.tree.context_menu(
-            name="조편성", guild=discord.Object(id=settings.GUILD_ID)
-        )
-        async def assign_csv_context(
-            interaction: discord.Interaction, message: discord.Message
-        ):
-            await 조편성_csv(interaction, message)
-
-        # 컨텍스트 메뉴 명령어 등록 (주의/경고 통합)
-        @client.tree.context_menu(
-            name="제재 부여", guild=discord.Object(id=settings.GUILD_ID)
-        )
-        async def sanction_context_menu(
-            interaction: discord.Interaction, user: discord.Member
-        ):
-            await 제재부여(interaction, user)
-
-        # 앱 명령어 전역 에러 핸들러 (컨텍스트 메뉴 등)
-        @client.tree.error
-        async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-            logger.error(f"[시작] 앱 명령어 오류: {error}", exc_info=True)
-            try:
-                error_embed = discord.Embed(
-                    title="❌ 오류",
-                    description="명령어 처리 중 오류가 발생했습니다.",
-                    color=discord.Color.red()
-                )
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(embed=error_embed, ephemeral=True)
-                else:
-                    await interaction.followup.send(embed=error_embed, ephemeral=True)
-            except Exception:
-                pass
+        _register_client_events(client, logger)
+        _register_app_commands(client)
 
         # 봇 실행
         await client.start(settings.DISCORD_TOKEN)

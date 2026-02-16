@@ -8,7 +8,6 @@ Discord 채널에 공지를 전송하고 음성채널 이름을 업데이트합�
 import asyncio
 import heapq
 import os
-import string
 from collections import OrderedDict
 from typing import Dict, List, Optional, Tuple, Union
 

@@ -1,20 +1,16 @@
 """
 공통 유틸리티 함수 모듈
 """
-import string
 from datetime import datetime
-from typing import TYPE_CHECKING, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Dict, List, Union
 
 import discord
 import pytz
 
-from config.logging_config import get_logger
 from config.settings import settings
 
 if TYPE_CHECKING:
     from models.team_data import TeamData
-
-logger = get_logger('helpers')
 
 
 def is_admin(user: discord.Member) -> bool:
@@ -45,50 +41,10 @@ def normalize_player_list(players: List[str]) -> List[str]:
     return normalized
 
 
-def format_team_info(team_name: str, team_data: Union[Dict, 'TeamData'], avg_mmr: float) -> List[str]:
-    """팀 정보 포맷팅"""
-    try:
-        if isinstance(team_data, dict):
-            players = extract_players_only(team_data)
-            staff = team_data.get("staff", [])
-            # 스태프도 정규화
-            clean_staff = normalize_player_list(staff)
-            
-            roster_line = f"▫️ 로스터: {', '.join(players)}"
-            if clean_staff:
-                roster_line += f" // {', '.join(clean_staff)}"
-        else:
-            players = extract_players_only(team_data)
-            roster_line = f"▫️ 로스터: {', '.join(players)}"
-        return [roster_line]
-        
-    except Exception as e:
-        logger.error(f"[헬퍼] 팀 정보 포맷팅 실패: {e}", exc_info=True)
-        return [f"▫️ 로스터: 오류 발생"]
-
-
 def get_current_kst_time() -> datetime:
     """현재 KST 시간 반환"""
     kst = pytz.timezone('Asia/Seoul')
     return datetime.now(kst)
-
-
-def safe_get_channel(client, channel_id: int) -> Optional[discord.TextChannel]:
-    """안전하게 채널 가져오기"""
-    try:
-        return client.get_channel(channel_id)
-    except Exception as e:
-        logger.error(f"[헬퍼] 채널 가져오기 실패 - 채널 ID: {channel_id}: {e}", exc_info=True)
-        return None
-
-
-def safe_get_guild(client, guild_id: int) -> Optional[discord.Guild]:
-    """안전하게 길드 가져오기"""
-    try:
-        return client.get_guild(guild_id)
-    except Exception as e:
-        logger.error(f"[헬퍼] 길드 가져오기 실패 - 길드 ID: {guild_id}: {e}", exc_info=True)
-        return None
 
 
 def get_next_scrim_date(current_time: datetime = None) -> dict:

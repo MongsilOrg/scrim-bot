@@ -1,27 +1,27 @@
 """봇 이벤트 핸들러"""
 
 import io
+from datetime import datetime
+from typing import List, Optional, Tuple
 
 import discord
 import pandas as pd
 import pytz
 
 from config.logging_config import get_logger
+from config.settings import settings
 from services.score_image_generator import ScoreImageGenerator
 from utils.helpers import get_current_kst_time
 
 logger = get_logger('events')
 
+CSVRow = Tuple[int, pd.DataFrame, str]
+REQUIRED_SCORE_COLUMNS = ['teamName', 'tournament total score', 'tournament kill score', 'gameId']
+
 
 async def on_message(message: discord.Message) -> None:
     """메시지 이벤트 핸들러 (CSV 업로드 시 점수 합산 이미지 생성)"""
-    # 봇 메시지는 무시
-    if message.author.bot:
-        return
-
-    # CSV 첨부가 없으면 패스
-    has_csv = any(att.filename.lower().endswith('.csv') for att in message.attachments)
-    if not has_csv:
+    if not _should_process_message(message):
         return
 
     try:
@@ -30,192 +30,201 @@ async def on_message(message: discord.Message) -> None:
         logger.error(f"[이벤트] CSV 처리 실패: {e}", exc_info=True)
 
 
+def _should_process_message(message: discord.Message) -> bool:
+    """메시지 이벤트 처리 대상인지 확인합니다."""
+    return (not message.author.bot) and _has_csv_attachment(message)
+
+
+def _has_csv_attachment(message: discord.Message) -> bool:
+    """메시지에 CSV 첨부가 있는지 확인합니다."""
+    return any(_is_csv_filename(att.filename) for att in message.attachments)
+
+
+def _is_csv_filename(filename: str) -> bool:
+    return filename.lower().endswith('.csv')
+
+
+def _get_start_of_day_utc(now_kst: datetime) -> datetime:
+    """KST 자정 기준 UTC 시간을 반환합니다."""
+    start_of_day_kst = now_kst.replace(hour=0, minute=0, second=0, microsecond=0)
+    return start_of_day_kst.astimezone(pytz.utc)
+
+
+def _get_group_letter(channel_id: int) -> Optional[str]:
+    """채널 ID로 조 문자를 반환합니다."""
+    for letter, mapped_channel_id in settings.GROUP_CHANNEL_IDS.items():
+        if mapped_channel_id == channel_id:
+            return letter
+    return None
+
+
 async def _process_csv_attachments(message: discord.Message) -> None:
     """오늘 업로드된 모든 CSV를 스캔해 점수를 합산하고 이미지를 전송합니다."""
     channel = message.channel
-    kst_now = get_current_kst_time()
-    start_of_day_kst = kst_now.replace(hour=0, minute=0, second=0, microsecond=0)
-    start_utc = start_of_day_kst.astimezone(pytz.utc)
+    now_kst = get_current_kst_time()
+    start_utc = _get_start_of_day_utc(now_kst)
 
-    # CSV 파일별로 데이터와 gameId 저장
-    csv_data_list = []  # [(gameId, df, attachment_filename), ...]
-    
-    async for msg in channel.history(after=start_utc, oldest_first=True, limit=200):
-        for attachment in msg.attachments:
-            if not attachment.filename.lower().endswith('.csv'):
-                continue
-            try:
-                content = await attachment.read()
-                df = pd.read_csv(io.BytesIO(content))
-                # 컬럼 공백 제거
-                df.columns = [c.strip() for c in df.columns]
-                
-                # 필수 컬럼 확인
-                required_for_calc = ['teamName', 'tournament total score', 'tournament kill score', 'gameId']
-                missing = [c for c in required_for_calc if c not in df.columns]
-                if missing:
-                    logger.warning(f"[이벤트] CSV 필수 컬럼 누락 - 파일: {attachment.filename}, 누락된 컬럼: {missing}")
-                    continue
-                
-                # gameId 추출 (첫 번째 행의 gameId 사용, 모든 행이 같은 gameId를 가짐)
-                game_id = None
-                if 'gameId' in df.columns and len(df) > 0:
-                    game_id_str = str(df.iloc[0]['gameId']).strip()
-                    try:
-                        game_id = int(game_id_str)
-                    except (ValueError, TypeError):
-                        logger.warning(f"[이벤트] gameId 파싱 실패 - 파일: {attachment.filename}, gameId: {game_id_str}")
-                        continue
-                
-                if game_id is None:
-                    logger.warning(f"[이벤트] gameId를 찾을 수 없음 - 파일: {attachment.filename}")
-                    continue
-                
-                csv_data_list.append((game_id, df, attachment.filename))
-            except Exception as e:
-                logger.error(f"[이벤트] CSV 읽기 실패 - 파일: {attachment.filename}: {e}", exc_info=True)
-                continue
-
-    # CSV가 없으면 처리하지 않음
-    if len(csv_data_list) == 0:
+    csv_data_list = await _collect_today_csv_data(channel, start_utc)
+    if not csv_data_list:
         return
 
-    # gameId를 숫자 순으로 정렬 (낮은 순부터)
     csv_data_list.sort(key=lambda x: x[0])
-    
-    # 현재까지의 라운드 수
     current_round_count = len(csv_data_list)
-    
-    # 채널 정보로 조 추출
-    from config.settings import settings
-    group_letter = None
-    for letter, channel_id in settings.GROUP_CHANNEL_IDS.items():
-        if channel_id == channel.id:
-            group_letter = letter
-            break
-    
-    # 날짜 정보
-    date_str = kst_now.strftime('%m월 %d일')
+
+    group_letter = _get_group_letter(channel.id)
     group_info = f"{group_letter}조" if group_letter else "알 수 없음"
-    
-    # 현재까지의 모든 라운드 점수 누적 계산
-    team_max_scores = {}  # {teamName: {'total_score': sum, 'kill_score': sum}}
-    last_csv_df = None
-    
-    for round_num, (game_id, df, filename) in enumerate(csv_data_list, 1):
-        # 수치 컬럼 안전 변환
+    date_str = now_kst.strftime('%m월 %d일')
+
+    team_data, last_csv_df = _aggregate_team_scores(csv_data_list)
+    if not team_data:
+        logger.warning("[이벤트] 처리할 팀 데이터 없음")
+        return
+
+    img_buf = ScoreImageGenerator().generate_score_table_image(team_data)
+    if not img_buf:
+        logger.error("[이벤트] 점수표 이미지 생성 실패", exc_info=True)
+        return
+
+    ban_list = _extract_ban_list(last_csv_df)
+    if group_letter and ban_list:
+        from bot.manager import BotManager
+        BotManager.get_instance().set_ban_list(group_letter, ban_list)
+
+    score_embed = _build_score_embed(current_round_count, group_info, date_str)
+    score_file = discord.File(img_buf, filename='score_table.png')
+    score_embed.set_image(url="attachment://score_table.png")
+    await channel.send(embed=score_embed, file=score_file)
+
+    if current_round_count == 4:
+        gameid_embed = _build_gameid_embed(csv_data_list, group_info, date_str)
+        await channel.send(embed=gameid_embed)
+        await _send_gameid_to_backup_channel(gameid_embed)
+
+
+async def _collect_today_csv_data(channel, start_utc: datetime, limit: int = 200) -> List[CSVRow]:
+    """해당 채널의 오늘 CSV 데이터 목록을 수집합니다."""
+    csv_data_list: List[CSVRow] = []
+    async for msg in channel.history(after=start_utc, oldest_first=True, limit=limit):
+        for attachment in msg.attachments:
+            if not _is_csv_filename(attachment.filename):
+                continue
+            parsed = await _read_and_parse_csv_attachment(attachment)
+            if parsed is not None:
+                csv_data_list.append(parsed)
+    return csv_data_list
+
+
+async def _read_and_parse_csv_attachment(attachment) -> Optional[CSVRow]:
+    """CSV 첨부 파일을 읽어 (game_id, dataframe, filename) 형태로 반환합니다."""
+    try:
+        content = await attachment.read()
+        df = pd.read_csv(io.BytesIO(content))
+        df.columns = [c.strip() for c in df.columns]
+
+        missing_cols = [col for col in REQUIRED_SCORE_COLUMNS if col not in df.columns]
+        if missing_cols:
+            logger.warning(f"[이벤트] CSV 필수 컬럼 누락 - 파일: {attachment.filename}, 누락된 컬럼: {missing_cols}")
+            return None
+
+        game_id = _extract_game_id(df, attachment.filename)
+        if game_id is None:
+            return None
+        return game_id, df, attachment.filename
+    except Exception as e:
+        logger.error(f"[이벤트] CSV 읽기 실패 - 파일: {attachment.filename}: {e}", exc_info=True)
+        return None
+
+
+def _extract_game_id(df: pd.DataFrame, filename: str) -> Optional[int]:
+    """CSV DataFrame에서 gameId를 파싱합니다."""
+    if len(df) == 0:
+        logger.warning(f"[이벤트] gameId를 찾을 수 없음 - 파일: {filename}")
+        return None
+    game_id_str = str(df.iloc[0]['gameId']).strip()
+    try:
+        return int(game_id_str)
+    except (ValueError, TypeError):
+        logger.warning(f"[이벤트] gameId 파싱 실패 - 파일: {filename}, gameId: {game_id_str}")
+        return None
+
+
+def _aggregate_team_scores(csv_data_list: List[CSVRow]) -> Tuple[List[dict], Optional[pd.DataFrame]]:
+    """라운드별 CSV를 누적 집계해 팀 점수표 데이터로 변환합니다."""
+    team_max_scores = {}
+    last_csv_df: Optional[pd.DataFrame] = None
+
+    for _, df, _ in csv_data_list:
+        round_df = df.copy()
         for num_col in ['tournament total score', 'tournament kill score']:
-            df[num_col] = pd.to_numeric(df[num_col], errors='coerce').fillna(0)
-        
-        # 각 라운드에서 팀별 최대값만 추출
-        round_team_max = (
-            df
-            .groupby('teamName', as_index=False)
-            .agg({
-                'tournament total score': 'max',
-                'tournament kill score': 'max'
-            })
-        )
-        
-        # 누적 점수 계산
+            round_df[num_col] = pd.to_numeric(round_df[num_col], errors='coerce').fillna(0)
+
+        round_team_max = round_df.groupby('teamName', as_index=False).agg({
+            'tournament total score': 'max',
+            'tournament kill score': 'max',
+        })
+
         for _, row in round_team_max.iterrows():
             team_name = str(row['teamName'])
             total_score = float(row['tournament total score'])
             kill_score = float(row['tournament kill score'])
-            
+
             if team_name not in team_max_scores:
-                team_max_scores[team_name] = {
-                    'total_score': 0.0,
-                    'kill_score': 0.0
-                }
-            
+                team_max_scores[team_name] = {'total_score': 0.0, 'kill_score': 0.0}
             team_max_scores[team_name]['total_score'] += total_score
             team_max_scores[team_name]['kill_score'] += kill_score
-        
-        last_csv_df = df
 
-    if not team_max_scores:
-        logger.warning("[이벤트] 처리할 팀 데이터 없음")
-        return
+        last_csv_df = round_df
 
-    # 누적 팀별 점수를 리스트로 변환하고 정렬
-    team_data = []
+    team_data: List[dict] = []
     for team_name, scores in team_max_scores.items():
         team_data.append({
             'teamName': team_name,
             'tournament total score': scores['total_score'],
             'tournament kill score': scores['kill_score'],
         })
-    
-    # 총 점수 → 킬 점수 내림차순 정렬
+
     team_data.sort(
         key=lambda x: (x['tournament total score'], x['tournament kill score']),
-        reverse=True
+        reverse=True,
     )
-    
-    # 순위 추가
     for idx, team in enumerate(team_data):
         team['rank'] = idx + 1
 
-    # 누적 점수표 이미지 생성
-    img_buf = ScoreImageGenerator().generate_score_table_image(team_data)
-    if not img_buf:
-        logger.error("[이벤트] 점수표 이미지 생성 실패", exc_info=True)
-        return
+    return team_data, last_csv_df
 
-    # 밴 리스트: 3회 이상 등장한 캐릭터 (마지막 라운드 기준)
-    ban_list = []
-    if last_csv_df is not None and 'character' in last_csv_df.columns:
-        char_counts = (
-            last_csv_df['character']
-            .fillna('')
-            .astype(str)
-            .value_counts()
-        )
-        ban_candidates = char_counts[char_counts >= 3]
-        ban_list = list(ban_candidates.index)
 
-    # 밴 리스트를 BotManager에 저장 (방코드 공지에서 사용)
-    if group_letter and ban_list:
-        from bot.manager import BotManager
-        BotManager.get_instance().set_ban_list(group_letter, ban_list)
+def _extract_ban_list(last_csv_df: Optional[pd.DataFrame]) -> List[str]:
+    """마지막 라운드 기준 밴 리스트를 추출합니다."""
+    if last_csv_df is None or 'character' not in last_csv_df.columns:
+        return []
+    char_counts = last_csv_df['character'].fillna('').astype(str).value_counts()
+    return list(char_counts[char_counts >= 3].index)
 
-    # 누적 점수표 임베드 생성
+
+def _build_score_embed(current_round_count: int, group_info: str, date_str: str) -> discord.Embed:
     title = f"📊 스크림 결과 - {current_round_count}R - {group_info} {date_str}"
+    return discord.Embed(title=title, color=discord.Color.blue())
 
-    embed = discord.Embed(
-        title=title,
-        color=discord.Color.blue()
+
+def _build_gameid_embed(csv_data_list: List[CSVRow], group_info: str, date_str: str) -> discord.Embed:
+    lines = [f"**{round_num}R**: `{game_id}`" for round_num, (game_id, _, _) in enumerate(csv_data_list, 1)]
+    return discord.Embed(
+        title=f"🎮 GameId 정보 - {group_info} {date_str}",
+        description="\n".join(lines),
+        color=discord.Color.blue(),
     )
 
-    file = discord.File(img_buf, filename='score_table.png')
-    embed.set_image(url="attachment://score_table.png")
 
-    # 조별 채널에 누적 점수표 전송
-    await channel.send(embed=embed, file=file)
-    
-    # 4번째 CSV일 때만 gameId embed 전송
-    if current_round_count == 4:
-        gameid_info_lines = []
-        for round_num, (game_id, df, filename) in enumerate(csv_data_list, 1):
-            gameid_info_lines.append(f"**{round_num}R**: `{game_id}`")
-        
-        gameid_embed = discord.Embed(
-            title=f"🎮 GameId 정보 - {group_info} {date_str}",
-            description="\n".join(gameid_info_lines),
-            color=discord.Color.blue()
-        )
-        
-        # 조별 채널에 gameId embed 전송
-        await channel.send(embed=gameid_embed)
-        
-        # 백업 채널에도 gameId embed 전송
-        try:
-            from bot.manager import BotManager
-            client = BotManager.get_instance().get_client()
-            if client:
-                backup_channel = client.get_channel(settings.BACKUP_ANALYSIS_CHANNEL_ID)
-                if backup_channel:
-                    await backup_channel.send(embed=gameid_embed)
-        except Exception as e:
-            logger.error(f"[이벤트] 백업 채널 전송 실패: {e}", exc_info=True)
+async def _send_gameid_to_backup_channel(gameid_embed: discord.Embed) -> None:
+    """백업 채널로 gameId 임베드를 전송합니다."""
+    try:
+        from bot.manager import BotManager
+
+        client = BotManager.get_instance().get_client()
+        if not client:
+            return
+        backup_channel = client.get_channel(settings.BACKUP_ANALYSIS_CHANNEL_ID)
+        if backup_channel:
+            await backup_channel.send(embed=gameid_embed)
+    except Exception as e:
+        logger.error(f"[이벤트] 백업 채널 전송 실패: {e}", exc_info=True)

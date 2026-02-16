@@ -75,7 +75,7 @@ async def 스크림(interaction: discord.Interaction) -> None:
         )
         
         # 스크림 임베드 생성
-        embed = _create_scrim_embed(scrim_day, scrim_month, scrim_weekday, date_info)
+        embed = _create_scrim_embed(scrim_day, scrim_month, scrim_weekday)
 
         # 팀 입력 뷰 생성
         view = TeamInputView(embed)
@@ -105,7 +105,7 @@ async def 스크림(interaction: discord.Interaction) -> None:
 
 
 
-def _create_scrim_embed(day: int, month: int, weekday: str, date_info: dict = None) -> Embed:
+def _create_scrim_embed(day: int, month: int, weekday: str) -> Embed:
     """스크림 임베드를 생성합니다"""
     title = f"🏆 스크림 참가 신청 - {month}/{day} ({weekday})"
 
@@ -125,7 +125,7 @@ def _create_scrim_embed(day: int, month: int, weekday: str, date_info: dict = No
     bot_manager = BotManager.get_instance()
     tdm = bot_manager.get_team_data_manager()
     team_count = len(tdm.teams) if tdm else 0
-    total_teams, num_groups, spare_teams = tdm.get_team_counts() if tdm else (0, 0, 0)
+    _, num_groups, spare_teams = tdm.get_team_counts() if tdm else (0, 0, 0)
 
     status_lines = [f"• 신청 팀: **{team_count}**팀"]
     if num_groups > 0:

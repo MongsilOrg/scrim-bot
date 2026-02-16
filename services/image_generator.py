@@ -9,7 +9,6 @@ import imgkit
 import pandas as pd
 
 from config.logging_config import get_logger
-from config.settings import settings
 
 logger = get_logger('image_generator')
 
