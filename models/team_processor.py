@@ -419,31 +419,31 @@ class TeamProcessor:
             # 일반 계정과 테스트 계정이 섞인 경우 또는 일반 계정만 있는 경우
             try:
                 async with BSERAPIClient() as api_client:
-                    mmr_list = []
-                    for player in players:
+                    # 플레이어별 MMR 조회를 병렬로 수행
+                    async def _fetch_player_mmr(player: str) -> Optional[float]:
                         try:
-                            # 테스트 계정인 경우 구글시트에서 가져오기
                             if self._is_test_account(player):
                                 mmr = self._get_test_account_mmr(player)
                                 if mmr and mmr > 0:
-                                    mmr_list.append(mmr)
-                                else:
-                                    logger.warning(f"[MMR조회] 테스트 계정 MMR 조회 실패 또는 0 - 플레이어: {player}, MMR: {mmr}")
-                            else:
-                                # 일반 계정인 경우 API에서 조회
-                                uid = await api_client.get_user_uid(player)
-                                if uid:
-                                    mmr = await api_client.get_user_mmr(uid)
-                                    if mmr and mmr > 0:
-                                        mmr_list.append(mmr)
-                                    else:
-                                        logger.warning(f"[MMR조회] 플레이어 MMR 조회 실패 또는 0 - 플레이어: {player}, UID: {uid}, MMR: {mmr}")
-                                else:
-                                    logger.warning(f"[MMR조회] 플레이어 UID 조회 실패 - 플레이어: {player}")
+                                    return mmr
+                                logger.warning(f"[MMR조회] 테스트 계정 MMR 조회 실패 또는 0 - 플레이어: {player}, MMR: {mmr}")
+                                return None
+                            uid = await api_client.get_user_uid(player)
+                            if not uid:
+                                logger.warning(f"[MMR조회] 플레이어 UID 조회 실패 - 플레이어: {player}")
+                                return None
+                            mmr = await api_client.get_user_mmr(uid)
+                            if mmr and mmr > 0:
+                                return mmr
+                            logger.warning(f"[MMR조회] 플레이어 MMR 조회 실패 또는 0 - 플레이어: {player}, UID: {uid}, MMR: {mmr}")
+                            return None
                         except Exception as e:
                             logger.warning(f"[MMR조회] 플레이어 MMR 조회 실패 - 플레이어: {player}: {e}")
-                            continue
-                    
+                            return None
+
+                    results = await asyncio.gather(*[_fetch_player_mmr(p) for p in players])
+                    mmr_list = [m for m in results if m is not None]
+
                     if mmr_list:
                         # 상위 3명의 MMR 추출
                         top_3_mmr = heapq.nlargest(3, mmr_list)
@@ -451,13 +451,13 @@ class TeamProcessor:
                     else:
                         logger.warning(f"[MMR조회] 팀의 모든 플레이어 MMR 조회 실패 - 팀명: {team_name}, 플레이어: {players}")
                         avg_mmr = 0.0
-                    
+
                     # TeamData 객체에 MMR 저장 (dict인 경우 처리)
                     if isinstance(team_data, dict):
                         team_data['mmr'] = avg_mmr
                     else:
                         team_data.mmr = avg_mmr
-                    
+
                     return team_name, team_data, avg_mmr
             except Exception as e:
                 logger.error(f"[MMR조회] API 클라이언트 사용 실패: {e}", exc_info=True)

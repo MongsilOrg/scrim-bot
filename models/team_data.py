@@ -14,6 +14,7 @@ class TeamData:
     staff: List[str] = field(default_factory=list)
     user_id: Optional[str] = None
     mmr: float = 0.0
+    mmr_updated_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     
@@ -81,22 +82,25 @@ class TeamData:
         return member in self.all_members
     
     def to_dict(self) -> Dict:
-        """딕셔너리로 변환 (기존 호환성)"""
+        """딕셔너리로 변환 (백업/직렬화 포함)"""
         return {
             'players': self.players,
             'staff': self.staff,
-            'user_id': self.user_id
+            'user_id': self.user_id,
+            'mmr': self.mmr
         }
-    
+
     @classmethod
     def from_dict(cls, name: str, data: Dict) -> 'TeamData':
         """딕셔너리에서 생성"""
-        return cls(
+        team = cls(
             name=name,
             players=data.get('players', []),
             staff=data.get('staff', []),
             user_id=data.get('user_id')
         )
+        team.mmr = data.get('mmr', 0.0)
+        return team
     
     def __str__(self) -> str:
         return f"TeamData(name='{self.name}', players={len(self.players)}, staff={len(self.staff)}, mmr={self.mmr:.2f})"

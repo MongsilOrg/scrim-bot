@@ -282,26 +282,25 @@ class BSERAPIClient:
             return None
     
     async def get_user_mmr(self, uid: str) -> Optional[float]:
-        """사용자 MMR 조회"""
+        """사용자 MMR 조회
+
+        Returns:
+            float: MMR 값 (0.0 포함, 랭크 데이터가 없는 정상 케이스)
+            None: API 오류, 네트워크 오류 등 조회 실패
+        """
         try:
             rank_data = await self.get_user_rank(uid)
-            if rank_data and isinstance(rank_data, dict) and rank_data.get("userRank"):
+            if rank_data is None:
+                # API 오류 또는 네트워크 오류 → None 반환
+                return None
+            if isinstance(rank_data, dict) and rank_data.get("userRank"):
                 user_rank = rank_data["userRank"]
                 if isinstance(user_rank, dict):
-                    mmr = user_rank.get("mmr", 0.0)
-                else:
-                    # userRank가 dict가 아닌 경우 (예: 객체)
-                    mmr = getattr(user_rank, "mmr", 0.0) if hasattr(user_rank, "mmr") else 0.0
-                
-                # MMR 0은 정상적인 경우일 수 있으므로 로그 제거
-                return mmr
-            else:
-                logger.warning(f"[API] rank_data가 None이거나 userRank가 없음 - UID: {uid}")
+                    return user_rank.get("mmr", 0.0)
+                return getattr(user_rank, "mmr", 0.0) if hasattr(user_rank, "mmr") else 0.0
+            logger.warning(f"[API] rank_data에 userRank가 없음 - UID: {uid}")
             return 0.0
-            
-        except AttributeError as e:
-            logger.error(f"[API] 사용자 MMR 조회 속성 오류 - UID: {uid}: {e}", exc_info=True)
-            return 0.0
+
         except Exception as e:
             logger.error(f"[API] 사용자 MMR 조회 실패 - UID: {uid}: {e}", exc_info=True)
-            return 0.0
+            return None

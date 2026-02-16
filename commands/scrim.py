@@ -8,7 +8,7 @@ from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
 from ui.views import TeamInputView
-from utils.helpers import get_current_kst_time, get_next_scrim_date
+from utils.helpers import get_current_kst_time, get_next_scrim_date, is_admin
 
 logger = get_logger('scrim')
 
@@ -17,7 +17,7 @@ async def 스크림(interaction: discord.Interaction) -> None:
     """스크림 명령어 처리"""
     try:
         # 관리자 권한 확인
-        if not _is_admin(interaction.user):
+        if not is_admin(interaction.user):
             await _send_error_message(interaction, "관리자 권한이 없습니다.")
             return
         
@@ -101,11 +101,6 @@ def _create_scrim_embed(day: int, month: int, weekday: str, date_info: dict = No
     embed.set_footer(text="ER Scrim", icon_url=settings.THUMBNAIL_URL)
 
     return embed
-
-
-def _is_admin(user: discord.Member) -> bool:
-    """사용자가 관리자인지 확인합니다"""
-    return any(role.id in settings.ADMIN_ROLE_IDS for role in user.roles)
 
 
 async def _send_error_message(interaction: discord.Interaction, message: str) -> None:

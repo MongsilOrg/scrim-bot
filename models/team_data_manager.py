@@ -1,9 +1,11 @@
 """팀 데이터 관리 모델
 
 스크림 팀 등록, 취소, MMR 관리, 조편성 등의 핵심 기능을 담당합니다.
-메모리 기반으로 팀 데이터를 관리하며 자동 조편성과 MMR 업데이트를 수행합니다.
+메모리 기반으로 팀 데이터를 관리하며, JSON 백업을 통해 크래시 복구를 지원합니다.
 """
 import asyncio
+import json
+import os
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
@@ -30,8 +32,11 @@ class TeamDataManager:
     CSV 파일과 사용자 등록 팀을 통합 관리하며, 자동 조편성 및 MMR 업데이트를 수행합니다.
     """
     
+    BACKUP_FILE = os.getenv('TEAM_BACKUP_PATH', 'data/teams_backup.json')
+
     def __init__(self, client=None):
         self.client = client  # 클라이언트 참조 저장
+        self._teams_lock = asyncio.Lock()  # 팀 데이터 동시 수정 방지
         self.teams: Dict[str, TeamData] = {}  # 새로운 TeamData 구조 사용
         self.user_teams: Dict[str, str] = {}  # 사용자 ID -> 팀명 매핑 (O(1) 탐색)
         self.team_by_member: Dict[str, str] = {}  # 멤버명 -> 팀명 매핑 (O(1) 탐색)
@@ -47,6 +52,112 @@ class TeamDataManager:
         self.additional_mmr_messages: List[discord.Message] = []
         self.scrim_channel_id: Optional[int] = None  # 스크림 명령어가 실행된 채널 ID
     
+    def _save_backup(self) -> None:
+        """팀 데이터를 JSON 파일로 백업합니다 (날짜 메타데이터 포함)."""
+        try:
+            backup_dir = os.path.dirname(self.BACKUP_FILE)
+            if backup_dir:
+                os.makedirs(backup_dir, exist_ok=True)
+            data = {
+                '_meta': {
+                    'scrim_day': self.scrim_day,
+                    'scrim_month': self.scrim_month,
+                    'scrim_channel_id': self.scrim_channel_id,
+                    'is_team_assignment_started': self.is_team_assignment_started,
+                },
+                'teams': {
+                    name: team.to_dict()
+                    for name, team in self.teams.items()
+                }
+            }
+            with open(self.BACKUP_FILE, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"[팀데이터] 백업 저장 실패: {e}", exc_info=True)
+
+    def load_backup(self) -> bool:
+        """JSON 백업에서 팀 데이터를 복구합니다. 성공 시 True 반환."""
+        try:
+            if not os.path.exists(self.BACKUP_FILE):
+                return False
+            with open(self.BACKUP_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if not data:
+                return False
+
+            # 메타데이터가 있는 새 형식과 레거시 형식 모두 지원
+            if '_meta' in data:
+                meta = data['_meta']
+                teams_data = data.get('teams', {})
+                self.scrim_day = meta.get('scrim_day')
+                self.scrim_month = meta.get('scrim_month')
+                self.scrim_channel_id = meta.get('scrim_channel_id')
+                self.is_team_assignment_started = meta.get('is_team_assignment_started', False)
+            else:
+                # 레거시 형식: 메타데이터 없이 팀 데이터만 저장
+                teams_data = data
+
+            if not teams_data:
+                return False
+
+            for name, team_dict in teams_data.items():
+                team = TeamData.from_dict(name, team_dict)
+                self.teams[name] = team
+                self._add_member_index(name, team)
+                self._update_mmr_index(name, 0.0, team.mmr)
+                for member in team.all_members:
+                    key = self._normalize_member_key(member)
+                    self.user_teams[key] = name
+            logger.info(
+                f"[팀데이터] 백업에서 {len(teams_data)}개 팀 복구 완료 "
+                f"(스크림 날짜: {self.scrim_month}/{self.scrim_day})"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"[팀데이터] 백업 복구 실패: {e}", exc_info=True)
+            return False
+
+    def should_restore_backup(self) -> bool:
+        """백업 파일이 유효한지 (날짜 만료되지 않았는지) 확인합니다.
+
+        스크림 날짜 당일까지 유효합니다.
+        예: scrim_day=17이면 17일 23:59까지 유효, 18일 00:00부터 만료.
+        """
+        try:
+            if not os.path.exists(self.BACKUP_FILE):
+                return False
+            with open(self.BACKUP_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            meta = data.get('_meta')
+            if not meta:
+                # 레거시 백업: 날짜 정보가 없으므로 복구하지 않음
+                return False
+            scrim_day = meta.get('scrim_day')
+            scrim_month = meta.get('scrim_month')
+            if not scrim_day or not scrim_month:
+                return False
+            current_time = get_current_kst_time()
+            # 스크림 날짜 당일까지 유효
+            if current_time.month == scrim_month and current_time.day == scrim_day:
+                return True
+            # 만료됨
+            logger.info(
+                f"[팀데이터] 백업 만료 - 스크림 날짜: {scrim_month}/{scrim_day}, "
+                f"현재: {current_time.month}/{current_time.day}"
+            )
+            return False
+        except Exception as e:
+            logger.error(f"[팀데이터] 백업 유효성 검사 실패: {e}", exc_info=True)
+            return False
+
+    def clear_backup(self) -> None:
+        """백업 파일을 삭제합니다."""
+        try:
+            if os.path.exists(self.BACKUP_FILE):
+                os.remove(self.BACKUP_FILE)
+        except Exception as e:
+            logger.error(f"[팀데이터] 백업 삭제 실패: {e}", exc_info=True)
+
     def _update_member_index(self, team_name: str, team: TeamData) -> None:
         """멤버 인덱스를 업데이트합니다."""
         self._remove_member_index(team_name, team)
@@ -120,6 +231,7 @@ class TeamDataManager:
             self.scrim_day = None
             self.scrim_month = None
 
+            self.clear_backup()
             self.log_state_snapshot(prefix="reset")
             logger.info("[팀데이터] 초기화 완료")
         except Exception as e:
@@ -363,10 +475,6 @@ class TeamDataManager:
         except Exception as e:
             logger.error(f"[팀데이터] 로그 기록 실패: {e}", exc_info=True)
 
-    def is_admin(self, user: discord.Member) -> bool:
-        """사용자가 관리자인지 확인합니다."""
-        return any(role.id in settings.ADMIN_ROLE_IDS for role in user.roles)
-
     async def add_team(
         self,
         team_name: str,
@@ -375,7 +483,7 @@ class TeamDataManager:
         allow_admin_override: bool = False
     ) -> Tuple[bool, str]:
         """팀을 추가합니다.
-        
+
         Returns:
             (성공 여부, 실패 사유 또는 빈 문자열)
         """
@@ -393,7 +501,7 @@ class TeamDataManager:
                 team = TeamData(name=team_name, players=team_data, staff=[])
             else:
                 raise TypeError(f"지원하지 않는 팀 데이터 형식: {type(team_data)}")
-            
+
             # 팀 등록 가능 여부 확인 (새 팀 멤버 포함)
             current_time = get_current_kst_time()
             is_allowed, reason = await self.check_team_registration_allowed(
@@ -401,57 +509,60 @@ class TeamDataManager:
                 new_team=team,
                 allow_admin_override=allow_admin_override
             )
-            
+
             if not is_allowed:
                 return False, reason
-            
-            team.user_id = str(user.id)
-            self.teams[team_name] = team
-            
-            # 인덱스 업데이트
-            self._update_member_index(team_name, team)
-            self._update_mmr_index(team_name, 0.0, team.mmr)
-            
-            # 사용자-팀 매핑 업데이트
-            for member in team.all_members:
-                key = self._normalize_member_key(member)
-                self.user_teams[key] = team_name
-            
+
+            async with self._teams_lock:
+                team.user_id = str(user.id)
+                self.teams[team_name] = team
+
+                # 인덱스 업데이트
+                self._update_member_index(team_name, team)
+                self._update_mmr_index(team_name, 0.0, team.mmr)
+
+                # 사용자-팀 매핑 업데이트
+                for member in team.all_members:
+                    key = self._normalize_member_key(member)
+                    self.user_teams[key] = team_name
+
+            self._save_backup()
             return True, ""
-            
+
         except Exception as e:
             logger.error(f"[팀데이터] 팀 추가 실패: {e}", exc_info=True)
             return False, f"팀 추가 중 오류가 발생했습니다: {str(e)}"
 
     async def remove_team(self, team_name: str) -> Tuple[bool, str]:
         """팀을 제거합니다.
-        
+
         Returns:
             Tuple[bool, str]: (성공 여부, 실패 사유 또는 빈 문자열)
         """
         try:
-            # 조편성 체크는 호출하는 쪽에서 이미 수행하므로 여기서는 제거
-            # 팀 존재 확인
-            if team_name not in self.teams:
-                return False, "등록되지 않은 팀명입니다. / Team name not registered."
-            
-            team = self.teams[team_name]
-            
-            # 인덱스에서 제거
-            self._remove_member_index(team_name, team)
-            self._update_mmr_index(team_name, team.mmr, 0.0)
-            
-            # 사용자-팀 매핑에서 제거
-            for member in team.all_members:
-                key = self._normalize_member_key(member)
-                if key in self.user_teams:
-                    del self.user_teams[key]
-            
-            # 팀 데이터 제거
-            del self.teams[team_name]
-            
+            async with self._teams_lock:
+                # 팀 존재 확인
+                if team_name not in self.teams:
+                    return False, "등록되지 않은 팀명입니다. / Team name not registered."
+
+                team = self.teams[team_name]
+
+                # 인덱스에서 제거
+                self._remove_member_index(team_name, team)
+                self._update_mmr_index(team_name, team.mmr, 0.0)
+
+                # 사용자-팀 매핑에서 제거
+                for member in team.all_members:
+                    key = self._normalize_member_key(member)
+                    if key in self.user_teams:
+                        del self.user_teams[key]
+
+                # 팀 데이터 제거
+                del self.teams[team_name]
+
+            self._save_backup()
             return True, ""
-            
+
         except Exception as e:
             logger.error(f"[팀데이터] 팀 제거 실패: {e}", exc_info=True)
             return False, f"팀 제거 중 오류가 발생했습니다: {str(e)}"
@@ -469,39 +580,43 @@ class TeamDataManager:
         team = self.teams.get(team_name)
         return team.mmr if team else None
     
-    def set_team_mmr(self, team_name: str, mmr: float) -> None:
+    async def set_team_mmr(self, team_name: str, mmr: float) -> None:
         """팀의 평균 MMR을 설정합니다."""
-        team = self.teams.get(team_name)
-        if team:
-            old_mmr = team.mmr
-            team.mmr = mmr
-            # MMR 인덱스 업데이트
-            self._update_mmr_index(team_name, old_mmr, mmr)
+        async with self._teams_lock:
+            team = self.teams.get(team_name)
+            if team:
+                old_mmr = team.mmr
+                team.mmr = mmr
+                team.mmr_updated_at = get_current_kst_time()
+                # MMR 인덱스 업데이트
+                self._update_mmr_index(team_name, old_mmr, mmr)
 
     def get_logs(self) -> Dict[str, List]:
         """로그를 가져옵니다."""
         return self.logs.copy()
 
-    def replace_team(self, old_team_name: str, new_team: TeamData, new_mmr: float) -> None:
+    async def replace_team(self, old_team_name: str, new_team: TeamData, new_mmr: float) -> None:
         """기존 팀을 새 팀으로 교체하며 인덱스·MMR 정보를 일관되게 갱신합니다."""
-        # 기존 팀 제거
-        if old_team_name in self.teams:
-            old_team = self.teams[old_team_name]
-            self._remove_member_index(old_team_name, old_team)
-            self._update_mmr_index(old_team_name, old_team.mmr, 0.0)
-            for member in old_team.all_members:
-                key = self._normalize_member_key(member)
-                self.user_teams.pop(key, None)
-            del self.teams[old_team_name]
+        async with self._teams_lock:
+            # 기존 팀 제거
+            if old_team_name in self.teams:
+                old_team = self.teams[old_team_name]
+                self._remove_member_index(old_team_name, old_team)
+                self._update_mmr_index(old_team_name, old_team.mmr, 0.0)
+                for member in old_team.all_members:
+                    key = self._normalize_member_key(member)
+                    self.user_teams.pop(key, None)
+                del self.teams[old_team_name]
 
-        # 새 팀 추가
-        self.teams[new_team.name] = new_team
-        new_team.mmr = new_mmr
-        self._add_member_index(new_team.name, new_team)
-        self._update_mmr_index(new_team.name, 0.0, new_mmr)
-        for member in new_team.all_members:
-            key = self._normalize_member_key(member)
-            self.user_teams[key] = new_team.name
+            # 새 팀 추가
+            self.teams[new_team.name] = new_team
+            new_team.mmr = new_mmr
+            self._add_member_index(new_team.name, new_team)
+            self._update_mmr_index(new_team.name, 0.0, new_mmr)
+            for member in new_team.all_members:
+                key = self._normalize_member_key(member)
+                self.user_teams[key] = new_team.name
+        self._save_backup()
 
     def set_scrim_date(self, day: int, month: int) -> None:
         """스크림 날짜를 설정합니다."""
@@ -837,25 +952,38 @@ class TeamDataManager:
             asyncio.create_task(team_data_manager.mmr_update_loop())
     
     async def _update_all_team_mmr(self) -> None:
-        """모든 팀의 MMR을 갱신합니다."""
+        """모든 팀의 MMR을 갱신합니다 (최근 10분 이내 갱신된 팀은 스킵)."""
         try:
             # ✅ BotManager에서 싱글톤 TeamProcessor 가져오기
             from bot.manager import BotManager
 
             team_processor = BotManager.get_instance().get_team_processor()
-            
+
+            current_time = get_current_kst_time()
+            skipped = 0
+
             # 딕셔너리 순회 중 변경을 방지하기 위해 복사본 사용
             teams_copy = dict(self.teams)
             for team_name, team_data in teams_copy.items():
                 try:
+                    # 최근 10분 이내 갱신된 팀은 스킵
+                    if team_data.mmr_updated_at:
+                        elapsed = (current_time - team_data.mmr_updated_at).total_seconds()
+                        if elapsed < 600:  # 10분 = 600초
+                            skipped += 1
+                            continue
+
                     # MMR 계산
                     _, _, team_mmr = await team_processor.fetch_team_mmr(team_name, team_data)
-                    self.set_team_mmr(team_name, team_mmr)
-                    
+                    await self.set_team_mmr(team_name, team_mmr)
+
                 except Exception as e:
                     logger.error(f"[MMR갱신] 팀 MMR 갱신 실패 - 팀명: {team_name}: {e}", exc_info=True)
                     continue
-                    
+
+            if skipped > 0:
+                logger.debug(f"[MMR갱신] {skipped}개 팀 캐시 히트 (10분 이내 갱신됨)")
+
         except Exception as e:
             logger.error(f"[MMR갱신] 전체 팀 MMR 갱신 실패: {e}", exc_info=True)
     def check_duplicate_with_bot_teams(self, team_name: str, team_members: List[str], exclude_team: str = None) -> Tuple[bool, str]:
@@ -887,12 +1015,13 @@ class TeamDataManager:
                 # 팀원 중복 검사 (대소문자 구별 없이)
                 duplicate_members = set(normalized_new_members) & set(normalized_existing_members)
                 if duplicate_members:
-                    # 원본 닉네임으로 중복된 멤버 찾기
-                    original_duplicates = []
+                    # 원본 닉네임 + 소속 팀명으로 중복 상세 표시
+                    duplicate_details = []
                     for new_member in team_members:
                         if normalize_nickname_for_comparison(new_member) in duplicate_members:
-                            original_duplicates.append(new_member)
-                    return False, f"이미 등록된 팀원과 중복됩니다: {', '.join(original_duplicates)}"
+                            duplicate_details.append(f"• {new_member} → {existing_team_name}")
+                    detail_str = "\n".join(duplicate_details)
+                    return False, f"❌ 이미 등록된 팀원이 있어요.\n{detail_str}"
             
             return True, ""  # 중복 없음
             

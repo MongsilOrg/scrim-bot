@@ -1,6 +1,7 @@
 """
 Discord View 컴포넌트들
 """
+import time
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 import io
 import csv
@@ -15,8 +16,51 @@ from config.settings import settings
 from models.team_data_manager import TeamDataManager
 from models.team_processor import TeamProcessor
 from services.bser_api import BSERAPIClient
-from utils.helpers import get_current_kst_time
+from utils.helpers import get_current_kst_time, is_admin
 from utils.validators import validate_team_name
+
+# 버튼 cooldown 관리 (사용자별 마지막 클릭 시간)
+_button_cooldowns: Dict[int, float] = {}
+BUTTON_COOLDOWN_SECONDS = 3
+
+
+async def send_error_message(interaction: discord.Interaction, message: str) -> None:
+    """에러 메시지를 전송하는 공통 유틸리티 함수"""
+    try:
+        error_embed = Embed(
+            title="스크림 안내",
+            description=message,
+            color=Color.red()
+        )
+        if not interaction.response.is_done():
+            await interaction.response.send_message(embed=error_embed, ephemeral=True)
+        else:
+            await interaction.followup.send(embed=error_embed, ephemeral=True)
+    except Exception as e:
+        logger.error(f"[뷰] 에러 메시지 전송 실패: {e}", exc_info=True)
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"오류: {message}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"오류: {message}", ephemeral=True)
+        except Exception:
+            pass
+
+
+async def _check_cooldown(interaction: discord.Interaction) -> bool:
+    """버튼 cooldown을 확인합니다. True면 cooldown 중이므로 무시해야 합니다."""
+    user_id = interaction.user.id
+    now = time.monotonic()
+    last_click = _button_cooldowns.get(user_id, 0)
+    if now - last_click < BUTTON_COOLDOWN_SECONDS:
+        remaining = BUTTON_COOLDOWN_SECONDS - (now - last_click)
+        await interaction.response.send_message(
+            f"⏳ 잠시 후 다시 시도해주세요. ({remaining:.0f}초)",
+            ephemeral=True
+        )
+        return True
+    _button_cooldowns[user_id] = now
+    return False
 
 if TYPE_CHECKING:
     from .modals import TeamModal
@@ -66,13 +110,15 @@ class TeamInputView(View):
     
     async def add_team_callback(self, interaction: discord.Interaction) -> None:
         """팀 추가 버튼 콜백 (기존 팀이 있으면 수정 모달 표시)"""
+        if await _check_cooldown(interaction):
+            return
         try:
             # 전역 team_data_manager 인스턴스 사용 (순환 참조 방지)
             team_data_manager = BotManager.get_instance().get_team_data_manager()
             
             # 조편성 시작 이후인지 확인
             if team_data_manager.is_team_assignment_started:
-                await self._send_error_message(interaction, "조 편성이 이미 시작되어 팀 등록이 불가능합니다.")
+                await self._send_error_message(interaction, "조 편성이 이미 시작되어 팀 등록이 불가능해요.")
                 return
             
             # 기존 등록된 팀이 있는지 확인 (취소 버튼과 동일한 로직)
@@ -98,14 +144,16 @@ class TeamInputView(View):
                 if not interaction.response.is_done():
                     await interaction.response.send_modal(TeamModal(self, interaction.user))
                 else:
-                    await interaction.followup.send("모달을 표시할 수 없습니다. 새로 시도해주세요.", ephemeral=True)
+                    await interaction.followup.send("모달을 표시할 수 없습니다. 다시 시도해주세요.", ephemeral=True)
 
         except Exception as e:
             logger.error(f"[뷰] 팀 추가 콜백 처리 실패: {e}", exc_info=True)
-            await self._send_error_message(interaction, "팀 추가 중 오류가 발생했습니다.")
+            await self._send_error_message(interaction, "팀 추가 중 오류가 발생했어요.")
     
     async def cancel_team_callback(self, interaction: discord.Interaction) -> None:
         """팀 취소 버튼 콜백 (신청자 ID 또는 닉네임 기반)"""
+        if await _check_cooldown(interaction):
+            return
         try:
             # 전역 team_data_manager 인스턴스 사용 (순환 참조 방지)
             team_data_manager = BotManager.get_instance().get_team_data_manager()
@@ -125,15 +173,48 @@ class TeamInputView(View):
                 user_team = self._find_team_by_nickname(team_data_manager, user_nickname)
             
             if not user_team:
-                await self._send_error_message(interaction, "등록한 팀이 없습니다.")
+                await self._send_error_message(interaction, "등록한 팀이 없어요.")
                 return
 
-            # 팀 취소 처리
-            await self._process_team_cancellation(interaction, user_team)
+            # 팀 정보 가져오기
+            team_data = team_data_manager.get_team_data(user_team)
+            team_mmr = team_data_manager.get_team_mmr(user_team) or 0.0
+
+            players = []
+            staff = []
+            if team_data:
+                if isinstance(team_data, dict):
+                    players = team_data.get('players', [])
+                    staff = team_data.get('staff', [])
+                else:
+                    players = getattr(team_data, 'players', [])
+                    staff = getattr(team_data, 'staff', [])
+
+            # 확인 Embed 생성
+            confirm_embed = Embed(
+                title="🚫 팀 등록 취소 확인",
+                description=f"**{user_team}** 팀의 등록을 취소하시겠습니까?",
+                color=Color.orange()
+            )
+            members_str = ', '.join(players) if players else '(없음)'
+            staff_str = ', '.join(staff) if staff else '(없음)'
+            confirm_embed.add_field(name="선수", value=members_str, inline=False)
+            if staff:
+                confirm_embed.add_field(name="스태프", value=staff_str, inline=False)
+            confirm_embed.add_field(name="MMR", value=f"{team_mmr:.2f}", inline=True)
+
+            # 확인 View 표시
+            confirm_view = CancelConfirmView(self, user_team)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(embed=confirm_embed, view=confirm_view, ephemeral=True)
+                confirm_view.message = await interaction.original_response()
+            else:
+                msg = await interaction.followup.send(embed=confirm_embed, view=confirm_view, ephemeral=True, wait=True)
+                confirm_view.message = msg
 
         except Exception as e:
             logger.error(f"[뷰] 팀 취소 콜백 처리 실패: {e}", exc_info=True)
-            await self._send_error_message(interaction, "팀 취소 중 오류가 발생했습니다.")
+            await self._send_error_message(interaction, "팀 취소 중 오류가 발생했어요.")
     
     def _find_team_by_nickname(self, team_data_manager, nickname: str) -> str:
         """닉네임으로 팀을 찾는 헬퍼 메서드 (대소문자 구별 없이)"""
@@ -175,7 +256,7 @@ class TeamInputView(View):
             # 팀 데이터 가져오기
             team_data = team_data_manager.get_team_data(team_name)
             if not team_data:
-                await self._send_error_message(interaction, "팀 정보를 찾을 수 없습니다.")
+                await self._send_error_message(interaction, "팀 정보를 찾을 수 없어요.")
                 return
 
             # MMR 정보 가져오기
@@ -193,16 +274,16 @@ class TeamInputView(View):
 
         except Exception as e:
             logger.error(f"[뷰] 팀 수정 모달 표시 실패: {e}", exc_info=True)
-            await self._send_error_message(interaction, "팀 수정 모달 표시 중 오류가 발생했습니다.")
+            await self._send_error_message(interaction, "팀 수정 모달 표시 중 오류가 발생했어요.")
     
     async def admin_log_callback(self, interaction: discord.Interaction) -> None:
         """관리자 로그 버튼 콜백"""
         try:
             # 관리자 권한 확인
-            if not self._is_admin(interaction.user):
+            if not is_admin(interaction.user):
                 error_embed = Embed(
                     title="스크림 안내",
-                    description="관리자 권한이 없습니다.",
+                    description="관리자 권한이 없어요.",
                     color=Color.red()
                 )
                 # 상호작용이 이미 응답되었는지 확인
@@ -212,7 +293,7 @@ class TeamInputView(View):
                     # 이미 응답된 경우 followup으로 전송
                     await interaction.followup.send(embed=error_embed, ephemeral=True)
                 return
-            
+
             # 로그 임베드 생성 및 길이 확인
             log_embed = self._create_log_embed()
             
@@ -237,7 +318,7 @@ class TeamInputView(View):
             
         except Exception as e:
             logger.error(f"[뷰] 관리자 로그 콜백 처리 실패: {e}", exc_info=True)
-            await self._send_error_message(interaction, "로그 조회 중 오류가 발생했습니다.")
+            await self._send_error_message(interaction, "로그 조회 중 오류가 발생했어요.")
     
     async def _process_team_registration(self, interaction: discord.Interaction, team_name: str, team_data: dict, temp_message: discord.Message = None) -> None:
         """팀 등록 처리"""
@@ -251,9 +332,9 @@ class TeamInputView(View):
             # 조편성 시작 이후인지 확인
             if team_data_manager.is_team_assignment_started:
                 if temp_message:
-                    await self._update_temp_message(temp_message, "조 편성이 이미 시작되어 팀 등록이 불가능합니다.", discord.Color.red())
+                    await self._update_temp_message(temp_message, "조 편성이 이미 시작되어 팀 등록이 불가능해요.", discord.Color.red())
                 else:
-                    await self._send_error_message(interaction, "조 편성이 이미 시작되어 팀 등록이 불가능합니다.")
+                    await self._send_error_message(interaction, "조 편성이 이미 시작되어 팀 등록이 불가능해요.")
                 return
             
             # 팀 등록 가능 여부 확인
@@ -298,7 +379,7 @@ class TeamInputView(View):
                     if not is_guild_valid:
                         not_found_str = ', '.join(not_found_members)
                         error_msg = (
-                            f"❌ 다음 닉네임이 디스코드 서버에서 확인되지 않습니다.\n\n"
+                            f"❌ 다음 닉네임이 디스코드 서버에서 확인되지 않아요.\n\n"
                             f"**{not_found_str}**\n\n"
                             f"💡 디스코드 서버 닉네임과 동일하게 입력해주세요."
                         )
@@ -324,7 +405,7 @@ class TeamInputView(View):
                     return
 
                 if api_invalid_members:
-                    error_msg = f"❌ 다음 닉네임들을 찾을 수 없습니다.\n**{', '.join(api_invalid_members) if api_invalid_members and isinstance(api_invalid_members, (list, tuple)) else str(api_invalid_members)}**\n\n💡 게임 내 닉네임을 정확히 입력했는지 확인해주세요."
+                    error_msg = f"❌ 다음 닉네임들을 찾을 수 없어요.\n**{', '.join(api_invalid_members) if api_invalid_members and isinstance(api_invalid_members, (list, tuple)) else str(api_invalid_members)}**\n\n💡 게임 내 닉네임을 정확히 입력했는지 확인해주세요."
                     if temp_message:
                         await self._update_temp_message(temp_message, error_msg, discord.Color.red())
                     else:
@@ -337,7 +418,7 @@ class TeamInputView(View):
                 # ✅ BotManager에서 싱글톤 TeamProcessor 가져오기
                 team_processor = BotManager.get_instance().get_team_processor()
                 _, _, team_mmr = await team_processor.fetch_team_mmr(team_name, team_data)
-                team_data_manager.set_team_mmr(team_name, team_mmr)
+                await team_data_manager.set_team_mmr(team_name, team_mmr)
             except Exception as e:
                 logger.error(f"[뷰] 팀 MMR 계산 실패 - 팀명: {team_name}: {e}", exc_info=True)
                 # MMR 계산 실패해도 팀 등록은 진행
@@ -371,7 +452,12 @@ class TeamInputView(View):
             staff_str = ', '.join(staff) if staff else '(없음)'
             logger.info(f"[팀등록] 팀 등록 완료 - 팀명: {team_name}, MMR: {team_mmr:.2f}, 선수: [{players_str}], 스태프: [{staff_str}]")
 
-            success_msg = f"**{team_name}** 팀이 성공적으로 등록되었습니다!\n\n팀 평균 MMR: **{team_mmr:.2f}**"
+            success_msg = (
+                f"**{team_name}** 팀이 성공적으로 등록되었어요!\n\n"
+                f"🎮 선수: {players_str}\n"
+                f"🛠️ 스태프: {staff_str}\n"
+                f"📊 팀 평균 MMR: **{team_mmr:.2f}**"
+            )
 
             if temp_message:
                 # 임시 메시지를 성공 메시지로 업데이트
@@ -397,7 +483,10 @@ class TeamInputView(View):
             
         except Exception as e:
             logger.error(f"[뷰] 팀 등록 실패: {e}", exc_info=True)
-            await self._send_error_message(interaction, "팀 등록 중 오류가 발생하였습니다.")
+            await self._send_error_message(
+                interaction,
+                "❌ 팀 등록 중 오류가 발생했어요.\n\n💡 다시 시도해도 문제가 지속되면 관리자에게 문의해주세요."
+            )
 
     async def _update_temp_message(self, temp_message: discord.Message, message: str, color: discord.Color) -> None:
         """임시 메시지를 업데이트합니다."""
@@ -449,7 +538,7 @@ class TeamInputView(View):
             
             # 조편성 시작 이후인지 확인
             if team_data_manager.is_team_assignment_started:
-                await self._send_error_message(interaction, "조 편성이 이미 시작되어 팀 취소가 불가능합니다.")
+                await self._send_error_message(interaction, "조 편성이 이미 시작되어 팀 취소가 불가능해요.")
                 return
             
             # 팀 취소 가능 여부 확인
@@ -469,7 +558,7 @@ class TeamInputView(View):
 
         except Exception as e:
             logger.error(f"[뷰] 팀 취소 실패: {e}", exc_info=True)
-            await self._send_error_message(interaction, "팀 취소 중 오류가 발생했습니다.")
+            await self._send_error_message(interaction, "팀 취소 중 오류가 발생했어요.")
     
     async def _execute_team_cancellation(self, interaction: discord.Interaction, team_name: str, team_data_manager: TeamDataManager) -> None:
         """실제 팀 취소 실행"""
@@ -510,7 +599,7 @@ class TeamInputView(View):
             # 성공 메시지 전송
             success_embed = Embed(
                 title="스크림 팀 등록 취소",
-                description=f"**{team_name}** 팀이 성공적으로 취소되었습니다.",
+                description=f"**{team_name}** 팀이 성공적으로 취소되었어요.",
                 color=Color.green()
             )
             
@@ -529,7 +618,7 @@ class TeamInputView(View):
             logger.error(f"[뷰] 팀 취소 실행 실패: {e}", exc_info=True)
             error_embed = Embed(
                 title="❌ 오류 발생",
-                description="팀 취소 중 오류가 발생했습니다.",
+                description="팀 취소 중 오류가 발생했어요.",
                 color=Color.red()
             )
             if not interaction.response.is_done():
@@ -687,43 +776,16 @@ class TeamInputView(View):
             logger.error(f"[뷰] 로그 파일 전송 실패: {e}", exc_info=True)
             error_embed = Embed(
                 title="❌ 오류",
-                description="로그 파일 생성 중 오류가 발생했습니다.",
+                description="로그 파일 생성 중 오류가 발생했어요.",
                 color=Color.red()
             )
             if not interaction.response.is_done():
                 await interaction.response.send_message(embed=error_embed, ephemeral=True)
             else:
                 await interaction.followup.send(embed=error_embed, ephemeral=True)
-    
-    def _is_admin(self, user: discord.Member) -> bool:
-        """사용자가 관리자인지 확인합니다."""
-        return any(role.id in settings.ADMIN_ROLE_IDS for role in user.roles)
     
     async def _send_error_message(self, interaction: discord.Interaction, message: str) -> None:
-        """에러 메시지를 전송합니다."""
-        try:
-            error_embed = Embed(
-                title="스크림 안내",
-                description=message,
-                color=Color.red()
-            )
-
-            # 상호작용이 이미 응답되었는지 확인
-            if not interaction.response.is_done():
-                await interaction.response.send_message(embed=error_embed, ephemeral=True)
-            else:
-                # 이미 응답된 경우 followup으로 전송
-                await interaction.followup.send(embed=error_embed, ephemeral=True)
-        except Exception as e:
-            logger.error(f"[뷰] 에러 메시지 전송 실패: {e}", exc_info=True)
-            # 최후의 수단으로 일반 메시지 전송 시도
-            try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(f"오류: {message}", ephemeral=True)
-                else:
-                    await interaction.followup.send(f"오류: {message}", ephemeral=True)
-            except Exception as e2:
-                logger.error(f"[뷰] 최후의 수단 메시지 전송 실패: {e2}", exc_info=True)
+        await send_error_message(interaction, message)
 
 
 class GroupRosterView(View):
@@ -757,44 +819,17 @@ class GroupRosterView(View):
         """팀 정보를 업데이트합니다."""
         self.group_teams = new_group_teams
     
-    def _is_admin(self, user: discord.Member) -> bool:
-        """사용자가 관리자인지 확인합니다."""
-        return any(role.id in settings.ADMIN_ROLE_IDS for role in user.roles)
-    
     async def _send_error_message(self, interaction: discord.Interaction, message: str) -> None:
-        """에러 메시지를 전송합니다."""
-        try:
-            error_embed = Embed(
-                title="권한 오류",
-                description=message,
-                color=Color.red()
-            )
-
-            # 상호작용이 이미 응답되었는지 확인
-            if not interaction.response.is_done():
-                await interaction.response.send_message(embed=error_embed, ephemeral=True)
-            else:
-                # 이미 응답된 경우 followup으로 전송
-                await interaction.followup.send(embed=error_embed, ephemeral=True)
-        except Exception as e:
-            logger.error(f"[뷰] 에러 메시지 전송 실패: {e}", exc_info=True)
-            # 최후의 수단으로 일반 메시지 전송 시도
-            try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(f"오류: {message}", ephemeral=True)
-                else:
-                    await interaction.followup.send(f"오류: {message}", ephemeral=True)
-            except Exception as e2:
-                logger.error(f"[뷰] 최후의 수단 메시지 전송 실패: {e2}", exc_info=True)
+        await send_error_message(interaction, message)
 
     async def roster_change_callback(self, interaction: discord.Interaction) -> None:
         """로스터 변경 버튼 콜백"""
         try:
             # 관리자 권한 확인
-            if not self._is_admin(interaction.user):
+            if not is_admin(interaction.user):
                 error_embed = Embed(
                     title="권한 오류",
-                    description="관리자 권한이 없습니다.",
+                    description="관리자 권한이 없어요.",
                     color=Color.red()
                 )
                 if not interaction.response.is_done():
@@ -828,7 +863,7 @@ class GroupRosterView(View):
             await self._recreate_view_on_message(interaction)
         except Exception as e:
             logger.error(f"로스터 변경 콜백 처리 실패: {e}", exc_info=True)
-            await self._send_error_message(interaction, "로스터 변경 중 오류가 발생했습니다.")
+            await self._send_error_message(interaction, "로스터 변경 중 오류가 발생했어요.")
     
     async def _recreate_view_on_message(self, interaction: discord.Interaction) -> None:
         """View가 만료된 경우 메시지를 새로운 View로 업데이트"""
@@ -855,11 +890,13 @@ class TeamSelectionView(View):
     def __init__(self, parent_view: 'GroupRosterView'):
         super().__init__(timeout=None)  # 영구적으로 작동
         self.parent_view = parent_view
-        
-        # 팀 선택 드랍다운
-        self.team_select = Select(
-            placeholder="변경할 팀을 선택하세요",
-            options=[
+        self.is_empty = not parent_view.group_teams
+
+        if self.is_empty:
+            # 빈 팀 리스트일 때 placeholder 옵션 추가
+            options = [SelectOption(label="등록된 팀이 없습니다", value="_empty", description="팀이 등록되면 선택 가능합니다")]
+        else:
+            options = [
                 SelectOption(
                     label=f"{i+1}. {team_name} (MMR: {mmr:.2f})",
                     value=team_name,
@@ -867,6 +904,12 @@ class TeamSelectionView(View):
                 )
                 for i, (team_name, team_data, mmr) in enumerate(parent_view.group_teams)
             ]
+
+        # 팀 선택 드랍다운
+        self.team_select = Select(
+            placeholder="변경할 팀을 선택하세요",
+            options=options,
+            disabled=self.is_empty
         )
         self.team_select.callback = self.team_select_callback
         self.add_item(self.team_select)
@@ -891,7 +934,7 @@ class TeamSelectionView(View):
             if not selected_team_data:
                 error_embed = Embed(
                     title="오류",
-                    description="선택된 팀 정보를 찾을 수 없습니다.",
+                    description="선택된 팀 정보를 찾을 수 없어요.",
                     color=Color.red()
                 )
                 if not interaction.response.is_done():
@@ -917,7 +960,7 @@ class TeamSelectionView(View):
             logger.error(f"팀 선택 콜백 처리 실패: {e}", exc_info=True)
             error_embed = Embed(
                 title="오류",
-                description="팀 선택 중 오류가 발생했습니다.",
+                description="팀 선택 중 오류가 발생했어요.",
                 color=Color.red()
             )
             try:
@@ -927,6 +970,72 @@ class TeamSelectionView(View):
                     await interaction.followup.send(embed=error_embed, ephemeral=True)
             except Exception as e2:
                 logger.error(f"에러 메시지 전송 실패: {e2}", exc_info=True)
+
+
+class CancelConfirmView(View):
+    """
+    팀 취소 확인 뷰
+
+    취소 버튼 클릭 후 팀 정보를 표시하고 최종 확인을 받습니다.
+    """
+
+    def __init__(self, parent_view: 'TeamInputView', team_name: str):
+        super().__init__(timeout=30)
+        self.parent_view = parent_view
+        self.team_name = team_name
+        self.message: Optional[discord.Message] = None
+
+        self.confirm_button = Button(label="등록 취소하기", style=ButtonStyle.danger, emoji="⚠️")
+        self.confirm_button.callback = self.confirm_callback
+        self.add_item(self.confirm_button)
+
+        self.back_button = Button(label="돌아가기", style=ButtonStyle.secondary, emoji="↩️")
+        self.back_button.callback = self.back_callback
+        self.add_item(self.back_button)
+
+    async def confirm_callback(self, interaction: discord.Interaction) -> None:
+        """취소 확인 버튼 콜백"""
+        try:
+            # 버튼 비활성화
+            self.confirm_button.disabled = True
+            self.back_button.disabled = True
+            await interaction.response.edit_message(view=self)
+
+            # 기존 취소 로직 실행
+            await self.parent_view._process_team_cancellation(interaction, self.team_name)
+        except Exception as e:
+            logger.error(f"[뷰] 팀 취소 확인 콜백 실패: {e}", exc_info=True)
+            await interaction.followup.send(
+                embed=Embed(title="❌ 오류", description="팀 취소 중 오류가 발생했어요.", color=Color.red()),
+                ephemeral=True
+            )
+
+    async def back_callback(self, interaction: discord.Interaction) -> None:
+        """돌아가기 버튼 콜백"""
+        try:
+            cancel_embed = Embed(
+                title="스크림 안내",
+                description="팀 취소가 취소되었어요.",
+                color=Color.blue()
+            )
+            await interaction.response.edit_message(embed=cancel_embed, view=None)
+        except Exception as e:
+            logger.error(f"[뷰] 팀 취소 돌아가기 콜백 실패: {e}", exc_info=True)
+
+    async def on_timeout(self) -> None:
+        """타임아웃 시 버튼 비활성화 및 안내 메시지"""
+        self.confirm_button.disabled = True
+        self.back_button.disabled = True
+        if self.message:
+            try:
+                timeout_embed = Embed(
+                    title="⏳ 시간 초과",
+                    description="시간이 초과되었어요. 다시 시도해주세요.",
+                    color=Color.greyple()
+                )
+                await self.message.edit(embed=timeout_embed, view=self)
+            except Exception:
+                pass
 
 
 class AdminView(View):
@@ -958,15 +1067,10 @@ class AdminView(View):
         self.import_csv_button.callback = self.import_csv_callback
         self.add_item(self.import_csv_button)
     
-    def _is_admin(self, user: discord.Member) -> bool:
-        """사용자가 관리자인지 확인합니다."""
-        from config.settings import settings
-        return any(role.id in settings.ADMIN_ROLE_IDS for role in user.roles)
-    
     async def export_csv_callback(self, interaction: discord.Interaction) -> None:
         """현재 등록된 팀 목록을 CSV로 내보냅니다."""
         try:
-            if not self._is_admin(interaction.user):
+            if not is_admin(interaction.user):
                 await interaction.response.send_message("관리자만 사용할 수 있습니다.", ephemeral=True)
                 return
 
@@ -999,58 +1103,35 @@ class AdminView(View):
             logger.error(f"팀 CSV 내보내기 실패: {e}", exc_info=True)
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("CSV 내보내기 중 오류가 발생했습니다.", ephemeral=True)
+                    await interaction.response.send_message("CSV 내보내기 중 오류가 발생했어요.", ephemeral=True)
                 else:
-                    await interaction.followup.send("CSV 내보내기 중 오류가 발생했습니다.", ephemeral=True)
+                    await interaction.followup.send("CSV 내보내기 중 오류가 발생했어요.", ephemeral=True)
             except Exception:
                 pass
     
     async def import_csv_callback(self, interaction: discord.Interaction) -> None:
         """CSV 형식으로 팀을 일괄 등록합니다."""
         try:
-            if not self._is_admin(interaction.user):
+            if not is_admin(interaction.user):
                 await interaction.response.send_message("관리자만 사용할 수 있습니다.", ephemeral=True)
                 return
-            
+
             # CSV 입력 모달 표시
             from .modals import CSVImportModal
             if not interaction.response.is_done():
                 await interaction.response.send_modal(CSVImportModal(self))
             else:
-                await interaction.followup.send("모달을 표시할 수 없습니다. 새로 시도해주세요.", ephemeral=True)
+                await interaction.followup.send("모달을 표시할 수 없습니다. 다시 시도해주세요.", ephemeral=True)
                 
         except Exception as e:
             logger.error(f"CSV 입력 콜백 처리 실패: {e}", exc_info=True)
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("CSV 입력 중 오류가 발생했습니다.", ephemeral=True)
+                    await interaction.response.send_message("CSV 입력 중 오류가 발생했어요.", ephemeral=True)
                 else:
-                    await interaction.followup.send("CSV 입력 중 오류가 발생했습니다.", ephemeral=True)
+                    await interaction.followup.send("CSV 입력 중 오류가 발생했어요.", ephemeral=True)
             except Exception:
                 pass
     
     async def _send_error_message(self, interaction: discord.Interaction, message: str) -> None:
-        """에러 메시지를 전송합니다."""
-        try:
-            error_embed = Embed(
-                title="오류",
-                description=message,
-                color=Color.red()
-            )
-            
-            # 상호작용이 이미 응답되었는지 확인
-            if not interaction.response.is_done():
-                await interaction.response.send_message(embed=error_embed, ephemeral=True)
-            else:
-                # 이미 응답된 경우 followup으로 전송
-                await interaction.followup.send(embed=error_embed, ephemeral=True)
-        except Exception as e:
-            logger.error(f"[뷰] 에러 메시지 전송 실패: {e}", exc_info=True)
-            # 최후의 수단으로 일반 메시지 전송 시도
-            try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(f"오류: {message}", ephemeral=True)
-                else:
-                    await interaction.followup.send(f"오류: {message}", ephemeral=True)
-            except Exception as e2:
-                logger.error(f"[뷰] 최후의 수단 메시지 전송 실패: {e2}", exc_info=True)
+        await send_error_message(interaction, message)

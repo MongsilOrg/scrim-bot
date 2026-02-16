@@ -218,14 +218,9 @@ class WarningManager:
     def _calculate_restricted_until(self, warning_date: datetime) -> datetime:
         """
         경고 받은 날짜 기준으로 제한 해제 날짜를 계산합니다.
-        경고 받은 날의 다음날 (단, 다음날이 일요일이면 월요일로)
+        경고 받은 날의 다음날
         """
         next_day = warning_date + timedelta(days=1)
-        
-        # 일요일(6)이면 월요일(0)로 조정
-        if next_day.weekday() == 6:  # 일요일
-            next_day = next_day + timedelta(days=1)
-        
         return next_day
     
     def _get_recent_cautions(self, target_id: str, limit: int = 10) -> List[Dict]:

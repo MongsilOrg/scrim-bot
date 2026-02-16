@@ -21,7 +21,7 @@ from bot.manager import BotManager
 from commands.room_code import 방코드
 from commands.scrim import 스크림
 from commands.scrim_csv_assign import 조편성_csv
-from commands.warning import 주의부여, 경고부여
+from commands.warning import 제재부여
 from config.logging_config import ScrimbotLogger
 from config.settings import settings
 
@@ -53,6 +53,30 @@ async def main():
             # BotManager에 클라이언트 재설정 (완전히 준비된 상태)
             bot_manager = BotManager.get_instance()
             bot_manager.set_client(client)
+
+            # 백업 복구 시도
+            team_data_manager = bot_manager.get_team_data_manager()
+            if team_data_manager.should_restore_backup():
+                if team_data_manager.load_backup():
+                    logger.info(
+                        f"[시작] 백업 복구 완료 - {len(team_data_manager.teams)}개 팀, "
+                        f"스크림 날짜: {team_data_manager.scrim_month}/{team_data_manager.scrim_day}"
+                    )
+                    # 조편성이 아직 시작되지 않았으면 자동 조편성/MMR 태스크 재시작
+                    if not team_data_manager.is_team_assignment_started:
+                        import asyncio
+                        team_data_manager.auto_assignment_task = asyncio.create_task(
+                            team_data_manager.check_and_auto_assign()
+                        )
+                        team_data_manager.mmr_update_task = asyncio.create_task(
+                            team_data_manager.mmr_update_loop()
+                        )
+                        logger.info("[시작] 자동 조편성/MMR 갱신 태스크 재시작")
+                else:
+                    logger.warning("[시작] 백업 복구 실패")
+            else:
+                # 만료된 백업이 있으면 삭제
+                team_data_manager.clear_backup()
 
             # WarningManager 초기화 및 정리 태스크 시작
             warning_manager = bot_manager.get_warning_manager()
@@ -107,22 +131,14 @@ async def main():
         ):
             await 조편성_csv(interaction, message)
 
-        # 컨텍스트 메뉴 명령어 등록
+        # 컨텍스트 메뉴 명령어 등록 (주의/경고 통합)
         @client.tree.context_menu(
-            name="주의 부여", guild=discord.Object(id=settings.GUILD_ID)
+            name="제재 부여", guild=discord.Object(id=settings.GUILD_ID)
         )
-        async def caution_context_menu(
+        async def sanction_context_menu(
             interaction: discord.Interaction, user: discord.Member
         ):
-            await 주의부여(interaction, user)
-
-        @client.tree.context_menu(
-            name="경고 부여", guild=discord.Object(id=settings.GUILD_ID)
-        )
-        async def warning_context_menu(
-            interaction: discord.Interaction, user: discord.Member
-        ):
-            await 경고부여(interaction, user)
+            await 제재부여(interaction, user)
 
         # 앱 명령어 전역 에러 핸들러 (컨텍스트 메뉴 등)
         @client.tree.error

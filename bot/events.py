@@ -40,7 +40,7 @@ async def _process_csv_attachments(message: discord.Message) -> None:
     # CSV 파일별로 데이터와 gameId 저장
     csv_data_list = []  # [(gameId, df, attachment_filename), ...]
     
-    async for msg in channel.history(after=start_utc, oldest_first=True, limit=None):
+    async for msg in channel.history(after=start_utc, oldest_first=True, limit=200):
         for attachment in msg.attachments:
             if not attachment.filename.lower().endswith('.csv'):
                 continue

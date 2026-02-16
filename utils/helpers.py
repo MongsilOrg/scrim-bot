@@ -9,11 +9,17 @@ import discord
 import pytz
 
 from config.logging_config import get_logger
+from config.settings import settings
 
 if TYPE_CHECKING:
     from models.team_data import TeamData
 
 logger = get_logger('helpers')
+
+
+def is_admin(user: discord.Member) -> bool:
+    """사용자가 관리자인지 확인합니다."""
+    return any(role.id in settings.ADMIN_ROLE_IDS for role in user.roles)
 
 
 def extract_players_only(team_data: Union[Dict, 'TeamData', List]) -> List[str]:
@@ -103,12 +109,6 @@ def get_next_scrim_date(current_time: datetime = None) -> dict:
         # 당일부터 계산
         next_date = current_time
         next_weekday = current_weekday
-    
-    # 일요일(6)이라면 월요일(0)로 조정
-    if next_weekday == 6:  # 일요일
-        from datetime import timedelta
-        next_date = next_date + timedelta(days=1)
-        next_weekday = 0  # 월요일
     
     # 요일명 매핑
     weekday_names = ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일']
