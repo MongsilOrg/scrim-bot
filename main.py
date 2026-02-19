@@ -41,13 +41,23 @@ async def _bootstrap_on_ready(client: ScrimBot, logger) -> None:
                 f"스크림 날짜: {team_data_manager.scrim_month}/{team_data_manager.scrim_day}"
             )
             if not team_data_manager.is_team_assignment_started:
-                team_data_manager.auto_assignment_task = asyncio.create_task(
-                    team_data_manager.check_and_auto_assign()
+                from utils.helpers import get_current_kst_time
+                current_time = get_current_kst_time()
+                is_scrim_day = (
+                    current_time.day == team_data_manager.scrim_day
+                    and current_time.month == team_data_manager.scrim_month
                 )
+                if is_scrim_day and current_time.hour >= 17:
+                    logger.info("[시작] 17시 이후 재시작 - 자동 조편성 태스크 건너뜀")
+                else:
+                    team_data_manager.auto_assignment_task = asyncio.create_task(
+                        team_data_manager.check_and_auto_assign()
+                    )
+                    logger.info("[시작] 자동 조편성 태스크 재시작")
                 team_data_manager.mmr_update_task = asyncio.create_task(
                     team_data_manager.mmr_update_loop()
                 )
-                logger.info("[시작] 자동 조편성/MMR 갱신 태스크 재시작")
+                logger.info("[시작] MMR 갱신 태스크 재시작")
         else:
             logger.warning("[시작] 백업 복구 실패")
     else:

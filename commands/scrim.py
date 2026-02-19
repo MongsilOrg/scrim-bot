@@ -107,38 +107,16 @@ async def 스크림(interaction: discord.Interaction) -> None:
 
 def _create_scrim_embed(day: int, month: int, weekday: str) -> Embed:
     """스크림 임베드를 생성합니다"""
-    title = f"🏆 스크림 참가 신청 - {month}/{day} ({weekday})"
-
     embed = Embed(
-        title=title,
+        title=f"🏆 {month}/{day} ({weekday}) 스크림",
+        description=(
+            "⏰  `17:00` 조편성 · `20:00` 스크림 (4R)\n"
+            "아래 버튼으로 팀을 등록해주세요."
+        ),
         color=Color.green()
     )
 
-    embed.add_field(
-        name="📅 스크림 일정",
-        value="• 조 편성: `17:00`\n"
-              "• 스크림: `20:00 ~ 4R`",
-        inline=True
-    )
-
-    # 현재 신청 현황
-    bot_manager = BotManager.get_instance()
-    tdm = bot_manager.get_team_data_manager()
-    team_count = len(tdm.teams) if tdm else 0
-    _, num_groups, spare_teams = tdm.get_team_counts() if tdm else (0, 0, 0)
-
-    status_lines = [f"• 신청 팀: **{team_count}**팀"]
-    if num_groups > 0:
-        status_lines.append(f"• 편성 가능: **{num_groups}**조 ({spare_teams}팀 대기)")
-    status_lines.append("• 마감: `17:00` 자동 조편성")
-
-    embed.add_field(
-        name="📋 신청 현황",
-        value="\n".join(status_lines),
-        inline=True
-    )
-
-    embed.set_footer(text="ER Scrim", icon_url=settings.THUMBNAIL_URL)
+    embed.set_footer(text=settings.EMBED_FOOTER_TEXT, icon_url=settings.THUMBNAIL_URL)
 
     return embed
 

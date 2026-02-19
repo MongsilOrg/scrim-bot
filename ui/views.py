@@ -47,6 +47,9 @@ async def send_error_message(interaction: discord.Interaction, message: str) -> 
             pass
 
 
+_COOLDOWN_CLEANUP_THRESHOLD = 100  # 이 크기 초과 시 만료 항목 정리
+
+
 async def _check_cooldown(interaction: discord.Interaction, cooldown_seconds: float = BUTTON_COOLDOWN_SECONDS) -> bool:
     """버튼 cooldown을 확인합니다. True면 cooldown 중이므로 무시해야 합니다."""
     user_id = interaction.user.id
@@ -60,6 +63,11 @@ async def _check_cooldown(interaction: discord.Interaction, cooldown_seconds: fl
         )
         return True
     _button_cooldowns[user_id] = now
+    # 만료된 쿨다운 항목 주기적 정리
+    if len(_button_cooldowns) > _COOLDOWN_CLEANUP_THRESHOLD:
+        expired = [uid for uid, t in _button_cooldowns.items() if now - t > cooldown_seconds]
+        for uid in expired:
+            del _button_cooldowns[uid]
     return False
 
 if TYPE_CHECKING:
@@ -412,18 +420,15 @@ class TeamInputView(View):
                         await self._send_error_message(interaction, error_msg)
                     return
             
-            # MMR 계산
+            # MMR 계산 (team_data dict에 mmr 필드가 설정됨)
             team_mmr = 0.0
             try:
-                # ✅ BotManager에서 싱글톤 TeamProcessor 가져오기
                 team_processor = BotManager.get_instance().get_team_processor()
                 _, _, team_mmr = await team_processor.fetch_team_mmr(team_name, team_data)
-                await team_data_manager.set_team_mmr(team_name, team_mmr)
             except Exception as e:
                 logger.error(f"[뷰] 팀 MMR 계산 실패 - 팀명: {team_name}: {e}", exc_info=True)
-                # MMR 계산 실패해도 팀 등록은 진행
-            
-            # 팀 데이터 저장 (user_id는 add_team에서 자동 설정)
+
+            # 팀 데이터 저장 (MMR이 team_data에 이미 포함됨, user_id는 add_team에서 자동 설정)
             success, failure_reason = await team_data_manager.add_team(team_name, team_data, interaction.user)
             if not success:
                 # 실패 사유가 있으면 그대로 표시, 없으면 기본 메시지
@@ -479,8 +484,10 @@ class TeamInputView(View):
             
             # 백그라운드에서 MMR 갱신 및 메시지 업데이트
             import asyncio
-            asyncio.create_task(self._update_mmr_background(team_data_manager, interaction.channel))
-            
+            task = asyncio.create_task(self._update_mmr_background(team_data_manager, interaction.channel))
+            team_data_manager._pending_tasks.add(task)
+            task.add_done_callback(team_data_manager._pending_tasks.discard)
+
         except Exception as e:
             logger.error(f"[뷰] 팀 등록 실패: {e}", exc_info=True)
             await self._send_error_message(

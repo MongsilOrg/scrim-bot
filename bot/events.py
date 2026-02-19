@@ -86,7 +86,7 @@ async def _process_csv_attachments(message: discord.Message) -> None:
         return
 
     ban_list = _extract_ban_list(last_csv_df)
-    if group_letter and ban_list:
+    if group_letter:
         from bot.manager import BotManager
         BotManager.get_instance().set_ban_list(group_letter, ban_list)
 

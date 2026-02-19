@@ -691,7 +691,7 @@ class TeamProcessor:
             color=discord.Color.green()
         )
         
-        embed.set_footer(text="ER Scrim", icon_url=settings.THUMBNAIL_URL)
+        embed.set_footer(text=settings.EMBED_FOOTER_TEXT, icon_url=settings.THUMBNAIL_URL)
         
         return embed
     
@@ -775,56 +775,36 @@ class TeamProcessor:
                 logger.error(f"[Discord] 메시지 전송 실패: {e2}", exc_info=True)
     
     async def _send_group_team_list(self, group_letter: str, group: List[Tuple[str, TeamData, float]]) -> None:
-        """조별 팀명과 순위를 텍스트로 전송합니다."""
+        """조별 팀명을 텍스트로 전송합니다."""
         try:
             if not self.client:
-                # 클라이언트가 None이면 다시 가져오기
                 from bot.manager import BotManager
-
                 self.client = BotManager.get_instance().get_client()
-                
+
             if not self.client:
                 logger.warning("[Discord] 클라이언트를 가져올 수 없어 팀 목록 전송 건너뜀")
                 return
-                
-            # 팀 목록 채널 ID (설정에서 가져오기)
+
             team_list_channel_id = settings.TEAM_LIST_CHANNEL_ID
             team_list_channel = self.client.get_channel(team_list_channel_id)
-            
+
             if not team_list_channel:
                 logger.warning(f"[Discord] 팀 목록 채널을 찾을 수 없음 - 채널 ID: {team_list_channel_id}")
                 return
-            
-            # 조별 팀 목록 생성
-            team_list_lines = [f"## {group_letter}조 팀 목록"]
-            team_list_lines.append("```")
-            
-            for rank, (team_name, team_data, team_mmr) in enumerate(group, 1):
-                # 팀 정보 구성
-                if isinstance(team_data, dict):
-                    players = team_data.get("players", [])
-                else:
-                    # TeamData 객체인 경우
-                    players = team_data.players
-                
-                # 선수 목록 (최대 4명)
-                player_list = []
-                for i in range(4):
-                    if i < len(players) and players[i] != "-":
-                        player_list.append(players[i])
-                    else:
-                        player_list.append("-")
-                
-                # 팀 정보 라인 생성
-                team_line = f"{rank:2d}. {team_name:<20} | MMR: {team_mmr:6.1f} | {', '.join(player_list)}"
-                team_list_lines.append(team_line)
-            
-            team_list_lines.append("```")
-            team_list_text = "\n".join(team_list_lines)
-            
-            # 메시지 전송
-            await team_list_channel.send(content=team_list_text)
-            
+
+            # 팀명만 추출하여 인라인 코드로 감싸기 (더블클릭 복사 용이)
+            team_names = [f"`{team_name}`" for team_name, _, _ in group]
+
+            # 1~4번: 첫째 줄, 5~8번: 둘째 줄
+            first_line = '  '.join(team_names[:4])
+            second_line = '  '.join(team_names[4:]) if len(team_names) > 4 else ''
+
+            lines = [f"**{group_letter}조**", first_line]
+            if second_line:
+                lines.append(second_line)
+
+            await team_list_channel.send(content='\n'.join(lines))
+
         except Exception as e:
             logger.error(f"[Discord] 팀 목록 전송 실패 - 조: {group_letter}조: {e}", exc_info=True)
     

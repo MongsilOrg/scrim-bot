@@ -17,8 +17,8 @@ from utils.helpers import get_current_kst_time, is_admin
 logger = get_logger('room_code')
 
 # 날씨 상수
-MAIN_WEATHERS = {1: "☁️ 흐림", 2: "☀️ 쾌청", 3: "🌧️ 비", 4: "🏜️ 모래바람"}
-SUB_WEATHERS = ["🍃 무풍", "🌪️ 강풍", "⚡ 번개", "🌫️ 자색 안개"]
+MAIN_WEATHERS = {1: "흐림", 2: "쾌청", 3: "비", 4: "모래바람"}
+SUB_WEATHERS = ["무풍", "강풍", "벼락", "자색 안개"]
 
 
 def get_group_letter(channel_id: int) -> str | None:
@@ -117,13 +117,13 @@ class WeatherButton(discord.ui.Button):
 
         # embed 업데이트: "미정" → 선택값
         embed = interaction.message.embeds[0]
-        main_weather = MAIN_WEATHERS.get(self.round_number, "❓ 알 수 없음")
+        main_weather = MAIN_WEATHERS.get(self.round_number, "알 수 없음")
         for i, field in enumerate(embed.fields):
             if field.name == "🌤️ 날씨":
                 embed.set_field_at(
                     i,
                     name="🌤️ 날씨",
-                    value=f"**{main_weather} │ {self.weather}**",
+                    value=f"# 메인 날씨: **{main_weather}**\n# 서브 날씨: **{self.weather}**",
                     inline=False,
                 )
                 break
@@ -207,7 +207,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
 
             # 날씨 field 추가
             group_letter = get_group_letter(interaction.channel.id)
-            main_weather = MAIN_WEATHERS.get(round_number, "❓ 알 수 없음")
+            main_weather = MAIN_WEATHERS.get(round_number, "알 수 없음")
             weather_view = None
             weather_warning = None
 
@@ -229,16 +229,22 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                     # 4라운드: 자동 확정
                     sub_weather = available[0]
                     manager.add_selected_weather(group_letter, sub_weather)
-                    weather_value = f"**{main_weather} │ {sub_weather}**"
+                    weather_value = f"# 메인 날씨: **{main_weather}**\n# 서브 날씨: **{sub_weather}**"
                 elif len(available) == 0:
                     # 모든 서브 날씨가 소진된 경우
-                    weather_value = f"**{main_weather}**"
+                    weather_value = f"# 메인 날씨: **{main_weather}**"
                 else:
-                    # 선택 필요
-                    weather_value = f"**{main_weather} │ 미정**"
+                    # 선택 필요: 서브 날씨 후보를 그대로 노출
+                    weather_value = (
+                        f"# 메인 날씨: **{main_weather}**\n"
+                        f"# 서브 날씨: **{', '.join(available)}**"
+                    )
                     weather_view = WeatherButtonView(group_letter, round_number)
             else:
-                weather_value = f"**{main_weather} │ 미정**"
+                weather_value = (
+                    f"# 메인 날씨: **{main_weather}**\n"
+                    f"# 서브 날씨: **{', '.join(SUB_WEATHERS)}**"
+                )
 
             embed.add_field(
                 name="🌤️ 날씨",
@@ -263,7 +269,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                         inline=False
                     )
 
-            embed.set_footer(text="ER Scrim", icon_url=settings.THUMBNAIL_URL)
+            embed.set_footer(text=settings.EMBED_FOOTER_TEXT, icon_url=settings.THUMBNAIL_URL)
 
             # 조별 역할 멘션 메시지 생성
             role_mention = await get_group_role_mention(interaction.guild, interaction.channel)

@@ -47,7 +47,7 @@ class TeamModal(Modal):
 
         # 플레이어 입력 (엔터키로 구분)
         self.players_input = TextInput(
-            label="플레이어 (4명 필수)",
+            label="플레이어 (3~4명)",
             placeholder="한 줄에 하나씩 입력",
             max_length=200,
             required=True,
@@ -210,7 +210,7 @@ class TeamEditModal(Modal):
         players_text = '\n'.join(original_players) if original_players and isinstance(original_players, (list, tuple)) else ''
 
         self.players_input = TextInput(
-            label="플레이어 (4명 필수)",
+            label="플레이어 (3~4명)",
             placeholder="한 줄에 하나씩 입력",
             max_length=200,
             required=True,
@@ -491,8 +491,11 @@ class TeamEditModal(Modal):
                 if isinstance(team_data, dict):
                     existing_players = team_data.get('players', [])
                     existing_staff = team_data.get('staff', [])
+                elif hasattr(team_data, 'players'):
+                    existing_players = team_data.players
+                    existing_staff = team_data.staff
                 else:
-                    existing_players = team_data
+                    existing_players = list(team_data)
                     existing_staff = []
                 
                 existing_members = existing_players + existing_staff
@@ -699,7 +702,7 @@ class TeamEditModal(Modal):
             
             # 새로운 MMR 이미지 생성
             from services.image_generator import ImageGenerator
-            img_io = ImageGenerator.generate_mmr_image(group_teams, group_mmr_averages)
+            img_io = ImageGenerator.generate_mmr_image(group_teams)
             
             # 새로운 로스터 뷰 생성
             from ui.views import GroupRosterView
@@ -1257,7 +1260,9 @@ class CSVImportModal(Modal):
             # MMR 갱신 및 메시지 업데이트 (백그라운드에서 수행)
             if success_count > 0:
                 import asyncio
-                asyncio.create_task(self._update_mmr_background(team_data_manager, interaction.channel))
+                task = asyncio.create_task(self._update_mmr_background(team_data_manager, interaction.channel))
+                team_data_manager._pending_tasks.add(task)
+                task.add_done_callback(team_data_manager._pending_tasks.discard)
             
         except Exception as e:
             logger.error(f"[모달] CSV 팀 입력 처리 실패: {e}", exc_info=True)

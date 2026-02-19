@@ -54,6 +54,7 @@ class Settings:
     # 상수 설정
     TEAMS_PER_GROUP: int = 8
     THUMBNAIL_URL: str = "https://mongsil.dev/w/src/Scrim.jpg"
+    EMBED_FOOTER_TEXT: str = os.getenv('EMBED_FOOTER_TEXT', 'ER Scrim | Powered by Mongsil')
     KST_TIMEZONE = pytz.timezone('Asia/Seoul')
     AUTO_ASSIGNMENT_CHECK_INTERVAL: int = 30  # seconds
     

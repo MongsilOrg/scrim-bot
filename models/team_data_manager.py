@@ -51,6 +51,7 @@ class TeamDataManager:
         self.mmr_message: Optional[discord.Message] = None
         self.additional_mmr_messages: List[discord.Message] = []
         self.scrim_channel_id: Optional[int] = None  # 스크림 명령어가 실행된 채널 ID
+        self._pending_tasks: set = set()  # fire-and-forget 태스크 추적
     
     def _save_backup(self) -> None:
         """팀 데이터를 JSON 파일로 백업합니다 (날짜 메타데이터 포함)."""
@@ -64,14 +65,17 @@ class TeamDataManager:
                     'scrim_month': self.scrim_month,
                     'scrim_channel_id': self.scrim_channel_id,
                     'is_team_assignment_started': self.is_team_assignment_started,
+                    'last_auto_assignment': self.last_auto_assignment.isoformat() if self.last_auto_assignment else None,
                 },
                 'teams': {
                     name: team.to_dict()
                     for name, team in self.teams.items()
                 }
             }
-            with open(self.BACKUP_FILE, 'w', encoding='utf-8') as f:
+            tmp_path = self.BACKUP_FILE + '.tmp'
+            with open(tmp_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, self.BACKUP_FILE)
         except Exception as e:
             logger.error(f"[팀데이터] 백업 저장 실패: {e}", exc_info=True)
 
@@ -93,6 +97,8 @@ class TeamDataManager:
                 self.scrim_month = meta.get('scrim_month')
                 self.scrim_channel_id = meta.get('scrim_channel_id')
                 self.is_team_assignment_started = meta.get('is_team_assignment_started', False)
+                last_assign = meta.get('last_auto_assignment')
+                self.last_auto_assignment = datetime.fromisoformat(last_assign) if last_assign else None
             else:
                 # 레거시 형식: 메타데이터 없이 팀 데이터만 저장
                 teams_data = data
@@ -213,6 +219,12 @@ class TeamDataManager:
             # 비동기 태스크를 완전히 종료할 때까지 대기
             await self._cancel_task_and_wait(self.auto_assignment_task, "auto_assignment_task")
             await self._cancel_task_and_wait(self.mmr_update_task, "mmr_update_task")
+
+            # fire-and-forget 태스크 취소
+            for task in self._pending_tasks:
+                if not task.done():
+                    task.cancel()
+            self._pending_tasks.clear()
 
             self.teams.clear()
             self.user_teams.clear()
@@ -501,6 +513,12 @@ class TeamDataManager:
                 return False, reason
 
             async with self._teams_lock:
+                # 락 내부에서 팀명 중복 재검사 (레이스 컨디션 방지)
+                if team_name in self.teams:
+                    existing = self.teams[team_name]
+                    if hasattr(existing, 'user_id') and existing.user_id != str(user.id):
+                        return False, f"'{team_name}' 팀명이 이미 다른 사용자에 의해 등록되었습니다."
+
                 team.user_id = str(user.id)
                 self.teams[team_name] = team
 
