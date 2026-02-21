@@ -42,9 +42,10 @@ class WarningManager:
 
     # 경고로그 시트 컬럼 인덱스 (0-based) - 외부용, 영구 보관
     LOG_COL_TARGET = 0
-    LOG_COL_WARNING_DATE = 1
+    LOG_COL_DATE = 1
     LOG_COL_RESTRICTED_UNTIL = 2
     LOG_COL_REASON = 3
+    LOG_COL_TYPE = 4
 
     def __init__(self):
         self.client: Optional[gspread.Client] = None
@@ -164,7 +165,7 @@ class WarningManager:
 
             # 첫 번째 행 확인
             first_row = self.warning_log_worksheet.row_values(1)
-            expected_headers = ['대상', '경고일', '제한해제일', '사유']
+            expected_headers = ['대상', '날짜', '제한해제일', '사유', '유형']
 
             if not first_row or first_row != expected_headers:
                 # 헤더가 없거나 다르면 첫 번째 행에 헤더 추가
@@ -175,15 +176,15 @@ class WarningManager:
         except Exception as e:
             logger.error(f"[경고관리] 경고로그 시트 헤더 확인 실패: {e}")
 
-    def _add_to_warning_log(self, target: str, warning_date: str, restricted_until: str, reason: str) -> None:
-        """경고로그 시트에 항목을 추가합니다. (영구 보관 - 삭제되지 않음)"""
+    def _add_to_warning_log(self, warning_type: str, target: str, date: str, restricted_until: str, reason: str) -> None:
+        """패널티로그 시트에 항목을 추가합니다. (영구 보관 - 삭제되지 않음)"""
         try:
             if not self.warning_log_worksheet:
                 return
 
-            row = [target, warning_date, restricted_until, reason]
+            row = [target, date, restricted_until, reason, warning_type]
             self.warning_log_worksheet.append_row(row)
-            logger.info(f"[경고관리] 외부 로그 기록 - 대상: {target}")
+            logger.info(f"[경고관리] 외부 로그 기록 - 대상: {target}, 유형: {warning_type}")
         except Exception as e:
             logger.error(f"[경고관리] 경고로그 추가 실패 - 대상: {target}: {e}")
 
@@ -378,6 +379,17 @@ class WarningManager:
                 await asyncio.to_thread(self.worksheet.append_row, row)
                 logger.info(f"[경고관리] 주의 부여 - 대상: {target}, 관리자: {admin_display_name}")
 
+                # 패널티로그 시트에 주의 기록 (외부용 - 영구 보관)
+                caution_date = current_time.strftime('%Y-%m-%d')
+                await asyncio.to_thread(
+                    self._add_to_warning_log,
+                    warning_type='주의',
+                    target=target,
+                    date=caution_date,
+                    restricted_until='',
+                    reason=reason
+                )
+
                 # 캐시 무효화
                 self._invalidate_cache()
 
@@ -404,11 +416,12 @@ class WarningManager:
                     await asyncio.to_thread(self.worksheet.append_row, auto_row)
                     logger.info(f"[경고관리] 주의 누적 → 경고 전환 - 대상: {target}, 제한해제: {auto_warning['restricted_until']}")
 
-                    # 경고로그 시트에 추가 (외부용 - 영구 보관, 처리자 정보 제외)
+                    # 패널티로그 시트에 추가 (외부용 - 영구 보관, 처리자 정보 제외)
                     await asyncio.to_thread(
                         self._add_to_warning_log,
+                        warning_type='경고',
                         target=target,
-                        warning_date=auto_warning['warning_date'],
+                        date=auto_warning['warning_date'],
                         restricted_until=auto_warning['restricted_until'],
                         reason=detailed_reason_external  # 외부용 상세 사유 (처리자 제외)
                     )
@@ -447,11 +460,12 @@ class WarningManager:
                 await asyncio.to_thread(self.worksheet.append_row, row)
                 logger.info(f"[경고관리] 경고 부여 - 대상: {target}, 관리자: {admin_display_name}, 제한해제: {restricted_until.strftime('%Y-%m-%d')}")
 
-                # 경고로그 시트에 추가 (외부용 - 영구 보관, 처리자 정보 제외)
+                # 패널티로그 시트에 추가 (외부용 - 영구 보관, 처리자 정보 제외)
                 await asyncio.to_thread(
                     self._add_to_warning_log,
+                    warning_type='경고',
                     target=target,
-                    warning_date=warning_date.strftime('%Y-%m-%d'),
+                    date=warning_date.strftime('%Y-%m-%d'),
                     restricted_until=restricted_until.strftime('%Y-%m-%d'),
                     reason=reason  # 사유만 (처리자 정보 없음)
                 )

@@ -98,10 +98,11 @@ class TeamModal(Modal):
             }
             
             # 유효성 검사
-            if not validate_team_name(team_name):
-                await self._update_temp_message(temp_message, f"❌ 팀명은 2글자 이상 8글자 이하여야 합니다.\n현재 입력: \"{team_name}\" ({len(team_name)}글자)\n\n💡 올바른 예시: \"Team ER\"", discord.Color.red())
+            is_name_valid, name_error = validate_team_name(team_name)
+            if not is_name_valid:
+                await self._update_temp_message(temp_message, name_error, discord.Color.red())
                 return
-            
+
             # 팀원 중복 검사
             is_duplicate_valid, duplicate_error = check_duplicate_members(players, staff)
             if not is_duplicate_valid:
@@ -275,8 +276,9 @@ class TeamEditModal(Modal):
             # 관리자 로스터 변경은 모든 검증을 건너뜀
             if not is_roster_change:
                 # 유효성 검사
-                if not validate_team_name(new_team_name):
-                    await self._update_temp_message(temp_message, f"❌ 팀명은 2글자 이상 8글자 이하여야 합니다.\n현재 입력: \"{new_team_name}\" ({len(new_team_name)}글자)\n\n💡 올바른 예시: \"Team ER\"", discord.Color.red())
+                is_name_valid, name_error = validate_team_name(new_team_name)
+                if not is_name_valid:
+                    await self._update_temp_message(temp_message, name_error, discord.Color.red())
                     return
                 
                 # 팀원 중복 검사

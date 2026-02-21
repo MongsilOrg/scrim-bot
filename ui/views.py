@@ -413,6 +413,20 @@ class TeamInputView(View):
                     return
 
                 if api_invalid_members:
+                    # 모든 팀원의 조회가 실패한 경우 서버 점검 여부 확인
+                    if len(api_invalid_members) == len(team_members):
+                        try:
+                            async with BSERAPIClient() as maintenance_client:
+                                if await maintenance_client.check_server_maintenance():
+                                    error_msg = "🔧 현재 이터널 리턴 서버가 점검 중입니다.\n\n점검이 끝난 후 다시 신청해주세요."
+                                    if temp_message:
+                                        await self._update_temp_message(temp_message, error_msg, discord.Color.orange())
+                                    else:
+                                        await self._send_error_message(interaction, error_msg)
+                                    return
+                        except Exception as e:
+                            logger.warning(f"[뷰] 서버 점검 확인 실패: {e}")
+
                     error_msg = f"❌ 다음 닉네임들을 찾을 수 없습니다.\n**{', '.join(api_invalid_members) if api_invalid_members and isinstance(api_invalid_members, (list, tuple)) else str(api_invalid_members)}**\n\n💡 게임 내 닉네임을 정확히 입력했는지 확인해주세요."
                     if temp_message:
                         await self._update_temp_message(temp_message, error_msg, discord.Color.red())

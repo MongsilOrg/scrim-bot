@@ -204,6 +204,22 @@ class BSERAPIClient:
             "mmr_cache_ttl": self.MMR_CACHE_TTL
         }
     
+    async def check_server_maintenance(self) -> bool:
+        """BSER 서버 점검 여부를 확인합니다.
+
+        Returns:
+            True: 점검 중 (API 응답이 200이 아닌 경우)
+            False: 정상 운영 중
+        """
+        url = "https://open-api.bser.io/v2/data/Season"
+        try:
+            data = await self._request("GET", url)
+            if data is None:
+                return True
+            return data.get("code") != 200
+        except Exception:
+            return True
+
     async def get_user_uid(self, user_nickname: str) -> Optional[str]:
         """사용자 닉네임으로 사용자 UID를 조회합니다."""
         # 닉네임 캐시 확인 (24시간 장기 캐시)

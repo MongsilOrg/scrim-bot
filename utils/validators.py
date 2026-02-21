@@ -12,28 +12,30 @@ from config.logging_config import get_logger
 logger = get_logger('validators')
 
 
-def validate_team_name(team_name: str) -> bool:
-    """팀명 유효성 검사 (글자수만 체크)
-    
-    Python의 len() 함수는 유니코드 문자 수를 세므로,
-    한글과 영어 모두 동일하게 1글자로 카운트됩니다.
-    예: "Team" = 4글자, "팀" = 1글자, "Team팀" = 5글자
-    따라서 한글/영어의 최소/최대 길이 제한은 동일하게 적용됩니다.
+def validate_team_name(team_name: str) -> Tuple[bool, str]:
+    """팀명 유효성 검사 (글자수 + 허용 문자 체크)
+
+    - 한글, 영어, 공백만 허용 (숫자, 특수문자 불가)
+    - 3~8글자
     """
     if not team_name or not team_name.strip():
-        return False
-    
+        return False, "❌ 팀명을 입력해주세요."
+
     team_name = team_name.strip()
-    
-    # 최소 길이 검사 (2글자 이상)
-    if len(team_name) < 2:
-        return False
-    
+
+    # 허용 문자 검사 (한글, 영어, 공백만 허용)
+    if not re.match(r'^[가-힣a-zA-Z\s]+$', team_name):
+        return False, "❌ 팀명에는 한글과 영어만 사용할 수 있습니다.\n\n💡 숫자, 특수문자는 사용할 수 없습니다."
+
+    # 최소 길이 검사 (3글자 이상)
+    if len(team_name) < 3:
+        return False, "❌ 팀명은 최소 3글자 이상이어야 합니다."
+
     # 최대 길이 검사 (8글자 이하)
     if len(team_name) > 8:
-        return False
-    
-    return True
+        return False, "❌ 팀명은 최대 8글자까지만 가능합니다."
+
+    return True, ""
 
 
 def validate_team_data(team_data) -> Tuple[bool, str]:

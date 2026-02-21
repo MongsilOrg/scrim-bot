@@ -1,6 +1,7 @@
 """봇 이벤트 핸들러"""
 
 import io
+import re
 from datetime import datetime
 from typing import List, Optional, Tuple
 
@@ -12,11 +13,13 @@ from config.logging_config import get_logger
 from config.settings import settings
 from services.score_image_generator import ScoreImageGenerator
 from utils.helpers import get_current_kst_time
+from utils.validators import normalize_team_name
 
 logger = get_logger('events')
 
 CSVRow = Tuple[int, pd.DataFrame, str]
 REQUIRED_SCORE_COLUMNS = ['teamName', 'tournament total score', 'tournament kill score', 'gameId']
+DEFAULT_TEAM_PATTERN = re.compile(r'^team\s*\d+$', re.IGNORECASE)
 
 
 async def on_message(message: discord.Message) -> None:
@@ -148,13 +151,70 @@ def _extract_game_id(df: pd.DataFrame, filename: str) -> Optional[int]:
         return None
 
 
+def _is_default_team_name(name: str) -> bool:
+    """기본 팀명(Team 1~8) 여부를 판별합니다."""
+    return bool(DEFAULT_TEAM_PATTERN.match(name.strip()))
+
+
+def _build_team_nickname_map(df: pd.DataFrame) -> dict:
+    """DataFrame에서 팀명 → 닉네임 set 매핑을 구축합니다."""
+    team_nicknames = {}
+    if 'nickname' not in df.columns:
+        return team_nicknames
+    for _, row in df.iterrows():
+        team = str(row['teamName']).strip()
+        nick = str(row.get('nickname', '')).strip()
+        if nick:
+            team_nicknames.setdefault(team, set()).add(nick.lower())
+    return team_nicknames
+
+
+def _resolve_default_team_names(current_df: pd.DataFrame, previous_rounds_nicknames: list) -> pd.DataFrame:
+    """기본 팀명(Team N)을 이전 라운드 닉네임 기반으로 실제 팀명으로 치환합니다."""
+    if 'nickname' not in current_df.columns or not previous_rounds_nicknames:
+        return current_df
+
+    current_team_nicks = _build_team_nickname_map(current_df)
+
+    for team_name, nicks in current_team_nicks.items():
+        if not _is_default_team_name(team_name):
+            continue
+
+        best_match = None
+        best_count = 0
+
+        for prev_nick_map in previous_rounds_nicknames:
+            for prev_team, prev_nicks in prev_nick_map.items():
+                if _is_default_team_name(prev_team):
+                    continue
+                overlap = len(nicks & prev_nicks)
+                if overlap >= 2 and overlap > best_count:
+                    best_count = overlap
+                    best_match = prev_team
+
+        if best_match:
+            current_df.loc[current_df['teamName'].str.strip() == team_name, 'teamName'] = best_match
+
+    return current_df
+
+
 def _aggregate_team_scores(csv_data_list: List[CSVRow]) -> Tuple[List[dict], Optional[pd.DataFrame]]:
     """라운드별 CSV를 누적 집계해 팀 점수표 데이터로 변환합니다."""
     team_max_scores = {}
+    display_names = {}  # 정규화 키 → 최초 등장 원본 팀명
     last_csv_df: Optional[pd.DataFrame] = None
+    previous_rounds_nicknames = []
 
     for _, df, _ in csv_data_list:
         round_df = df.copy()
+        round_df['teamName'] = round_df['teamName'].astype(str).str.strip()
+
+        # 기본 팀명(Team N)을 이전 라운드 닉네임 기반으로 치환
+        round_df = _resolve_default_team_names(round_df, previous_rounds_nicknames)
+
+        # 현재 라운드 닉네임 맵 저장 (다음 라운드 매칭용)
+        previous_rounds_nicknames.append(_build_team_nickname_map(round_df))
+
         for num_col in ['tournament total score', 'tournament kill score']:
             round_df[num_col] = pd.to_numeric(round_df[num_col], errors='coerce').fillna(0)
 
@@ -165,20 +225,24 @@ def _aggregate_team_scores(csv_data_list: List[CSVRow]) -> Tuple[List[dict], Opt
 
         for _, row in round_team_max.iterrows():
             team_name = str(row['teamName'])
+            normalized_key = normalize_team_name(team_name)
             total_score = float(row['tournament total score'])
             kill_score = float(row['tournament kill score'])
 
-            if team_name not in team_max_scores:
-                team_max_scores[team_name] = {'total_score': 0.0, 'kill_score': 0.0}
-            team_max_scores[team_name]['total_score'] += total_score
-            team_max_scores[team_name]['kill_score'] += kill_score
+            if normalized_key not in display_names:
+                display_names[normalized_key] = team_name
+
+            if normalized_key not in team_max_scores:
+                team_max_scores[normalized_key] = {'total_score': 0.0, 'kill_score': 0.0}
+            team_max_scores[normalized_key]['total_score'] += total_score
+            team_max_scores[normalized_key]['kill_score'] += kill_score
 
         last_csv_df = round_df
 
     team_data: List[dict] = []
-    for team_name, scores in team_max_scores.items():
+    for normalized_key, scores in team_max_scores.items():
         team_data.append({
-            'teamName': team_name,
+            'teamName': display_names[normalized_key],
             'tournament total score': scores['total_score'],
             'tournament kill score': scores['kill_score'],
         })

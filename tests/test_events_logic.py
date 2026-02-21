@@ -105,5 +105,122 @@ class EventsLogicTest(unittest.TestCase):
         self.assertIn("**2R**: `222`", embed.description)
 
 
+    def test_aggregate_team_scores_case_insensitive(self):
+        """대소문자가 다른 팀명을 같은 팀으로 집계합니다."""
+        round1 = pd.DataFrame(
+            {
+                "teamName": ["DM", "DM", "VGX"],
+                "tournament total score": [10, 12, 9],
+                "tournament kill score": [4, 5, 3],
+            }
+        )
+        round2 = pd.DataFrame(
+            {
+                "teamName": ["dm", "dm", "vgx"],
+                "tournament total score": [8, 7, 11],
+                "tournament kill score": [2, 1, 4],
+            }
+        )
+
+        csv_rows = [(1001, round1, "r1.csv"), (1002, round2, "r2.csv")]
+        team_data, _ = events._aggregate_team_scores(csv_rows)
+
+        self.assertEqual(len(team_data), 2)
+        score_map = {item["teamName"]: item for item in team_data}
+        # 최초 등장한 원본 팀명("DM", "VGX")이 표시명으로 유지
+        self.assertIn("DM", score_map)
+        self.assertIn("VGX", score_map)
+        self.assertEqual(score_map["DM"]["tournament total score"], 20.0)
+        self.assertEqual(score_map["VGX"]["tournament total score"], 20.0)
+
+    def test_aggregate_team_scores_trailing_space(self):
+        """trailing space가 있는 팀명을 같은 팀으로 집계합니다."""
+        round1 = pd.DataFrame(
+            {
+                "teamName": ["DM ", "DM ", "VGX"],
+                "tournament total score": [10, 12, 9],
+                "tournament kill score": [4, 5, 3],
+            }
+        )
+        round2 = pd.DataFrame(
+            {
+                "teamName": ["DM", "DM", "VGX "],
+                "tournament total score": [8, 7, 11],
+                "tournament kill score": [2, 1, 4],
+            }
+        )
+
+        csv_rows = [(1001, round1, "r1.csv"), (1002, round2, "r2.csv")]
+        team_data, _ = events._aggregate_team_scores(csv_rows)
+
+        self.assertEqual(len(team_data), 2)
+        score_map = {item["teamName"]: item for item in team_data}
+        self.assertIn("DM", score_map)
+        self.assertEqual(score_map["DM"]["tournament total score"], 20.0)
+
+    def test_aggregate_team_scores_default_team_name_resolved(self):
+        """기본 팀명(Team 1)이 이전 라운드 닉네임 기반으로 실제 팀명으로 치환됩니다."""
+        round1 = pd.DataFrame(
+            {
+                "teamName": ["DM", "DM", "DM", "VGX", "VGX", "VGX"],
+                "nickname": ["player1", "player2", "player3", "player4", "player5", "player6"],
+                "tournament total score": [10, 10, 10, 9, 9, 9],
+                "tournament kill score": [4, 4, 4, 3, 3, 3],
+            }
+        )
+        round2 = pd.DataFrame(
+            {
+                "teamName": ["Team 1", "Team 1", "Team 1", "VGX", "VGX", "VGX"],
+                "nickname": ["player1", "player2", "player3", "player4", "player5", "player6"],
+                "tournament total score": [8, 8, 8, 11, 11, 11],
+                "tournament kill score": [2, 2, 2, 4, 4, 4],
+            }
+        )
+
+        csv_rows = [(1001, round1, "r1.csv"), (1002, round2, "r2.csv")]
+        team_data, _ = events._aggregate_team_scores(csv_rows)
+
+        self.assertEqual(len(team_data), 2)
+        team_names = {item["teamName"] for item in team_data}
+        # "Team 1"이 "DM"으로 치환되어야 함
+        self.assertIn("DM", team_names)
+        self.assertNotIn("Team 1", team_names)
+
+    def test_aggregate_team_scores_default_team_not_resolved_single_match(self):
+        """닉네임 1명만 일치할 경우 기본 팀명이 치환되지 않습니다."""
+        round1 = pd.DataFrame(
+            {
+                "teamName": ["DM", "DM", "DM"],
+                "nickname": ["player1", "player2", "player3"],
+                "tournament total score": [10, 10, 10],
+                "tournament kill score": [4, 4, 4],
+            }
+        )
+        round2 = pd.DataFrame(
+            {
+                "teamName": ["Team 1", "Team 1", "Team 1"],
+                "nickname": ["player1", "newplayer1", "newplayer2"],
+                "tournament total score": [8, 8, 8],
+                "tournament kill score": [2, 2, 2],
+            }
+        )
+
+        csv_rows = [(1001, round1, "r1.csv"), (1002, round2, "r2.csv")]
+        team_data, _ = events._aggregate_team_scores(csv_rows)
+
+        team_names = {item["teamName"] for item in team_data}
+        # 1명만 일치하므로 치환되지 않아야 함
+        self.assertIn("Team 1", team_names)
+        self.assertIn("DM", team_names)
+
+    def test_is_default_team_name(self):
+        self.assertTrue(events._is_default_team_name("Team 1"))
+        self.assertTrue(events._is_default_team_name("team 8"))
+        self.assertTrue(events._is_default_team_name("TEAM3"))
+        self.assertTrue(events._is_default_team_name(" Team 5 "))
+        self.assertFalse(events._is_default_team_name("DM"))
+        self.assertFalse(events._is_default_team_name("TeamAlpha"))
+
+
 if __name__ == "__main__":
     unittest.main()
