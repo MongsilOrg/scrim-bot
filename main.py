@@ -160,8 +160,11 @@ async def main():
         logger = ScrimbotLogger.get_logger("main")
 
         # 설정 검증
-        if not settings.validate():
-            logger.error("[시작] 필수 설정값 누락")
+        is_valid, config_errors = settings.validate()
+        if not is_valid:
+            logger.error("[시작] 봇 필수 설정값 누락:")
+            for err in config_errors:
+                logger.error(f"  - {err}")
             return
 
         # Discord 클라이언트 생성

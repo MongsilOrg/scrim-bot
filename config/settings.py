@@ -89,26 +89,30 @@ class Settings:
     GOOGLE_SHEETS_TEST_ACCOUNTS_WORKSHEET_NAME: str = '테스트'
     
     @classmethod
-    def validate(cls) -> bool:
-        """필수 설정값 검증"""
-        required_settings = [
-            cls.DISCORD_TOKEN,
-            cls.BSER_API_KEY,
-            cls.GUILD_ID,
-            cls.GOOGLE_SHEETS_MAIN_SPREADSHEET_ID,
-            cls.GOOGLE_SHEETS_WARNING_SPREADSHEET_ID,
-        ]
-        
-        for setting in required_settings:
-            if not setting:
-                return False
-        
+    def validate(cls) -> tuple[bool, list[str]]:
+        """필수 설정값 검증. (성공 여부, 누락 항목 리스트)를 반환합니다."""
+        errors: list[str] = []
+
+        required_env_vars = {
+            'DISCORD_TOKEN': cls.DISCORD_TOKEN,
+            'BSER_API_KEY': cls.BSER_API_KEY,
+            'GUILD_ID': cls.GUILD_ID,
+            'GOOGLE_SHEETS_MAIN_SPREADSHEET_ID': cls.GOOGLE_SHEETS_MAIN_SPREADSHEET_ID,
+            'GOOGLE_SHEETS_WARNING_SPREADSHEET_ID': cls.GOOGLE_SHEETS_WARNING_SPREADSHEET_ID,
+        }
+
+        for name, value in required_env_vars.items():
+            if not value:
+                errors.append(f"환경변수 '{name}'이(가) 설정되지 않았습니다")
+
         # 인증 파일 존재 여부 확인
         if cls.GOOGLE_SHEETS_CREDENTIALS_PATH:
             if not os.path.exists(cls.GOOGLE_SHEETS_CREDENTIALS_PATH):
-                return False
+                errors.append(
+                    f"Google Sheets 인증 파일을 찾을 수 없습니다: {cls.GOOGLE_SHEETS_CREDENTIALS_PATH}"
+                )
 
-        return True
+        return (len(errors) == 0, errors)
 
 
 # 전역 설정 인스턴스
