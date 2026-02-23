@@ -85,11 +85,11 @@ class WarningManager:
             self.client = gspread.authorize(creds)
             
             # 스프레드시트 열기
-            if settings.GOOGLE_SHEETS_WARNING_SPREADSHEET_ID:
+            if settings.GOOGLE_SHEETS_MAIN_SPREADSHEET_ID:
                 self.spreadsheet = self.client.open_by_key(
-                    settings.GOOGLE_SHEETS_WARNING_SPREADSHEET_ID
+                    settings.GOOGLE_SHEETS_MAIN_SPREADSHEET_ID
                 )
-                logger.info(f"[경고관리] 스프레드시트 연결 성공 - ID: {settings.GOOGLE_SHEETS_WARNING_SPREADSHEET_ID}")
+                logger.info(f"[경고관리] 스프레드시트 연결 성공 - ID: {settings.GOOGLE_SHEETS_MAIN_SPREADSHEET_ID}")
 
                 # 패널티 시트 열기 (없으면 생성)
                 try:
