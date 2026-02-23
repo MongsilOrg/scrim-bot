@@ -253,7 +253,7 @@ class TeamEditModal(Modal):
             )
             temp_message = await interaction.followup.send(embed=temp_embed, ephemeral=True)
             
-            from ui.views import GroupRosterView
+            from commands.ui.views import GroupRosterView
             is_roster_change = isinstance(self.view, GroupRosterView)
             
             # 입력 데이터 수집
@@ -309,7 +309,7 @@ class TeamEditModal(Modal):
             
             # 조편성 시작 여부 확인
             # GroupRosterView인지 확인하여 로스터 변경인지 판단
-            from ui.views import GroupRosterView
+            from commands.ui.views import GroupRosterView
             is_roster_change = isinstance(self.view, GroupRosterView)
             
             if team_data_manager.is_team_assignment_started:
@@ -337,7 +337,7 @@ class TeamEditModal(Modal):
                     team_members = (players if isinstance(players, (list, tuple)) else []) + (staff if isinstance(staff, (list, tuple)) else [])
                     
                     # 조 내 팀 수정인지 개별 팀 수정인지 확인
-                    from ui.views import GroupRosterView
+                    from commands.ui.views import GroupRosterView
                     is_roster_change = isinstance(self.view, GroupRosterView)
                     if is_roster_change:  # 조 내 팀 수정
                         # 같은 조 내의 다른 팀들과 중복 검사
@@ -425,7 +425,7 @@ class TeamEditModal(Modal):
             team_data_manager.log_action("수정", interaction.user, new_team_name)
             
             # 조 내 순위 재정렬 (조 내 팀 수정 시에만)
-            from ui.views import GroupRosterView
+            from commands.ui.views import GroupRosterView
             is_roster_change = isinstance(self.view, GroupRosterView)
             if is_roster_change:
                 await self._reorder_group_teams(team_data_manager, new_team_name, new_team_mmr)
@@ -707,7 +707,7 @@ class TeamEditModal(Modal):
             img_io = ImageGenerator.generate_mmr_image(group_teams)
             
             # 새로운 로스터 뷰 생성
-            from ui.views import GroupRosterView
+            from commands.ui.views import GroupRosterView
             roster_view = GroupRosterView(group_letter, updated_group_teams)
             
             # 조별 공지 메시지 생성

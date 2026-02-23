@@ -11,7 +11,7 @@ import pytz
 
 from config.logging_config import get_logger
 from config.settings import settings
-from services.score_image_generator import ScoreImageGenerator
+from services.image_generator import ImageGenerator
 from utils.helpers import get_current_kst_time
 from utils.validators import normalize_team_name
 
@@ -83,7 +83,7 @@ async def _process_csv_attachments(message: discord.Message) -> None:
         logger.warning("[이벤트] 처리할 팀 데이터 없음")
         return
 
-    img_buf = ScoreImageGenerator().generate_score_table_image(team_data)
+    img_buf = ImageGenerator.generate_score_table_image(team_data)
     if not img_buf:
         logger.error("[이벤트] 점수표 이미지 생성 실패", exc_info=True)
         return

@@ -42,6 +42,9 @@ Thumbs.db
 # 데이터 백업
 data/
 
+# Claude Code
+CLAUDE.md
+
 # 기타
 teams.csv
 *.csv.bak

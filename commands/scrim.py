@@ -7,7 +7,7 @@ from discord import Color, Embed
 from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
-from ui.views import ScrimResetConfirmView, TeamInputView
+from commands.ui.views import ScrimResetConfirmView, TeamInputView
 from utils.helpers import get_current_kst_time, get_next_scrim_date, is_admin
 
 logger = get_logger('scrim')

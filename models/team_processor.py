@@ -843,7 +843,7 @@ class TeamProcessor:
                 img_io = self._generate_group_image(group_letter, group_teams, group_mmr_averages)
             
             # 조별 로스터 관리 뷰 생성
-            from ui.views import GroupRosterView
+            from commands.ui.views import GroupRosterView
             roster_view = GroupRosterView(group_letter, group)
             
             # 기존 메시지 삭제 (조편성 시에만)

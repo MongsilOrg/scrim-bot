@@ -6,7 +6,7 @@ from discord import Color, Embed
 
 from config.logging_config import get_logger
 from config.settings import settings
-from ui.modals import WarningReasonModal
+from commands.ui.modals import WarningReasonModal
 from utils.helpers import is_admin
 
 logger = get_logger('warning')
