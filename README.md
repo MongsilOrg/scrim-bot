@@ -101,9 +101,6 @@ ADMIN_ROLE_IDS=1035511183073099777,1178295996862713916
 # 스크림 공지 채널 (조편성 결과, 공지사항이 전송됨)
 NOTICE_CHANNEL_ID=1173422674626748417
 
-# 팀 배정 채널 (팀 등록 버튼이 전송되는 채널)
-TEAM_ASSIGNMENT_CHANNEL_ID=1212383364258992128
-
 # 자동 조편성 시작 채널 (조편성 시작 알림이 전송됨)
 AUTO_ASSIGNMENT_START_CHANNEL_ID=1390999095962767380
 
@@ -137,9 +134,6 @@ GOOGLE_SHEETS_CREDENTIALS_PATH=credentials/google_sheets_credentials.json
 # 예: https://docs.google.com/spreadsheets/d/{이 부분}/edit
 GOOGLE_SHEETS_MAIN_SPREADSHEET_ID=REDACTED-SHEET-ID
 
-# 패널티 스프레드시트 ID (메인과 동일하게 설정 가능)
-GOOGLE_SHEETS_WARNING_SPREADSHEET_ID=REDACTED-SHEET-ID
-
 # ============================================================
 # 로깅 설정 (선택)
 # ============================================================
@@ -156,6 +150,15 @@ LOG_FILE=scrimbot.log
 
 # 임베드 푸터 텍스트
 EMBED_FOOTER_TEXT=ER Scrim | Powered by Mongsil
+
+# 썸네일 이미지 URL
+THUMBNAIL_URL=https://mongsil.dev/w/src/Scrim.jpg
+
+# 공지사항 메시지 (마크다운 지원)
+ANNOUNCEMENT_MESSAGE=
+
+# 조별 카테고리 이름 패턴 ({letter}가 조 문자로 대체됨)
+GROUP_CATEGORY_PATTERN=Group {letter}
 ```
 
 ### 환경변수 상세 설명
@@ -167,17 +170,18 @@ EMBED_FOOTER_TEXT=ER Scrim | Powered by Mongsil
 | `ADMIN_ROLE_IDS` | O | - | 관리자 역할 ID (쉼표 구분) |
 | `BSER_API_KEY` | O | - | BSER Open API 키 |
 | `NOTICE_CHANNEL_ID` | O | - | 공지 채널 ID |
-| `TEAM_ASSIGNMENT_CHANNEL_ID` | O | - | 팀 배정 채널 ID |
 | `AUTO_ASSIGNMENT_START_CHANNEL_ID` | O | - | 자동 조편성 알림 채널 ID |
 | `TEAM_LIST_CHANNEL_ID` | O | - | 팀 목록 채널 ID |
 | `BACKUP_ANALYSIS_CHANNEL_ID` | O | - | 전적 백업 채널 ID |
 | `GROUP_CHANNEL_IDS` | O | - | 조별 채널 ID (A:id,B:id,...) |
 | `GOOGLE_SHEETS_CREDENTIALS_PATH` | O | `credentials/google_sheets_credentials.json` | 서비스 계정 키 파일 경로 |
 | `GOOGLE_SHEETS_MAIN_SPREADSHEET_ID` | O | - | 메인 스프레드시트 ID |
-| `GOOGLE_SHEETS_WARNING_SPREADSHEET_ID` | O | - | 패널티 스프레드시트 ID |
 | `LOG_LEVEL` | X | `INFO` | 로그 출력 레벨 |
 | `LOG_FILE` | X | `scrimbot.log` | 로그 파일 경로 |
 | `EMBED_FOOTER_TEXT` | X | `ER Scrim \| Powered by Mongsil` | 임베드 하단 텍스트 |
+| `THUMBNAIL_URL` | X | `https://mongsil.dev/w/src/Scrim.jpg` | 썸네일 이미지 URL |
+| `ANNOUNCEMENT_MESSAGE` | X | - | 공지사항 메시지 (마크다운) |
+| `GROUP_CATEGORY_PATTERN` | X | `Group {letter}` | 조별 카테고리 이름 패턴 |
 
 ---
 
@@ -571,7 +575,6 @@ python -m pytest tests/ -v
 ```
 📢 공지
 ├── #스크림-공지          ← NOTICE_CHANNEL_ID
-├── #팀-배정              ← TEAM_ASSIGNMENT_CHANNEL_ID
 └── #팀-목록              ← TEAM_LIST_CHANNEL_ID
 
 📊 조별 채널
