@@ -30,8 +30,8 @@ def validate_team_name(team_name: str) -> Tuple[bool, str]:
     if len(team_name) > 8:
         return False, "❌ 팀명은 3~8글자여야 합니다.\n\n💡 현재 입력: {0}글자".format(len(team_name))
 
-    # 허용 문자 검사 (한글, 영어, 공백만 허용)
-    if not re.match(r'^[가-힣a-zA-Z\s]+$', team_name):
+    # 허용 문자 검사 (한글(자음/모음 포함), 영어, 공백만 허용)
+    if not re.match(r'^[가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z\s]+$', team_name):
         return False, "❌ 팀명에는 한글과 영어만 사용할 수 있습니다.\n\n💡 숫자, 특수문자는 사용할 수 없습니다."
 
     return True, ""
