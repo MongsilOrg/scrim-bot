@@ -399,11 +399,19 @@ class TeamInputView(View):
 
                 # API 닉네임 검증 (게임 내 닉네임 확인)
                 api_invalid_members = []
+                is_maintenance = False
                 try:
                     async with BSERAPIClient() as client_instance:
                         for member in team_members:
                             if not await client_instance.get_user_uid(member):
                                 api_invalid_members.append(member)
+
+                        # 모든 팀원 조회 실패 시 같은 클라이언트로 서버 점검 확인
+                        if len(api_invalid_members) == len(team_members):
+                            try:
+                                is_maintenance = await client_instance.check_server_maintenance()
+                            except Exception as e:
+                                logger.warning(f"[뷰] 서버 점검 확인 실패: {e}")
                 except Exception as e:
                     logger.error(f"[뷰] API 닉네임 검증 실패: {e}", exc_info=True)
                     if temp_message:
@@ -413,19 +421,13 @@ class TeamInputView(View):
                     return
 
                 if api_invalid_members:
-                    # 모든 팀원의 조회가 실패한 경우 서버 점검 여부 확인
-                    if len(api_invalid_members) == len(team_members):
-                        try:
-                            async with BSERAPIClient() as maintenance_client:
-                                if await maintenance_client.check_server_maintenance():
-                                    error_msg = "🔧 현재 이터널 리턴 서버가 점검 중입니다.\n\n점검이 끝난 후 다시 신청해주세요."
-                                    if temp_message:
-                                        await self._update_temp_message(temp_message, error_msg, discord.Color.orange())
-                                    else:
-                                        await self._send_error_message(interaction, error_msg)
-                                    return
-                        except Exception as e:
-                            logger.warning(f"[뷰] 서버 점검 확인 실패: {e}")
+                    if is_maintenance:
+                        error_msg = "🔧 현재 이터널 리턴 서버가 점검 중입니다.\n\n점검이 끝난 후 다시 신청해주세요."
+                        if temp_message:
+                            await self._update_temp_message(temp_message, error_msg, discord.Color.orange())
+                        else:
+                            await self._send_error_message(interaction, error_msg)
+                        return
 
                     error_msg = f"❌ 다음 닉네임들을 찾을 수 없습니다.\n**{', '.join(api_invalid_members) if api_invalid_members and isinstance(api_invalid_members, (list, tuple)) else str(api_invalid_members)}**\n\n💡 게임 내 닉네임을 정확히 입력했는지 확인해주세요."
                     if temp_message:
