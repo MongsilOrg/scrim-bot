@@ -38,8 +38,9 @@ class TeamModal(Modal):
 
         # 팀명 입력
         self.team_name_input = TextInput(
-            label="팀명",
+            label="팀명 (3~8글자, 한글/영어)",
             placeholder="예: Team ER",
+            min_length=3,
             max_length=8,
             required=True
         )
@@ -64,14 +65,14 @@ class TeamModal(Modal):
             style=discord.TextStyle.paragraph
         )
         self.add_item(self.staff_input)
-    
+
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """모달 제출 처리"""
         try:
             # 즉시 응답하여 모달을 닫음
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=True)
-            
+
             # 임시 메시지 전송
             temp_embed = discord.Embed(
                 title="⏳ 처리 중...",
@@ -79,7 +80,7 @@ class TeamModal(Modal):
                 color=discord.Color.blue()
             )
             temp_message = await interaction.followup.send(embed=temp_embed, ephemeral=True)
-            
+
             # 입력 데이터 수집
             team_name = self.team_name_input.value.strip()
             
@@ -194,8 +195,9 @@ class TeamEditModal(Modal):
 
         # 팀명 입력
         self.team_name_input = TextInput(
-            label="팀명",
+            label="팀명 (3~8글자, 한글/영어)",
             placeholder="예: Team ER",
+            min_length=3,
             max_length=8,
             required=True,
             default=self.original_team_name

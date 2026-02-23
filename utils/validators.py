@@ -23,17 +23,16 @@ def validate_team_name(team_name: str) -> Tuple[bool, str]:
 
     team_name = team_name.strip()
 
+    # 길이 검사 (3~8글자)
+    if len(team_name) < 3:
+        return False, "❌ 팀명은 3~8글자여야 합니다.\n\n💡 현재 입력: {0}글자".format(len(team_name))
+
+    if len(team_name) > 8:
+        return False, "❌ 팀명은 3~8글자여야 합니다.\n\n💡 현재 입력: {0}글자".format(len(team_name))
+
     # 허용 문자 검사 (한글, 영어, 공백만 허용)
     if not re.match(r'^[가-힣a-zA-Z\s]+$', team_name):
         return False, "❌ 팀명에는 한글과 영어만 사용할 수 있습니다.\n\n💡 숫자, 특수문자는 사용할 수 없습니다."
-
-    # 최소 길이 검사 (3글자 이상)
-    if len(team_name) < 3:
-        return False, "❌ 팀명은 최소 3글자 이상이어야 합니다."
-
-    # 최대 길이 검사 (8글자 이하)
-    if len(team_name) > 8:
-        return False, "❌ 팀명은 최대 8글자까지만 가능합니다."
 
     return True, ""
 
@@ -122,23 +121,25 @@ def normalize_team_name(name: str) -> str:
 
 
 def check_duplicate_members(players: List[str], staff: List[str]) -> Tuple[bool, str]:
-    """팀원 중복 검사"""
+    """팀원 중복 검사 (대소문자 구별 없이)"""
     try:
         all_members = players + staff
-        
+
         # 빈 문자열 제거
         all_members = [member.strip() for member in all_members if member.strip()]
-        
-        # 중복 검사
-        if len(all_members) != len(set(all_members)):
-            duplicates = []
-            seen = set()
-            for member in all_members:
-                if member in seen:
-                    duplicates.append(member)
-                else:
-                    seen.add(member)
-            duplicate_list = ', '.join(set(duplicates))
+
+        # 대소문자 무시 중복 검사
+        seen = set()
+        duplicates = []
+        for member in all_members:
+            normalized = normalize_nickname_for_comparison(member)
+            if normalized in seen:
+                duplicates.append(member)
+            else:
+                seen.add(normalized)
+
+        if duplicates:
+            duplicate_list = ', '.join(dict.fromkeys(duplicates))
             return False, f"❌ 중복된 팀원이 있습니다.\n\n**중복된 닉네임**: {duplicate_list}\n\n💡 같은 닉네임을 여러 번 입력할 수 없습니다."
         
         return True, ""
