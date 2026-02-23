@@ -30,26 +30,27 @@ async def 스크림(interaction: discord.Interaction) -> None:
 
         bot_manager = BotManager.get_instance()
 
-        # 진행 중인 스크림이 있으면 확인 요청
+        # 진행 중인 스크림이 있으면 확인 요청 (22시 이후면 자동 초기화)
         existing_tdm = bot_manager.get_team_data_manager()
         if existing_tdm and existing_tdm.teams:
-            confirm_embed = Embed(
-                title="⚠️ 진행 중인 스크림이 있습니다",
-                description=(
-                    f"현재 **{len(existing_tdm.teams)}개 팀**이 등록되어 있습니다.\n"
-                    f"초기화하면 모든 팀 데이터가 삭제됩니다.\n\n"
-                    f"초기화하시겠습니까?"
-                ),
-                color=Color.orange()
-            )
-            confirm_view = ScrimResetConfirmView()
-            await interaction.response.send_message(embed=confirm_embed, view=confirm_view, ephemeral=True)
-            confirm_view.message = await interaction.original_response()
+            if not _is_scrim_expired(existing_tdm, current_time):
+                confirm_embed = Embed(
+                    title="⚠️ 진행 중인 스크림이 있습니다",
+                    description=(
+                        f"현재 **{len(existing_tdm.teams)}개 팀**이 등록되어 있습니다.\n"
+                        f"초기화하면 모든 팀 데이터가 삭제됩니다.\n\n"
+                        f"초기화하시겠습니까?"
+                    ),
+                    color=Color.orange()
+                )
+                confirm_view = ScrimResetConfirmView()
+                await interaction.response.send_message(embed=confirm_embed, view=confirm_view, ephemeral=True)
+                confirm_view.message = await interaction.original_response()
 
-            # 사용자 응답 대기
-            await confirm_view.wait()
-            if not confirm_view.confirmed:
-                return
+                # 사용자 응답 대기
+                await confirm_view.wait()
+                if not confirm_view.confirmed:
+                    return
 
         # 전역 team_data_manager 새로 생성하여 이전 스크림 데이터 완전 초기화
         # 이전 태스크가 완전히 종료될 때까지 대기합니다
@@ -103,6 +104,30 @@ async def 스크림(interaction: discord.Interaction) -> None:
         await _send_error_message(interaction, "스크림 명령어 처리 중 오류가 발생했습니다.")
 
 
+
+
+def _is_scrim_expired(team_data_manager, current_time) -> bool:
+    """이전 스크림이 만료되었는지 확인합니다 (스크림 당일 22시 기준)."""
+    from datetime import date
+
+    if not team_data_manager.scrim_day or not team_data_manager.scrim_month:
+        return True
+
+    try:
+        today = current_time.date()
+        scrim_date = date(current_time.year, team_data_manager.scrim_month, team_data_manager.scrim_day)
+
+        # 스크림 날짜가 6개월 이상 미래이면 작년 스크림으로 판단
+        if (scrim_date - today).days > 180:
+            scrim_date = date(current_time.year - 1, team_data_manager.scrim_month, team_data_manager.scrim_day)
+
+        if scrim_date < today:
+            return True
+        if scrim_date == today and current_time.hour >= 22:
+            return True
+        return False
+    except ValueError:
+        return True
 
 
 def _create_scrim_embed(day: int, month: int, weekday: str) -> Embed:
