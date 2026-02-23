@@ -94,12 +94,3 @@ class ScrimbotLogger:
 def get_logger(name: str) -> logging.Logger:
     """편의 함수: 모듈별 로거 반환"""
     return ScrimbotLogger.get_logger(name)
-
-
-# 로깅 레벨 상수
-class LogLevel:
-    DEBUG = "DEBUG"
-    INFO = "INFO"
-    WARNING = "WARNING"
-    ERROR = "ERROR"
-    CRITICAL = "CRITICAL"
