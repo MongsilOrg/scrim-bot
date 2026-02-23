@@ -1147,7 +1147,7 @@ class TeamProcessor:
             # 모든 조 (A~F)에 대해 처리
             for group_letter in ['A', 'B', 'C', 'D', 'E', 'F']:
                 group_index = ord(group_letter) - ord('A')  # A=0, B=1, ...
-                category_name = settings.GROUP_CATEGORY_PATTERNS.get(group_letter)
+                category_name = settings.GROUP_CATEGORY_PATTERN.format(letter=group_letter)
                 
                 if not category_name:
                     logger.warning(f"[Discord] 카테고리 패턴이 설정되지 않음 - 조: {group_letter}조")

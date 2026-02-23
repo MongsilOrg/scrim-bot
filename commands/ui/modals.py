@@ -596,7 +596,7 @@ class TeamEditModal(Modal):
                 return
             
             group_letter = self.view.group_letter
-            category_name = settings.GROUP_CATEGORY_PATTERNS.get(group_letter)
+            category_name = settings.GROUP_CATEGORY_PATTERN.format(letter=group_letter)
             
             if not category_name:
                 logger.warning(f"[모달] 카테고리 패턴이 설정되지 않음 - 조: {group_letter}조")
