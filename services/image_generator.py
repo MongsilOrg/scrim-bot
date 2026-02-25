@@ -2,6 +2,7 @@
 이미지 생성 서비스
 """
 import os
+import platform
 from io import BytesIO
 from typing import Dict, List, Optional
 
@@ -13,7 +14,10 @@ from config.logging_config import get_logger
 logger = get_logger('image_generator')
 
 # wkhtmltoimage 공통 설정
-WKHTML_PATH = '/usr/bin/wkhtmltoimage'
+if platform.system() == 'Windows':
+    WKHTML_PATH = r'C:\Program Files\wkhtmltopdf\bin\wkhtmltoimage.exe'
+else:
+    WKHTML_PATH = '/usr/bin/wkhtmltoimage'
 
 
 def _render_html_to_image(html_str: str, width: int = 800, height: int = None) -> Optional[BytesIO]:
