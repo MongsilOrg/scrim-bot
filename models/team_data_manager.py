@@ -18,6 +18,8 @@ from utils.validators import normalize_nickname_for_comparison
 
 from .team_data import TeamData
 
+from services.notion_api import check_notion_for_tags
+
 if TYPE_CHECKING:  # pragma: no cover
     from bot.manager import BotManager  # type: ignore
 
@@ -829,6 +831,8 @@ class TeamDataManager:
             logger.error(f"[Discord] 서비스 실행 실패: {e}", exc_info=True)
     
     async def update_mmr_message(self, channel: discord.TextChannel, mmr_fail_count: int = 0) -> None:
+        대회섭인지 = check_notion_for_tags()
+        
         """MMR 메시지를 이미지로 업데이트합니다."""
         try:
             # 조편성 시작 이후인지 확인
@@ -856,12 +860,20 @@ class TeamDataManager:
             )
 
             # 공지사항 추가 (설정에서 가져오기) - 이미지 위에 배치
-            if settings.ANNOUNCEMENT_MESSAGE:
-                embed.add_field(
-                    name="📢 공지사항",
-                    value=settings.ANNOUNCEMENT_MESSAGE,
-                    inline=False
-                )
+            if 대회섭인지:
+                if settings.ANNOUNCEMENT_MESSAGE:
+                    embed.add_field(
+                        name="📢 공지사항 대회섭",
+                        value=settings.ANNOUNCEMENT_MESSAGE,
+                        inline=False
+                    )
+            else:        
+                if settings.ANNOUNCEMENT_MESSAGE:
+                    embed.add_field(
+                        name="📢 공지사항",
+                        value=settings.ANNOUNCEMENT_MESSAGE,
+                        inline=False
+                    )    
 
             embed.set_image(url="attachment://mmr_table.png")
             embed.set_footer(text="ER Scrim", icon_url=settings.THUMBNAIL_URL)
