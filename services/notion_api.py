@@ -54,13 +54,14 @@ def check_notion_for_tags():
     
     today_numbers = []
     tomorrow_numbers = []
+    count = 0
+    broadcast = True
 
     for result in results:
         if "properties" not in result:
             continue
-
-        start_date, end_date, props = get_date_data(result)
         
+        start_date, end_date, props = get_date_data(result)
         tag_list = props.get("태그", {}).get("multi_select", [])
         
         if start_date <= today <= end_date:
@@ -72,12 +73,15 @@ def check_notion_for_tags():
         if start_date <= tomorrow <= end_date:
             for tag in tag_list:
                 tag_name = tag["name"]
+                count += 1
                 if is_number(tag_name):
                     tomorrow_numbers.append(float(tag_name))
+            if count > 1:
+                broadcast = False
 
     if today_numbers and tomorrow_numbers:
         if min(tomorrow_numbers) < min(today_numbers):
-            return True
+            return [True, broadcast]
 
-    return False
+    return [False, broadcast]
 
