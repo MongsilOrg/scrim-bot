@@ -6,6 +6,8 @@ import platform
 from io import BytesIO
 from typing import Dict, List, Optional
 
+from services.notion_api import check_notion_for_tags
+
 import imgkit
 import pandas as pd
 
@@ -19,6 +21,7 @@ if platform.system() == 'Windows':
 else:
     WKHTML_PATH = '/usr/bin/wkhtmltoimage'
 
+server_info , *_ = check_notion_for_tags()
 
 def _render_html_to_image(html_str: str, width: int = 800, height: int = None) -> Optional[BytesIO]:
     """HTML 문자열을 PNG 이미지로 변환하는 공통 유틸리티."""
@@ -97,7 +100,7 @@ class ImageGenerator:
                     border-bottom: 1px solid #ddd;
                 }}
                 .table th {{
-                    background-color: #4a9eff;
+                    background-color: {'#FB9206' if server_info else '#4a9eff'};
                     color: white;
                     font-weight: bold;
                 }}
@@ -195,12 +198,12 @@ class ImageGenerator:
         white-space: nowrap;
     }}
     .header-row th {{
-        background-color: #4a9eff;
+        background-color: {'#FB9206' if server_info else '#4a9eff'};
         color: #ffffff;
         font-size: 16px;
         font-weight: bold;
         padding: 10px 6px;
-        border-bottom: 2px solid #3a8ee0;
+        border-bottom: 2px solid {'#FB9206' if server_info else '#3a8ee0'};
     }}
     .col-rank {{ width: 5%; }}
     .col-team {{ width: 17%; }}
@@ -226,7 +229,7 @@ class ImageGenerator:
         background-color: #333333;
     }}
     .mmr-value {{
-        color: #4a9eff;
+        color: {'#FB9206' if server_info else '#4a9eff'};
         font-weight: bold;
     }}
     .divider-bottom td {{
@@ -393,7 +396,7 @@ class ImageGenerator:
         width: 17.5%;
     }}
     .accent {{
-        color: #4a9eff;
+        color: {'#FB9206' if server_info else '#4a9eff'};
         font-weight: bold;
     }}
     .rank-gold {{
