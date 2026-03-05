@@ -680,6 +680,7 @@ class TeamDataManager:
                 )
                 return
 
+            [server_info, broadcast] = check_notion_for_tags()
             total_teams_current = len(team_data_manager.teams)
             team_data_manager.log_state_snapshot(prefix="start_team_assignment")
             
@@ -715,6 +716,16 @@ class TeamDataManager:
                 start_embed.add_field(
                     name="예비팀 수",
                     value=str(total_teams_current % settings.TEAMS_PER_GROUP),
+                    inline=True
+                )
+                start_embed.add_field(
+                    name="서버 정보",
+                    value="Tournament" if server_info else "Live",
+                    inline=True
+                )
+                start_embed.add_field(
+                    name="방송 정보",
+                    value="송출 가능" if broadcast else "송출 불가",
                     inline=True
                 )
                 start_embed.set_footer(text="ER Scrim", icon_url=settings.THUMBNAIL_URL)
@@ -831,8 +842,16 @@ class TeamDataManager:
             logger.error(f"[Discord] 서비스 실행 실패: {e}", exc_info=True)
     
     async def update_mmr_message(self, channel: discord.TextChannel, mmr_fail_count: int = 0) -> None:
-        대회섭인지 = check_notion_for_tags()
-        
+        [server_info, broadcast] = check_notion_for_tags()
+        operate = ["Live 서버 , 송출 가능",  "Live 서버 , 송출 불가능" , "Tournament 서버 , 송출 불가능" ]
+        if not server_info :
+            if broadcast:
+                operate = operate[0]
+            else:
+                operate = operate[1]
+        else:
+            operate = operate[2]   
+
         """MMR 메시지를 이미지로 업데이트합니다."""
         try:
             # 조편성 시작 이후인지 확인
@@ -859,21 +878,19 @@ class TeamDataManager:
                 color=discord.Color.blue()
             )
 
+            embed.add_field(
+                name="🖥️ 운영 정보",
+                value=f"`{operate}`",
+                inline=False
+            )
+
             # 공지사항 추가 (설정에서 가져오기) - 이미지 위에 배치
-            if 대회섭인지:
-                if settings.ANNOUNCEMENT_MESSAGE:
-                    embed.add_field(
-                        name="📢 공지사항 대회섭",
-                        value=settings.ANNOUNCEMENT_MESSAGE,
-                        inline=False
-                    )
-            else:        
-                if settings.ANNOUNCEMENT_MESSAGE:
-                    embed.add_field(
-                        name="📢 공지사항",
-                        value=settings.ANNOUNCEMENT_MESSAGE,
-                        inline=False
-                    )    
+            if settings.ANNOUNCEMENT_MESSAGE:
+                embed.add_field(
+                    name="📢 공지사항",
+                    value=settings.ANNOUNCEMENT_MESSAGE,
+                    inline=False
+                )
 
             embed.set_image(url="attachment://mmr_table.png")
             embed.set_footer(text="ER Scrim", icon_url=settings.THUMBNAIL_URL)
