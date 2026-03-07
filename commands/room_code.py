@@ -123,7 +123,7 @@ class WeatherButton(discord.ui.Button):
                 embed.set_field_at(
                     i,
                     name="🌤️ 날씨",
-                    value=f"# 메인 날씨: `{main_weather}`\n# 서브 날씨: `{self.weather}`",
+                    value=f"메인 날씨: `{main_weather}`\n서브 날씨: `{self.weather}`",
                     inline=False,
                 )
                 break
@@ -229,16 +229,16 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                     # 4라운드: 자동 확정
                     sub_weather = available[0]
                     manager.add_selected_weather(group_letter, sub_weather)
-                    weather_value = f"# 메인 날씨: `{main_weather}`\n# 서브 날씨: `{sub_weather}`"
+                    weather_value = f"메인 날씨: `{main_weather}`\n서브 날씨: `{sub_weather}`"
                 elif len(available) == 0:
                     # 모든 서브 날씨가 소진된 경우
-                    weather_value = f"# 메인 날씨: `{main_weather}`"
+                    weather_value = f"메인 날씨: `{main_weather}`"
                 else:
                     # 선택 필요: 서브 날씨 후보를 그대로 노출
-                    weather_value = f"# 메인 날씨: `{main_weather}`\n# 서브 날씨: `{', '.join(available)}`"
+                    weather_value = f"메인 날씨: `{main_weather}`\n서브 날씨: `{', '.join(available)}`"
                     weather_view = WeatherButtonView(group_letter, round_number)
             else:
-                weather_value = f"# 메인 날씨: `{main_weather}`\n# 서브 날씨: `{', '.join(SUB_WEATHERS)}`"
+                weather_value = f"메인 날씨: `{main_weather}`\n서브 날씨: `{', '.join(SUB_WEATHERS)}`"
 
             embed.add_field(
                 name="🌤️ 날씨",
@@ -248,7 +248,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
 
             embed.add_field(
                 name="⏱️ 라운드 시작",
-                value=f"# `{round_start_time.strftime('%H:%M')}`",
+                value=f"`{round_start_time.strftime('%H:%M')}`",
                 inline=False
             )
 
