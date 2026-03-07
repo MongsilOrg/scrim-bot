@@ -683,9 +683,13 @@ class TeamDataManager:
             [server_info, broadcast] = check_notion_for_tags()
             total_teams_current = len(team_data_manager.teams)
             team_data_manager.log_state_snapshot(prefix="start_team_assignment")
-            
+
             logger.info(f"[조편성] 조편성 시작 - 총 팀 수: {total_teams_current}개, 예비팀: {spare_teams}개")
-            
+
+            if total_teams_current < settings.TEAMS_PER_GROUP:
+                logger.warning(f"[조편성] 팀 부족으로 중단 - {total_teams_current}팀 < {settings.TEAMS_PER_GROUP}팀")
+                return
+
             team_data_manager.is_team_assignment_started = True
             
             # ✅ scrim.py 방식: 직접 가져오기, 체크 없음
@@ -783,7 +787,11 @@ class TeamDataManager:
             groups, unmatched_teams = await team_processor.process_teams_background(team_data_manager.teams, None)
             
             logger.info(f"[조편성] 조편성 실행 완료 - 조 수: {len(groups)}개, 매칭되지 않은 팀: {len(unmatched_teams)}개")
-            
+
+            if not groups:
+                logger.warning("[조편성] 편성된 조가 없으므로 Discord 서비스 건너뜀")
+                return
+
             # Discord 서비스 실행 (클라이언트가 있을 때만)
             if client:
                 await team_data_manager._execute_discord_services(client, groups, unmatched_teams)
