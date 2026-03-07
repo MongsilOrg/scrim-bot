@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING, Dict, List, Tuple, Union
 
 import discord
 from discord import SelectOption
-from discord.ui import Label, Modal, Select, TextDisplay, TextInput
+from discord.components import RadioGroupOption
+from discord.ui import FileUpload, Label, Modal, RadioGroup, Select, TextDisplay, TextInput
 
 from bot.manager import BotManager
 from config.logging_config import get_logger
@@ -809,27 +810,25 @@ class WarningReasonModal(Modal):
         self.target_user = target_user
 
         # 유형 선택 (주의/경고)
-        self.type_select = Select(
+        self.type_radio = RadioGroup(
             options=[
-                SelectOption(label="주의", value="주의", description="주의 2회 누적 시 경고로 전환"),
-                SelectOption(label="경고", value="경고", description="즉시 스크림 참여 제한"),
+                RadioGroupOption(label="주의", value="주의", description="주의 2회 누적 시 경고로 전환"),
+                RadioGroupOption(label="경고", value="경고", description="즉시 스크림 참여 제한"),
             ],
-            placeholder="유형을 선택하세요",
             required=True,
         )
-        self.add_item(Label(text="유형", component=self.type_select))
+        self.add_item(Label(text="유형", component=self.type_radio))
 
         # 사유 선택 (지각/대타/직접입력)
-        self.reason_select = Select(
+        self.reason_radio = RadioGroup(
             options=[
-                SelectOption(label="지각", value="지각"),
-                SelectOption(label="대타", value="대타"),
-                SelectOption(label="직접입력", value="직접입력", description="상세 사유에 직접 입력"),
+                RadioGroupOption(label="지각", value="지각"),
+                RadioGroupOption(label="대타", value="대타"),
+                RadioGroupOption(label="직접입력", value="직접입력", description="상세 사유에 직접 입력"),
             ],
-            placeholder="사유를 선택하세요",
             required=True,
         )
-        self.add_item(Label(text="사유", component=self.reason_select))
+        self.add_item(Label(text="사유", component=self.reason_radio))
 
         # 상세 사유 입력
         self.detail_input = TextInput(
@@ -854,8 +853,8 @@ class WarningReasonModal(Modal):
                 await interaction.response.defer(ephemeral=True)
 
             # 입력 데이터 수집
-            warning_type = self.type_select.values[0]
-            reason_choice = self.reason_select.values[0]
+            warning_type = self.type_radio.value
+            reason_choice = self.reason_radio.value
             detail = self.detail_input.value.strip() if self.detail_input.value else ""
 
             # 사유 결합
@@ -1114,15 +1113,13 @@ class CSVImportModal(Modal):
         super().__init__(title="CSV 팀 입력")
         self.view = view
 
-        # CSV 입력
-        self.csv_input = TextInput(
-            label="CSV 내용",
-            placeholder="team_name,players,staff\nTeam1,Player1 Player2,Staff1\nTeam2,Player3 Player4,",
-            style=discord.TextStyle.paragraph,
-            max_length=4000,
-            required=True
-        )
-        self.add_item(self.csv_input)
+        # CSV 파일 업로드
+        self.csv_upload = FileUpload(required=True, max_values=1)
+        self.add_item(Label(
+            text="CSV 파일",
+            description="CSV 내보내기와 동일한 양식의 파일을 업로드하세요.",
+            component=self.csv_upload,
+        ))
     
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """모달 제출 처리"""
@@ -1139,11 +1136,21 @@ class CSVImportModal(Modal):
             )
             temp_message = await interaction.followup.send(embed=temp_embed, ephemeral=True)
 
-            csv_content = self.csv_input.value.strip()
+            # 업로드된 파일에서 CSV 내용 읽기
+            if not self.csv_upload.values:
+                await self._update_temp_message(temp_message, "❌ 파일이 업로드되지 않았습니다.", discord.Color.red())
+                return
 
-            # 입력값이 비어있는지 확인
+            attachment = self.csv_upload.values[0]
+            try:
+                raw = await attachment.read()
+                csv_content = raw.decode("utf-8-sig").strip()
+            except Exception:
+                await self._update_temp_message(temp_message, "❌ 파일을 읽을 수 없습니다. UTF-8 인코딩의 CSV 파일을 업로드해주세요.", discord.Color.red())
+                return
+
             if not csv_content:
-                await self._update_temp_message(temp_message, "❌ 입력값이 비어있습니다.", discord.Color.red())
+                await self._update_temp_message(temp_message, "❌ 파일 내용이 비어있습니다.", discord.Color.red())
                 return
             
             # CSV 파싱 및 팀 추가
