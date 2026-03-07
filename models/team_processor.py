@@ -1251,12 +1251,17 @@ class TeamProcessor:
     def _create_group_announcement_message(self, group_letter: str, group: List[Tuple[str, TeamData, float]]) -> str:
         """조별 공지 메시지를 생성합니다."""
         from utils.helpers import get_current_kst_time
-        
+        from services.notion_api import check_notion_for_tags
+
         current_time = get_current_kst_time()
         date_str = current_time.strftime('%m.%d')
-        
-        message = f"📢 {date_str} 20시 스크림 {group_letter}조 조편성 결과"
-        
+
+        [server_info, broadcast] = check_notion_for_tags()
+        server_type = "Tournament" if server_info else "Live"
+        broadcast_status = "송출 가능" if broadcast else "송출 불가"
+
+        message = f"📢 {date_str} 20시 스크림 {group_letter}조 조편성 결과\n🖥️ {server_type} 서버 | 📡 {broadcast_status}"
+
         return message
     
     async def _get_group_role_mention(self, guild: discord.Guild, group_letter: str) -> str:
