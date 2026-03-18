@@ -2,12 +2,11 @@
 스크림 명령어
 """
 import discord
-from discord import Color, Embed
 
 from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
-from commands.ui.layout_helpers import error_view, warning_view, send_response
+from commands.ui.layout_helpers import error_view, send_response
 from commands.ui.views import ScrimResetConfirmView, TeamInputView
 from utils.helpers import get_current_kst_time, get_next_scrim_date, is_admin
 
@@ -73,17 +72,18 @@ async def 스크림(interaction: discord.Interaction) -> None:
             team_data_manager.mmr_update_loop()
         )
         
-        # 스크림 임베드 생성
-        embed = _create_scrim_embed(scrim_day, scrim_month, scrim_weekday)
-
         # 팀 입력 뷰 생성
-        view = TeamInputView(embed)
+        view = TeamInputView(
+            scrim_day=scrim_day,
+            scrim_month=scrim_month,
+            scrim_weekday=scrim_weekday,
+        )
 
         # 응답 전송 (확인 뷰로 이미 응답한 경우 channel.send 사용)
         if interaction.response.is_done():
-            await interaction.channel.send(embed=embed, view=view)
+            await interaction.channel.send(view=view)
         else:
-            await interaction.response.send_message(embed=embed, view=view)
+            await interaction.response.send_message(view=view)
         
         # MMR 메시지 즉시 전송 (팀 여부와 상관없이)
         try:
@@ -126,22 +126,6 @@ def _is_scrim_expired(team_data_manager, current_time) -> bool:
         return False
     except ValueError:
         return True
-
-
-def _create_scrim_embed(day: int, month: int, weekday: str) -> Embed:
-    """스크림 임베드를 생성합니다"""
-    embed = Embed(
-        title=f"🏆 {month}/{day} ({weekday}) 스크림",
-        description=(
-            "⏰  `17:00` 조편성 · `20:00` 스크림 (4R)\n"
-            "아래 버튼으로 팀을 등록해주세요."
-        ),
-        color=Color.green()
-    )
-
-    embed.set_footer(text=settings.EMBED_FOOTER_TEXT, icon_url=settings.THUMBNAIL_URL)
-
-    return embed
 
 
 async def _send_error_message(interaction: discord.Interaction, message: str) -> None:
