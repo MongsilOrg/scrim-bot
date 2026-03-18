@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 import discord
 
-from commands.ui.layout_helpers import error_view, custom_view, image_response_view, FOOTER_TEXT
+from commands.ui.layout_helpers import error_view, custom_view
 from config.logging_config import get_logger
 from config.settings import settings
 from utils.helpers import get_current_kst_time
@@ -845,22 +845,25 @@ class TeamDataManager:
                 logger.error("[MMR메시지] 이미지 생성 실패", exc_info=True)
                 return
 
-            # 임베드 생성 → LayoutView로 변환
-            desc_parts = [f"총 **{len(self.teams)}**팀 • 마지막 갱신: `{get_current_kst_time().strftime('%H:%M')}`"]
+            # MMR LayoutView 생성 (이미지 → 운영 정보 순서)
+            from discord.ui import Container, MediaGallery, Separator, TextDisplay
+            from commands.ui.layout_helpers import FOOTER_TEXT
+
+            desc = f"총 **{len(self.teams)}**팀 · 마지막 갱신: `{get_current_kst_time().strftime('%H:%M')}`"
             if mmr_fail_count > 0:
-                desc_parts.append(f"⚠️ {mmr_fail_count}개 팀 MMR 갱신 실패")
+                desc += f"\n⚠️ {mmr_fail_count}개 팀 MMR 갱신 실패"
 
-            fields = [("🖥️ 운영 정보", f"`{operate}`")]
-            if settings.ANNOUNCEMENT_MESSAGE:
-                fields.append(("📢 공지사항", settings.ANNOUNCEMENT_MESSAGE))
+            children = [
+                TextDisplay(content=f"## 📊 팀 MMR 정보\n{desc}"),
+                MediaGallery(discord.MediaGalleryItem(media="attachment://mmr_table.png")),
+                TextDisplay(content=f"🖥️ **운영 정보**\n`{operate}`"),
+                Separator(),
+                TextDisplay(content=FOOTER_TEXT),
+            ]
 
-            mmr_view = image_response_view(
-                "📊 팀 MMR 정보",
-                "\n".join(desc_parts),
-                "attachment://mmr_table.png",
-                discord.Color.blue(),
-                fields=fields,
-            )
+            from discord.ui import LayoutView as _LayoutView
+            mmr_view = _LayoutView()
+            mmr_view.add_item(Container(*children, accent_colour=discord.Color.blue()))
 
             # 기존 메시지가 있는지 확인하고 업데이트 시도
             if self.mmr_message:
