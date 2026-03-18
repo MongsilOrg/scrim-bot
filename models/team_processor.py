@@ -17,7 +17,7 @@ import pandas as pd
 from discord.ext import commands
 from google.oauth2.service_account import Credentials
 
-from commands.ui.layout_helpers import processing_view, custom_view, error_view, FOOTER_TEXT
+from commands.ui.layout_helpers import error_view, FOOTER_TEXT
 from config.logging_config import get_logger
 from config.settings import settings
 from services.bser_api import BSERAPIClient
@@ -668,133 +668,60 @@ class TeamProcessor:
                 groups[1].append(team)
     
     
-    def _create_progress_view(self, title: str) -> 'LayoutView':
-        """진행 상황 LayoutView를 생성합니다."""
-        return processing_view(f"**{title}**")
-    
-    def _create_global_announcement_view(self, groups: List[List], unmatched_teams: List[Tuple[str, TeamData, float]] = None) -> 'LayoutView':
-        """전체 공지 LayoutView를 생성합니다."""
-        from utils.helpers import get_current_kst_time
-        current_time = get_current_kst_time()
-        date_str = current_time.strftime('%m.%d')
-        return custom_view(
-            f"📢 {date_str} 20시 스크림 조편성입니다",
-            "",
-            discord.Color.green(),
-        )
-    
-    def _create_global_announcement_message(self, groups: List[List], unmatched_teams: List[Tuple[str, TeamData, float]] = None) -> str:
-        """전체 공지 메시지를 생성합니다."""
-        from utils.helpers import get_current_kst_time
-        
-        current_time = get_current_kst_time()
-        
-        # 날짜와 시간 형식: 09.19 20시
-        date_str = current_time.strftime('%m.%d')
-        
-        message = f"# 📢 {date_str} 20시 스크림 조편성입니다"
-        
-        return message
-    
     async def _send_global_announcement(self, guild: discord.Guild, groups: List[List], unmatched_teams: List[Tuple[str, TeamData, float]] = None) -> None:
-        """전체 공지를 전송합니다."""
+        """전체 공지를 하나의 LayoutView로 전송합니다."""
         try:
-            # 전체 공지 채널
+            from discord.ui import Container, LayoutView, MediaGallery, Separator, TextDisplay
+
             notice_channel = guild.get_channel(settings.NOTICE_CHANNEL_ID)
             if not notice_channel:
                 logger.warning("[Discord] 전체 공지 채널을 찾을 수 없음")
                 return
-            
-            # 전체 공지 메시지 생성
-            message = self._create_global_announcement_message(groups, unmatched_teams)
-            
-            # MMR 이미지 생성 및 전송
-            await self._send_global_announcement_with_image(notice_channel, message, groups, unmatched_teams)
-            
-        except Exception as e:
-            logger.error(f"[Discord] 전체 공지 전송 실패: {e}", exc_info=True)
-    
-    async def _send_global_announcement_with_image(self, channel: discord.TextChannel, message: str, groups: List[List], unmatched_teams: List[Tuple[str, TeamData, float]] = None) -> None:
-        """조별 이미지와 함께 전체 공지를 전송합니다."""
-        try:
-            # 먼저 헤더 메시지 전송
-            await channel.send(content=message)
-            
-            # 조별로 이미지 생성 및 전송
+
+            from utils.helpers import get_current_kst_time
+            date_str = get_current_kst_time().strftime('%m.%d')
+
+            # LayoutView 구성: 헤더 + 조별 이미지들
+            view = LayoutView()
+            view.add_item(Container(
+                TextDisplay(content=f"## 📢 {date_str} 20시 스크림 조편성입니다"),
+                accent_colour=discord.Color.green(),
+            ))
+
+            files = []
             for group_index, group in enumerate(groups):
-                if not group:  # 빈 그룹은 건너뛰기
+                if not group:
                     continue
-                    
-                group_letter = chr(65 + group_index)  # A=65, B=66, ...
-                
-                # 조별 팀 데이터 수집
+
+                group_letter = chr(65 + group_index)
                 group_teams = {}
                 group_mmr_averages = {}
-                
                 for team_name, team_data, team_mmr in group:
                     group_teams[team_name] = team_data
                     group_mmr_averages[team_name] = team_mmr
-                
-                # 조별 MMR 이미지 생성 및 캐시에 저장
+
                 img_io = self._generate_group_image(group_letter, group_teams, group_mmr_averages)
-                
+                filename = f"{group_letter}조_mmr_table.png"
+
+                children = [TextDisplay(content=f"### {group_letter}조")]
                 if img_io:
-                    # 조별 헤더와 이미지 전송
-                    group_header = f"# {group_letter}조"
-                    await channel.send(
-                        content=group_header,
-                        file=discord.File(img_io, filename=f'{group_letter}조_mmr_table.png')
-                    )
-                    
-                    # 조별 팀명과 순위를 텍스트로 전송
-                    await self._send_group_team_list(group_letter, group)
+                    children.append(MediaGallery(discord.MediaGalleryItem(media=f"attachment://{filename}")))
+                    files.append(discord.File(img_io, filename=filename))
                 else:
-                    # 이미지 생성 실패 시 헤더만 전송
-                    group_header = f"# {group_letter}조"
-                    await channel.send(content=group_header)
-                    logger.warning(f"[Discord] 전체 공지 이미지 생성 실패 - 조: {group_letter}조, 헤더만 전송")
-                
+                    logger.warning(f"[Discord] 전체 공지 이미지 생성 실패 - {group_letter}조")
+
+                view.add_item(Container(*children, accent_colour=discord.Color.blue()))
+
+            # 푸터
+            view.add_item(Container(
+                Separator(),
+                TextDisplay(content=FOOTER_TEXT),
+            ))
+
+            await notice_channel.send(view=view, files=files if files else None)
+
         except Exception as e:
             logger.error(f"[Discord] 전체 공지 전송 실패: {e}", exc_info=True)
-            # 오류 발생 시 메시지만 전송
-            try:
-                await channel.send(content=message)
-            except Exception as e2:
-                logger.error(f"[Discord] 메시지 전송 실패: {e2}", exc_info=True)
-    
-    async def _send_group_team_list(self, group_letter: str, group: List[Tuple[str, TeamData, float]]) -> None:
-        """조별 팀명을 텍스트로 전송합니다."""
-        try:
-            if not self.client:
-                from bot.manager import BotManager
-                self.client = BotManager.get_instance().get_client()
-
-            if not self.client:
-                logger.warning("[Discord] 클라이언트를 가져올 수 없어 팀 목록 전송 건너뜀")
-                return
-
-            team_list_channel_id = settings.TEAM_LIST_CHANNEL_ID
-            team_list_channel = self.client.get_channel(team_list_channel_id)
-
-            if not team_list_channel:
-                logger.warning(f"[Discord] 팀 목록 채널을 찾을 수 없음 - 채널 ID: {team_list_channel_id}")
-                return
-
-            # 팀명만 추출하여 인라인 코드로 감싸기 (더블클릭 복사 용이)
-            team_names = [f"`{team_name}`" for team_name, _, _ in group]
-
-            # 1~4번: 첫째 줄, 5~8번: 둘째 줄
-            first_line = '  '.join(team_names[:4])
-            second_line = '  '.join(team_names[4:]) if len(team_names) > 4 else ''
-
-            lines = [f"**{group_letter}조**", first_line]
-            if second_line:
-                lines.append(second_line)
-
-            await team_list_channel.send(content='\n'.join(lines))
-
-        except Exception as e:
-            logger.error(f"[Discord] 팀 목록 전송 실패 - 조: {group_letter}조: {e}", exc_info=True)
     
     async def _send_group_announcement_with_image(self, channel: discord.TextChannel, message: str, group: List[Tuple[str, TeamData, float]]) -> None:
         """조별 MMR 이미지와 함께 공지를 전송합니다."""
@@ -856,11 +783,10 @@ class TeamProcessor:
                 
         except Exception as e:
             logger.error(f"[Discord] 조별 공지 전송 실패 - 채널: {channel.name}: {e}", exc_info=True)
-            # 오류 발생 시 메시지만 전송
             try:
-                await channel.send(content=message)
+                await channel.send(view=error_view(f"조별 공지 전송 중 오류가 발생했습니다.\n{message}"))
             except Exception as e2:
-                logger.error(f"[Discord] 메시지 전송 실패 - 채널: {channel.name}: {e2}", exc_info=True)
+                logger.error(f"[Discord] 에러 메시지 전송 실패 - 채널: {channel.name}: {e2}", exc_info=True)
     
     async def _send_notices(self, guild: discord.Guild, groups: List[List], unmatched_teams: List[Tuple[str, TeamData, float]] = None) -> None:
         """공지를 전송합니다."""
@@ -1217,17 +1143,6 @@ class TeamProcessor:
             
         except Exception as e:
             logger.error(f"[Discord] 음성채널 이름 변경 실패: {e}", exc_info=True)
-    
-    def _create_group_view(self, group_letter: str, group: List[Tuple[str, TeamData, float]]) -> 'LayoutView':
-        """그룹 LayoutView를 생성합니다."""
-        from utils.helpers import get_current_kst_time
-        current_time = get_current_kst_time()
-        date_str = current_time.strftime('%m.%d')
-        return custom_view(
-            f"📢 {date_str} 20시 스크림 {group_letter}조 조편성 결과",
-            "",
-            discord.Color.blue(),
-        )
     
     def _create_group_announcement_message(self, group_letter: str, group: List[Tuple[str, TeamData, float]]) -> str:
         """조별 공지 메시지를 생성합니다."""

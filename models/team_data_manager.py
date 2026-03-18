@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 import discord
 
-from commands.ui.layout_helpers import error_view, custom_view
+from commands.ui.layout_helpers import error_view
 from config.logging_config import get_logger
 from config.settings import settings
 from utils.helpers import get_current_kst_time
@@ -692,50 +692,16 @@ class TeamDataManager:
                 return
 
             team_data_manager.is_team_assignment_started = True
-            
-            # ✅ scrim.py 방식: 직접 가져오기, 체크 없음
-            client = BotManager.get_instance().get_client()
-            
-            # 조편성 시작 공지 채널
-            if client:
-                start_channel = client.get_channel(settings.AUTO_ASSIGNMENT_START_CHANNEL_ID)
-            else:
-                start_channel = None
-            if start_channel:
-                # 조편성 시작 LayoutView 생성
-                start_view = custom_view(
-                    "⚙️ 자동 조편성 시작",
-                    "팀 데이터를 처리하고 있습니다...",
-                    discord.Color.blue(),
-                    fields=[
-                        ("현재 시각", current_time.strftime('%H:%M')),
-                        ("총 팀 수", str(total_teams_current)),
-                        ("예비팀 수", str(total_teams_current % settings.TEAMS_PER_GROUP)),
-                        ("서버 정보", "Tournament" if server_info else "Live"),
-                        ("방송 정보", "송출 가능" if broadcast else "송출 불가"),
-                    ],
-                )
-                await start_channel.send(view=start_view)
-                
-                # ✅ 조편성 실행
-                await team_data_manager.execute_auto_assignment()
-                
-                team_data_manager.last_auto_assignment = current_time
-            else:
-                logger.warning("[조편성] 자동 조편성 시작 채널을 찾을 수 없음 - 조편성은 계속 진행")
-                # 채널이 없어도 조편성은 실행
-                await team_data_manager.execute_auto_assignment()
-                team_data_manager.last_auto_assignment = get_current_kst_time()
+
+            # 조편성 실행
+            await team_data_manager.execute_auto_assignment()
+            team_data_manager.last_auto_assignment = current_time
         except Exception as e:
-            error_msg = f"❌ 자동 조편성 중 오류가 발생했습니다: {str(e)}"
             logger.error(f"[조편성] 자동 조편성 중 오류: {str(e)}", exc_info=True)
             # 오류 발생 시 조편성 플래그 해제 (최신 인스턴스에서)
             from bot.manager import BotManager
             team_data_manager = BotManager.get_instance().get_team_data_manager()
             team_data_manager.is_team_assignment_started = False
-            
-            if start_channel:
-                await start_channel.send(view=error_view(error_msg))
     
     async def execute_auto_assignment(self) -> None:
         """실제 조편성을 실행합니다."""

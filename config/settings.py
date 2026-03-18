@@ -57,8 +57,6 @@ class Settings:
 
     # 채널 ID 설정
     NOTICE_CHANNEL_ID: int = _parse_int(os.getenv('NOTICE_CHANNEL_ID', ''))
-    AUTO_ASSIGNMENT_START_CHANNEL_ID: int = _parse_int(os.getenv('AUTO_ASSIGNMENT_START_CHANNEL_ID', ''))
-    TEAM_LIST_CHANNEL_ID: int = _parse_int(os.getenv('TEAM_LIST_CHANNEL_ID', ''))
     BACKUP_ANALYSIS_CHANNEL_ID: int = _parse_int(os.getenv('BACKUP_ANALYSIS_CHANNEL_ID', ''))
 
     # 조별 채널 ID
@@ -118,8 +116,6 @@ class Settings:
         required_int_vars = {
             'GUILD_ID': cls.GUILD_ID,
             'NOTICE_CHANNEL_ID': cls.NOTICE_CHANNEL_ID,
-            'AUTO_ASSIGNMENT_START_CHANNEL_ID': cls.AUTO_ASSIGNMENT_START_CHANNEL_ID,
-            'TEAM_LIST_CHANNEL_ID': cls.TEAM_LIST_CHANNEL_ID,
             'BACKUP_ANALYSIS_CHANNEL_ID': cls.BACKUP_ANALYSIS_CHANNEL_ID,
         }
 
