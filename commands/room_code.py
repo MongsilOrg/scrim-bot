@@ -242,11 +242,12 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                 elif len(available) == 0:
                     weather_value = f"`{main_weather}`"
                 else:
-                    # 선택 대기: 메인 날씨만 확정 표시, 버튼으로 서브 선택 유도
-                    weather_value = f"`{main_weather}` · 서브 날씨 선택 대기"
+                    # 후보 전체 표시 + 버튼으로 등장한 날씨 선택
+                    sub_list = ", ".join(f"`{w}`" for w in available)
+                    weather_value = f"`{main_weather}` · {sub_list}"
                     weather_options = available
             else:
-                weather_value = f"`{main_weather}`"
+                weather_value = f"`{main_weather}` · {', '.join(f'`{w}`' for w in SUB_WEATHERS)}"
 
             # 밴 리스트 표시
             ban_display = None
