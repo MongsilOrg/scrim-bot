@@ -830,31 +830,27 @@ class TeamProcessor:
                 
                 img_io = self._generate_group_image(group_letter, group_teams, group_mmr_averages)
             
-            # 조별 로스터 관리 뷰 생성
-            from commands.ui.views import GroupRosterView
-            roster_view = GroupRosterView(group_letter, group)
-            
-            # 기존 메시지 삭제 (조편성 시에만)
-            # 팀 정보 수정 시에는 기존 메시지를 삭제하지 않음
-            # await self._clear_channel_messages(channel)
-            
             # 조별 역할 멘션 추가
             role_mention = await self._get_group_role_mention(channel.guild, group_letter)
-            
+            full_message = role_mention + "\n" + message if role_mention else message
+
+            # 조별 로스터 관리 뷰 생성 (공지 텍스트 + 이미지 + 버튼 포함)
+            from commands.ui.views import GroupRosterView
+            roster_view = GroupRosterView(
+                group_letter, group,
+                message_text=full_message, has_image=bool(img_io),
+            )
+
             if img_io:
-                # 이미지와 함께 메시지 전송 (로스터 변경 버튼 포함)
                 await channel.send(
-                    content=role_mention + "\n" + message if role_mention else message,
-                    file=discord.File(img_io, filename='group_mmr_table.png'),
                     view=roster_view,
-                    allowed_mentions=discord.AllowedMentions(roles=True)
+                    file=discord.File(img_io, filename='group_mmr_table.png'),
+                    allowed_mentions=discord.AllowedMentions(roles=True),
                 )
             else:
-                # 이미지 생성 실패 시 메시지만 전송 (로스터 변경 버튼 포함)
                 await channel.send(
-                    content=role_mention + "\n" + message if role_mention else message,
                     view=roster_view,
-                    allowed_mentions=discord.AllowedMentions(roles=True)
+                    allowed_mentions=discord.AllowedMentions(roles=True),
                 )
                 logger.warning(f"[Discord] 이미지 생성 실패 - 채널: {channel.name}, 메시지만 전송")
                 
