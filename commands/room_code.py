@@ -6,11 +6,12 @@ import re
 from datetime import datetime, timedelta
 
 import discord
-from discord import Color, Embed
+from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
 
 from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
+from commands.ui.layout_helpers import error_view, send_response, FOOTER_TEXT
 from utils.error_handlers import ErrorContext, handle_errors
 from utils.helpers import get_current_kst_time, is_admin
 
@@ -50,7 +51,7 @@ def calculate_round_start_time(current_time: datetime) -> datetime:
     else:
         # 20시 이후인 경우 현재 시간 + 5분
         round_start = current_time + timedelta(minutes=5)
-    
+
     return round_start
 
 
@@ -60,11 +61,25 @@ async def get_round_number(channel: discord.TextChannel) -> int:
         round_count = 0
         # 최신 메시지 30개만 확인 (레이트리밋 및 지연 최소화)
         async for message in channel.history(limit=30):
-            if not message.embeds:
-                continue
-            embed = message.embeds[0]
-            title = embed.title or ""
-            if "스크림 공지" in title:
+            found = False
+            # LayoutView 메시지 확인 (Components V2)
+            try:
+                for component in message.components:
+                    if found:
+                        break
+                    for child in getattr(component, 'children', []):
+                        content = getattr(child, 'content', '') or ''
+                        if "스크림 공지" in content:
+                            found = True
+                            break
+            except Exception:
+                pass
+            # 레거시 Embed 메시지 확인
+            if not found and message.embeds:
+                title = message.embeds[0].title or ""
+                if "스크림 공지" in title:
+                    found = True
+            if found:
                 round_count += 1
         return round_count + 1  # 현재 메시지를 포함하여 +1
     except discord.Forbidden:
@@ -96,6 +111,54 @@ async def get_group_role_mention(guild: discord.Guild, channel: discord.TextChan
         return ""
 
 
+class RoomCodeView(LayoutView):
+    """방코드 공지 LayoutView"""
+
+    def __init__(
+        self,
+        round_number: int,
+        cleaned_room_code: str,
+        weather_value: str,
+        round_start_str: str,
+        ban_display: str | None = None,
+        role_mention: str = "",
+        group_letter: str | None = None,
+        weather_buttons: list | None = None,
+    ):
+        super().__init__(timeout=None)
+        self.round_number = round_number
+        self.cleaned_room_code = cleaned_room_code
+        self.weather_value = weather_value
+        self.round_start_str = round_start_str
+        self.ban_display = ban_display
+        self.role_mention = role_mention
+        self.group_letter = group_letter
+
+        # 콘텐츠 구성
+        title = f"📢 스크림 공지 - {round_number}라운드"
+        desc = ""
+        if role_mention:
+            desc += f"{role_mention}\n"
+        desc += f"**#️⃣ 방 코드**\n# `{cleaned_room_code}`"
+
+        children: list = [
+            TextDisplay(content=f"## {title}\n{desc}"),
+            TextDisplay(content=f"**🌤️ 날씨**\n{weather_value}"),
+            TextDisplay(content=f"**⏱️ 라운드 시작**\n`{round_start_str}`"),
+        ]
+
+        if ban_display:
+            children.append(TextDisplay(content=f"**🚫 밴 목록**\n{ban_display}"))
+
+        children.append(Separator())
+        children.append(TextDisplay(content=FOOTER_TEXT))
+
+        self.add_item(Container(*children, accent_colour=discord.Color.blue()))
+
+        if weather_buttons:
+            self.add_item(ActionRow(*weather_buttons))
+
+
 class WeatherButton(discord.ui.Button):
     """서브 날씨 선택 버튼"""
 
@@ -107,48 +170,29 @@ class WeatherButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if not is_admin(interaction.user):
-            await interaction.response.send_message(
-                "❌ 관리자만 날씨를 선택할 수 있습니다.", ephemeral=True
-            )
+            await send_response(interaction, error_view("관리자만 날씨를 선택할 수 있습니다."))
             return
 
         manager = BotManager.get_instance()
         manager.add_selected_weather(self.group_letter, self.weather)
 
-        # embed 업데이트: "미정" → 선택값
-        embed = interaction.message.embeds[0]
         main_weather = MAIN_WEATHERS.get(self.round_number, "알 수 없음")
-        for i, field in enumerate(embed.fields):
-            if field.name == "🌤️ 날씨":
-                embed.set_field_at(
-                    i,
-                    name="🌤️ 날씨",
-                    value=f"메인 날씨: `{main_weather}`\n서브 날씨: `{self.weather}`",
-                    inline=False,
-                )
-                break
+        new_weather_value = f"메인 날씨: `{main_weather}`\n서브 날씨: `{self.weather}`"
 
-        # 모든 버튼 비활성화
-        for item in self.view.children:
-            item.disabled = True
+        # 기존 View 데이터로 새 View 생성 (버튼 없이 = 날씨 확정)
+        parent = self.view  # RoomCodeView
+        new_view = RoomCodeView(
+            round_number=parent.round_number,
+            cleaned_room_code=parent.cleaned_room_code,
+            weather_value=new_weather_value,
+            round_start_str=parent.round_start_str,
+            ban_display=parent.ban_display,
+            role_mention=parent.role_mention,
+            group_letter=parent.group_letter,
+        )
 
-        await interaction.response.edit_message(embed=embed, view=self.view)
+        await interaction.response.edit_message(view=new_view)
         logger.info(f"[날씨] {self.group_letter}조 {self.round_number}R 서브 날씨 선택: {self.weather}")
-
-
-class WeatherButtonView(discord.ui.View):
-    """서브 날씨 선택 버튼 View"""
-
-    def __init__(self, group_letter: str, round_number: int):
-        super().__init__(timeout=None)
-        self.group_letter = group_letter
-        self.round_number = round_number
-
-        selected = BotManager.get_instance().get_selected_weathers(group_letter)
-        available = [w for w in SUB_WEATHERS if w not in selected]
-
-        for weather in available:
-            self.add_item(WeatherButton(weather, group_letter, round_number))
 
 
 @handle_errors(default_return=None, log_level='error', reraise=False)
@@ -157,36 +201,20 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
     with ErrorContext(default_return=None, log_errors=True):
         # 채널 타입 검증
         if not isinstance(interaction.channel, discord.TextChannel):
-            error_embed = Embed(
-                title="❌ 오류",
-                description="이 명령어는 텍스트 채널에서만 사용할 수 있습니다.",
-                color=Color.red()
-            )
             try:
-                if interaction.response.is_done():
-                    await interaction.followup.send(embed=error_embed, ephemeral=True)
-                else:
-                    await interaction.response.send_message(embed=error_embed, ephemeral=True)
+                await send_response(interaction, error_view("이 명령어는 텍스트 채널에서만 사용할 수 있습니다."))
             except discord.NotFound:
                 logger.warning("[명령어] Interaction 만료됨")
             return
-        
+
         # 방코드 검증
         if not validate_room_code(room_code):
-            error_embed = Embed(
-                title="❌ 오류",
-                description="방코드는 6자리 숫자여야 합니다.\n\n💡 예시: `123456`",
-                color=Color.red()
-            )
             try:
-                if interaction.response.is_done():
-                    await interaction.followup.send(embed=error_embed, ephemeral=True)
-                else:
-                    await interaction.response.send_message(embed=error_embed, ephemeral=True)
+                await send_response(interaction, error_view("방코드는 6자리 숫자여야 합니다.\n\n💡 예시: `123456`"))
             except discord.NotFound:
                 logger.warning("[명령어] Interaction 만료됨")
             return
-        
+
         # 빈칸 제거된 방코드
         cleaned_room_code = clean_room_code(room_code)
 
@@ -196,19 +224,12 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
         # 라운드 번호 계산
         round_number = await get_round_number(interaction.channel)
 
-        # 임베드 생성 및 메시지 전송
+        # LayoutView 생성 및 메시지 전송
         try:
-            # 공지 임베드 생성
-            embed = Embed(
-                title=f"📢 스크림 공지 - {round_number}라운드",
-                description=f"**#️⃣ 방 코드**\n# `{cleaned_room_code}`",
-                color=Color.blue()
-            )
-
-            # 날씨 field 추가
+            # 날씨 정보 준비
             group_letter = get_group_letter(interaction.channel.id)
             main_weather = MAIN_WEATHERS.get(round_number, "알 수 없음")
-            weather_view = None
+            weather_buttons = None
             weather_warning = None
 
             if group_letter:
@@ -236,42 +257,39 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                 else:
                     # 선택 필요: 서브 날씨 후보를 그대로 노출
                     weather_value = f"메인 날씨: `{main_weather}`\n서브 날씨: `{', '.join(available)}`"
-                    weather_view = WeatherButtonView(group_letter, round_number)
+                    weather_buttons = [
+                        WeatherButton(w, group_letter, round_number)
+                        for w in available
+                    ]
             else:
                 weather_value = f"메인 날씨: `{main_weather}`\n서브 날씨: `{', '.join(SUB_WEATHERS)}`"
 
-            embed.add_field(
-                name="🌤️ 날씨",
-                value=weather_value,
-                inline=False
-            )
-
-            embed.add_field(
-                name="⏱️ 라운드 시작",
-                value=f"`{round_start_time.strftime('%H:%M')}`",
-                inline=False
-            )
-
             # 밴 리스트 표시
+            ban_display = None
             if group_letter:
                 ban_list = BotManager.get_instance().get_ban_list(group_letter)
                 if ban_list:
                     ban_display = " ".join(f"`{char}`" for char in ban_list)
-                    embed.add_field(
-                        name="🚫 밴 목록",
-                        value=ban_display,
-                        inline=False
-                    )
 
-            embed.set_footer(text=settings.EMBED_FOOTER_TEXT, icon_url=settings.THUMBNAIL_URL)
-
-            # 조별 역할 멘션 메시지 생성
+            # 조별 역할 멘션
             role_mention = await get_group_role_mention(interaction.guild, interaction.channel)
 
+            # RoomCodeView 생성
+            room_code_view = RoomCodeView(
+                round_number=round_number,
+                cleaned_room_code=cleaned_room_code,
+                weather_value=weather_value,
+                round_start_str=round_start_time.strftime('%H:%M'),
+                ban_display=ban_display,
+                role_mention=role_mention,
+                group_letter=group_letter,
+                weather_buttons=weather_buttons,
+            )
+
             # 메시지 전송 공통 kwargs
-            send_kwargs = {"embed": embed}
-            if weather_view:
-                send_kwargs["view"] = weather_view
+            send_kwargs = {"view": room_code_view}
+            if role_mention:
+                send_kwargs["allowed_mentions"] = discord.AllowedMentions(roles=True)
 
             # Interaction 응답 전송 (만료 처리 및 네트워크 오류 재시도)
             import aiohttp
@@ -281,20 +299,9 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
             for attempt in range(max_retries):
                 try:
                     if interaction.response.is_done():
-                        await interaction.followup.send(
-                            role_mention if role_mention else None,
-                            **send_kwargs,
-                            allowed_mentions=discord.AllowedMentions(roles=True) if role_mention else None
-                        )
+                        await interaction.followup.send(**send_kwargs)
                     else:
-                        if role_mention:
-                            await interaction.response.send_message(
-                                role_mention,
-                                **send_kwargs,
-                                allowed_mentions=discord.AllowedMentions(roles=True)
-                            )
-                        else:
-                            await interaction.response.send_message(**send_kwargs)
+                        await interaction.response.send_message(**send_kwargs)
 
                     logger.debug(f"[명령어] Round {round_number} 방코드 공지 완료: {cleaned_room_code}")
                     # 이전 라운드 미선택 경고 메시지 전송
@@ -302,7 +309,6 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                         try:
                             if interaction.response.is_done():
                                 await interaction.followup.send(weather_warning, ephemeral=True)
-                            # response가 방금 사용됐으면 followup으로 전송
                         except Exception:
                             pass
                     break
@@ -310,14 +316,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                 except discord.NotFound:
                     logger.warning("[명령어] Interaction 만료되어 응답 전송 불가")
                     try:
-                        if role_mention:
-                            await interaction.channel.send(
-                                role_mention,
-                                **send_kwargs,
-                                allowed_mentions=discord.AllowedMentions(roles=True)
-                            )
-                        else:
-                            await interaction.channel.send(**send_kwargs)
+                        await interaction.channel.send(**send_kwargs)
                         logger.debug(f"[명령어] Round {round_number} 방코드 공지 완료 (채널 직접 전송): {cleaned_room_code}")
                     except Exception as e:
                         logger.error(f"[명령어] 채널에 메시지 전송 실패: {e}", exc_info=True)
@@ -331,14 +330,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                     else:
                         logger.error(f"[명령어] 네트워크 연결 최종 실패: {e}", exc_info=True)
                         try:
-                            if role_mention:
-                                await interaction.channel.send(
-                                    role_mention,
-                                    **send_kwargs,
-                                    allowed_mentions=discord.AllowedMentions(roles=True)
-                                )
-                            else:
-                                await interaction.channel.send(**send_kwargs)
+                            await interaction.channel.send(**send_kwargs)
                             logger.debug(f"[명령어] Round {round_number} 방코드 공지 완료 (재시도 후): {cleaned_room_code}")
                         except Exception as send_error:
                             logger.error(f"[명령어] 채널에 메시지 전송 최종 실패: {send_error}", exc_info=True)
@@ -351,14 +343,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                         continue
                     else:
                         try:
-                            if role_mention:
-                                await interaction.channel.send(
-                                    role_mention,
-                                    **send_kwargs,
-                                    allowed_mentions=discord.AllowedMentions(roles=True)
-                                )
-                            else:
-                                await interaction.channel.send(**send_kwargs)
+                            await interaction.channel.send(**send_kwargs)
                             logger.debug(f"[명령어] Round {round_number} 방코드 공지 완료 (예외 후): {cleaned_room_code}")
                         except Exception as send_error:
                             logger.error(f"[명령어] 채널에 메시지 전송 최종 실패: {send_error}", exc_info=True)
