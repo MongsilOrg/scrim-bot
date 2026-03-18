@@ -6,6 +6,7 @@ import discord
 
 from bot.manager import BotManager
 from config.logging_config import get_logger
+from commands.ui.layout_helpers import error_view, success_view, info_view, send_response
 from utils.helpers import get_current_kst_time, is_admin
 
 logger = get_logger("scrim_csv_assign")
@@ -103,11 +104,7 @@ async def 조편성_csv(interaction: discord.Interaction, message: discord.Messa
 
         # defer 후에는 followup으로 응답
         await interaction.followup.send(
-            embed=discord.Embed(
-                title="✅ 완료",
-                description=f"CSV로 불러온 팀 {len(teams_payload)}개로 조편성을 시작했습니다.",
-                color=discord.Color.green()
-            ),
+            view=success_view(f"CSV로 불러온 팀 {len(teams_payload)}개로 조편성을 시작했습니다."),
             ephemeral=True
         )
 
@@ -116,11 +113,7 @@ async def 조편성_csv(interaction: discord.Interaction, message: discord.Messa
         # defer 후에는 followup으로 응답
         if interaction.response.is_done():
             await interaction.followup.send(
-                embed=discord.Embed(
-                    title="❌ 오류",
-                    description="조편성 중 오류가 발생했습니다.",
-                    color=discord.Color.red()
-                ),
+                view=error_view("조편성 중 오류가 발생했습니다."),
                 ephemeral=True
             )
         else:
@@ -135,9 +128,11 @@ async def _send_embed(
     *,
     ephemeral: bool = True,
 ):
-    embed = discord.Embed(title=title, description=description, color=color)
-    if interaction.response.is_done():
-        await interaction.followup.send(embed=embed, ephemeral=ephemeral)
+    if color == discord.Color.red():
+        view = error_view(description, title=title)
+    elif color == discord.Color.green():
+        view = success_view(description, title=title)
     else:
-        await interaction.response.send_message(embed=embed, ephemeral=ephemeral)
+        view = info_view(description, title=title)
+    await send_response(interaction, view, ephemeral=ephemeral)
 

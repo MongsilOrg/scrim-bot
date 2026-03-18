@@ -7,6 +7,7 @@ from discord import Color, Embed
 from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
+from commands.ui.layout_helpers import error_view, warning_view, send_response
 from commands.ui.views import ScrimResetConfirmView, TeamInputView
 from utils.helpers import get_current_kst_time, get_next_scrim_date, is_admin
 
@@ -34,17 +35,14 @@ async def 스크림(interaction: discord.Interaction) -> None:
         existing_tdm = bot_manager.get_team_data_manager()
         if existing_tdm and existing_tdm.teams:
             if not _is_scrim_expired(existing_tdm, current_time):
-                confirm_embed = Embed(
-                    title="⚠️ 진행 중인 스크림이 있습니다",
+                confirm_view = ScrimResetConfirmView(
                     description=(
                         f"현재 **{len(existing_tdm.teams)}개 팀**이 등록되어 있습니다.\n"
                         f"초기화하면 모든 팀 데이터가 삭제됩니다.\n\n"
                         f"초기화하시겠습니까?"
-                    ),
-                    color=Color.orange()
+                    )
                 )
-                confirm_view = ScrimResetConfirmView()
-                await interaction.response.send_message(embed=confirm_embed, view=confirm_view, ephemeral=True)
+                await interaction.response.send_message(view=confirm_view, ephemeral=True)
                 confirm_view.message = await interaction.original_response()
 
                 # 사용자 응답 대기
@@ -149,21 +147,9 @@ def _create_scrim_embed(day: int, month: int, weekday: str) -> Embed:
 async def _send_error_message(interaction: discord.Interaction, message: str) -> None:
     """에러 메시지를 전송합니다."""
     try:
-        error_embed = Embed(
-            title="❌ 오류",
-            description=message,
-            color=Color.red()
-        )
-
-        # 상호작용이 이미 응답되었는지 확인
-        if not interaction.response.is_done():
-            await interaction.response.send_message(embed=error_embed, ephemeral=True)
-        else:
-            # 이미 응답된 경우 followup으로 전송
-            await interaction.followup.send(embed=error_embed, ephemeral=True)
+        await send_response(interaction, error_view(message))
     except Exception as e:
         logger.error(f"[명령어] 에러 메시지 전송 실패: {e}", exc_info=True)
-        # 최후의 수단으로 일반 메시지 전송 시도
         try:
             if not interaction.response.is_done():
                 await interaction.response.send_message(f"오류: {message}", ephemeral=True)

@@ -6,6 +6,7 @@ from discord.ext import commands
 
 from config.logging_config import get_logger
 from config.settings import settings
+from commands.ui.layout_helpers import error_view
 
 logger = get_logger('client')
 
@@ -49,9 +50,4 @@ class ScrimBot(commands.Bot):
         if isinstance(error, commands.CommandNotFound):
             return
         
-        embed = discord.Embed(
-            title="오류",
-            description="명령어 처리 중 오류가 발생했습니다.",
-            color=discord.Color.red()
-        )
-        await ctx.send(embed=embed, ephemeral=True)
+        await ctx.send(view=error_view("명령어 처리 중 오류가 발생했습니다."), ephemeral=True)

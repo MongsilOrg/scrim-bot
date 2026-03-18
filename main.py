@@ -22,6 +22,7 @@ from commands.room_code import 방코드
 from commands.scrim import 스크림
 from commands.scrim_csv_assign import 조편성_csv
 from commands.warning import 제재부여
+from commands.ui.layout_helpers import error_view, send_response
 from config.logging_config import ScrimbotLogger
 from config.settings import settings
 
@@ -89,15 +90,7 @@ async def _on_app_command_error(
     """앱 명령어 전역 에러 핸들러"""
     logger.error(f"[시작] 앱 명령어 오류: {error}", exc_info=True)
     try:
-        error_embed = discord.Embed(
-            title="❌ 오류",
-            description="명령어 처리 중 오류가 발생했습니다.",
-            color=discord.Color.red()
-        )
-        if not interaction.response.is_done():
-            await interaction.response.send_message(embed=error_embed, ephemeral=True)
-        else:
-            await interaction.followup.send(embed=error_embed, ephemeral=True)
+        await send_response(interaction, error_view("명령어 처리 중 오류가 발생했습니다."))
     except Exception:
         pass
 

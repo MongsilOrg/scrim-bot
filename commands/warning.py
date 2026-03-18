@@ -2,8 +2,8 @@
 경고 관리 명령어
 """
 import discord
-from discord import Color, Embed
 
+from commands.ui.layout_helpers import error_view, permission_error_view, send_response
 from config.logging_config import get_logger
 from config.settings import settings
 from commands.ui.modals import WarningReasonModal
@@ -23,12 +23,7 @@ async def 제재부여(interaction: discord.Interaction, user: discord.Member) -
         # 관리자 권한 확인
         if not is_admin(interaction.user):
             logger.warning(f"[명령어] 제재 부여 권한 없음 - 사용자: {admin_name} (ID: {interaction.user.id})")
-            error_embed = Embed(
-                title="❌ 권한 없음",
-                description="관리자 권한이 없어요.",
-                color=Color.red()
-            )
-            await interaction.response.send_message(embed=error_embed, ephemeral=True)
+            await send_response(interaction, permission_error_view())
             return
 
         # 통합 모달 표시
@@ -38,12 +33,4 @@ async def 제재부여(interaction: discord.Interaction, user: discord.Member) -
 
     except Exception as e:
         logger.error(f"[명령어] 제재 부여 명령어 처리 실패: {e}", exc_info=True)
-        error_embed = Embed(
-            title="❌ 오류",
-            description="명령어 처리 중 오류가 발생했어요.",
-            color=Color.red()
-        )
-        if not interaction.response.is_done():
-            await interaction.response.send_message(embed=error_embed, ephemeral=True)
-        else:
-            await interaction.followup.send(embed=error_embed, ephemeral=True)
+        await send_response(interaction, error_view("명령어 처리 중 오류가 발생했습니다."))
