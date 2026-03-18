@@ -8,11 +8,16 @@ import csv
 
 import discord
 from discord import ButtonStyle, Color, Embed, SelectOption
-from discord.ui import Button, Select, View
+from discord.ui import ActionRow, Button, Container, LayoutView, Select, Separator, TextDisplay, View
 
 from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
+from commands.ui.layout_helpers import (
+    error_view, success_view, warning_view, info_view,
+    processing_view, timeout_view, permission_error_view,
+    custom_view, send_response, edit_to_layout, FOOTER_TEXT,
+)
 from models.team_data_manager import TeamDataManager
 from models.team_processor import TeamProcessor
 from services.bser_api import BSERAPIClient
@@ -27,15 +32,7 @@ BUTTON_COOLDOWN_SECONDS = 3
 async def send_error_message(interaction: discord.Interaction, message: str) -> None:
     """에러 메시지를 전송하는 공통 유틸리티 함수"""
     try:
-        error_embed = Embed(
-            title="스크림 안내",
-            description=message,
-            color=Color.red()
-        )
-        if not interaction.response.is_done():
-            await interaction.response.send_message(embed=error_embed, ephemeral=True)
-        else:
-            await interaction.followup.send(embed=error_embed, ephemeral=True)
+        await send_response(interaction, error_view(message))
     except Exception as e:
         logger.error(f"[뷰] 에러 메시지 전송 실패: {e}", exc_info=True)
         try:
@@ -57,10 +54,7 @@ async def _check_cooldown(interaction: discord.Interaction, cooldown_seconds: fl
     last_click = _button_cooldowns.get(user_id, 0)
     if now - last_click < cooldown_seconds:
         remaining = cooldown_seconds - (now - last_click)
-        await interaction.response.send_message(
-            f"⏳ 잠시 후 다시 시도해주세요. ({remaining:.0f}초)",
-            ephemeral=True
-        )
+        await send_response(interaction, info_view(f"잠시 후 다시 시도해주세요. ({remaining:.0f}초)", title="⏳ 대기"))
         return True
     _button_cooldowns[user_id] = now
     # 만료된 쿨다운 항목 주기적 정리
@@ -198,26 +192,21 @@ class TeamInputView(View):
                     players = getattr(team_data, 'players', [])
                     staff = getattr(team_data, 'staff', [])
 
-            # 확인 Embed 생성
-            confirm_embed = Embed(
-                title="🚫 팀 등록 취소 확인",
-                description=f"**{user_team}** 팀의 등록을 취소하시겠습니까?",
-                color=Color.orange()
-            )
+            # 확인 LayoutView 생성 (CancelConfirmView에 텍스트 + 버튼 포함)
             members_str = ', '.join(players) if players else '(없음)'
             staff_str = ', '.join(staff) if staff else '(없음)'
-            confirm_embed.add_field(name="선수", value=members_str, inline=False)
+            cancel_text = f"**{user_team}** 팀의 등록을 취소하시겠습니까?"
+            fields = [("선수", members_str)]
             if staff:
-                confirm_embed.add_field(name="스태프", value=staff_str, inline=False)
-            confirm_embed.add_field(name="MMR", value=f"{team_mmr:.2f}", inline=True)
+                fields.append(("스태프", staff_str))
+            fields.append(("MMR", f"{team_mmr:.2f}"))
 
-            # 확인 View 표시
-            confirm_view = CancelConfirmView(self, user_team)
+            confirm_view = CancelConfirmView(self, user_team, cancel_text=cancel_text, fields=fields)
             if not interaction.response.is_done():
-                await interaction.response.send_message(embed=confirm_embed, view=confirm_view, ephemeral=True)
+                await interaction.response.send_message(view=confirm_view, ephemeral=True)
                 confirm_view.message = await interaction.original_response()
             else:
-                msg = await interaction.followup.send(embed=confirm_embed, view=confirm_view, ephemeral=True, wait=True)
+                msg = await interaction.followup.send(view=confirm_view, ephemeral=True, wait=True)
                 confirm_view.message = msg
 
         except Exception as e:
@@ -289,40 +278,22 @@ class TeamInputView(View):
         try:
             # 관리자 권한 확인
             if not is_admin(interaction.user):
-                error_embed = Embed(
-                    title="스크림 안내",
-                    description="관리자 권한이 없습니다.",
-                    color=Color.red()
-                )
-                # 상호작용이 이미 응답되었는지 확인
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(embed=error_embed, ephemeral=True)
-                else:
-                    # 이미 응답된 경우 followup으로 전송
-                    await interaction.followup.send(embed=error_embed, ephemeral=True)
+                await send_response(interaction, permission_error_view())
                 return
 
-            # 로그 임베드 생성 및 길이 확인
-            log_embed = self._create_log_embed()
-            
-            # 임베드 필드 값이 1024자를 초과하는지 확인
-            max_field_length = 1024
-            use_file = False
-            for field in log_embed.fields:
-                if len(field.value) > max_field_length:
-                    use_file = True
-                    break
-            
+            # 로그 필드 생성 및 길이 확인
+            log_fields = self._create_log_fields()
+
+            # 필드 값이 1024자를 초과하는지 확인
+            use_file = any(len(value) > 1024 for _, value in log_fields)
+
             # 로그가 너무 길면 텍스트 파일로 전송
             if use_file:
                 await self._send_log_as_file(interaction)
             else:
-                # 로그가 짧으면 임베드로 전송
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(embed=log_embed, ephemeral=True, view=AdminView(self))
-                else:
-                    # 이미 응답된 경우 followup으로 전송
-                    await interaction.followup.send(embed=log_embed, ephemeral=True, view=AdminView(self))
+                # 로그가 짧으면 LayoutView로 전송 (AdminView에 텍스트 + 버튼 포함)
+                admin_view = AdminView(self, log_fields=log_fields)
+                await send_response(interaction, admin_view)
             
         except Exception as e:
             logger.error(f"[뷰] 관리자 로그 콜백 처리 실패: {e}", exc_info=True)
@@ -484,19 +455,8 @@ class TeamInputView(View):
                 # 임시 메시지를 성공 메시지로 업데이트
                 await self._update_temp_message(temp_message, success_msg, discord.Color.green())
             else:
-                # 기존 방식으로 성공 메시지 전송
-                success_embed = Embed(
-                    title="✅ 완료",
-                    description=success_msg,
-                    color=Color.green()
-                )
-                
-                # 상호작용이 이미 응답되었는지 확인
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(embed=success_embed, ephemeral=True)
-                else:
-                    # 이미 응답된 경우 followup으로 전송
-                    await interaction.followup.send(embed=success_embed, ephemeral=True)
+                # LayoutView로 성공 메시지 전송
+                await send_response(interaction, success_view(success_msg))
             
             # 백그라운드에서 MMR 갱신 및 메시지 업데이트
             import asyncio
@@ -514,12 +474,15 @@ class TeamInputView(View):
     async def _update_temp_message(self, temp_message: discord.Message, message: str, color: discord.Color) -> None:
         """임시 메시지를 업데이트합니다."""
         try:
-            embed = discord.Embed(
-                title="✅ 완료" if color == discord.Color.green() else "스크림 안내",
-                description=message,
-                color=color
-            )
-            await temp_message.edit(embed=embed)
+            if color == discord.Color.green():
+                view = success_view(message)
+            elif color == discord.Color.red():
+                view = error_view(message)
+            elif color == discord.Color.orange():
+                view = warning_view(message)
+            else:
+                view = info_view(message)
+            await edit_to_layout(temp_message, view)
         except Exception as e:
             logger.error(f"[뷰] 임시 메시지 업데이트 실패: {e}", exc_info=True)
     
@@ -603,35 +566,16 @@ class TeamInputView(View):
             if not success:
                 # 실패 사유가 있으면 그대로 표시, 없으면 기본 메시지
                 error_message = failure_reason if failure_reason else (
-                    "❌ 팀 취소가 실패했습니다.\n\n"
+                    "팀 취소가 실패했습니다.\n\n"
                     "💡 취소 시간 제한을 확인해주세요."
                 )
-                error_embed = Embed(
-                    title="❌ 오류",
-                    description=error_message,
-                    color=Color.red()
-                )
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(embed=error_embed, ephemeral=True)
-                else:
-                    await interaction.followup.send(embed=error_embed, ephemeral=True)
+                await send_response(interaction, error_view(error_message))
                 return
 
             team_data_manager.log_action("취소", interaction.user, team_name)
 
             # 성공 메시지 전송
-            success_embed = Embed(
-                title="✅ 완료",
-                description=f"**{team_name}** 팀이 성공적으로 취소되었습니다.",
-                color=Color.green()
-            )
-            
-            # 상호작용이 이미 응답되었는지 확인
-            if not interaction.response.is_done():
-                await interaction.response.send_message(embed=success_embed, ephemeral=True)
-            else:
-                # 이미 응답된 경우 followup으로 전송
-                await interaction.followup.send(embed=success_embed, ephemeral=True)
+            await send_response(interaction, success_view(f"**{team_name}** 팀이 성공적으로 취소되었습니다."))
             
             # 백그라운드에서 MMR 갱신 및 메시지 업데이트
             import asyncio
@@ -639,75 +583,27 @@ class TeamInputView(View):
             
         except Exception as e:
             logger.error(f"[뷰] 팀 취소 실행 실패: {e}", exc_info=True)
-            error_embed = Embed(
-                title="❌ 오류",
-                description="팀 취소 중 오류가 발생했습니다.",
-                color=Color.red()
-            )
-            if not interaction.response.is_done():
-                await interaction.response.send_message(embed=error_embed, ephemeral=True)
-            else:
-                await interaction.followup.send(embed=error_embed, ephemeral=True)
+            await send_response(interaction, error_view("팀 취소 중 오류가 발생했습니다."))
     
-    def _create_log_embed(self) -> discord.Embed:
-        """로그 임베드를 생성합니다."""
+    def _create_log_fields(self) -> list[tuple[str, str]]:
+        """로그 필드 목록을 생성합니다. [(필드명, 필드값), ...] 형태로 반환합니다."""
         team_data_manager = BotManager.get_instance().get_team_data_manager()
         logs = team_data_manager.get_logs()
 
-        embed = Embed(
-            title="📋 스크림 로그",
-            color=Color.blue()
-        )
+        fields: list[tuple[str, str]] = []
 
-        # 신청 로그 (모든 로그 표시)
-        if logs["신청"]:
-            application_logs = []
-            for log in logs["신청"]:  # 모든 로그 표시
-                user_mention = f"<@{log['user_id']}>"
-                application_logs.append(f"**{log['team']}** {user_mention} `{log['time']}`")
-            log_text = "\n".join(application_logs) if application_logs and isinstance(application_logs, (list, tuple)) else "없음"
-            # 1024자 제한 적용
-            if len(log_text) > 1024:
-                log_text = log_text[:1021] + "..."
-            embed.add_field(
-                name="📝 신청",
-                value=log_text,
-                inline=False
-            )
+        for action, emoji in [("신청", "📝"), ("취소", "❌"), ("수정", "✏️")]:
+            if logs[action]:
+                log_lines = []
+                for log in logs[action]:
+                    user_mention = f"<@{log['user_id']}>"
+                    log_lines.append(f"**{log['team']}** {user_mention} `{log['time']}`")
+                log_text = "\n".join(log_lines)
+                if len(log_text) > 1024:
+                    log_text = log_text[:1021] + "..."
+                fields.append((f"{emoji} {action}", log_text))
 
-        # 취소 로그 (모든 로그 표시)
-        if logs["취소"]:
-            cancellation_logs = []
-            for log in logs["취소"]:  # 모든 로그 표시
-                user_mention = f"<@{log['user_id']}>"
-                cancellation_logs.append(f"**{log['team']}** {user_mention} `{log['time']}`")
-            log_text = "\n".join(cancellation_logs) if cancellation_logs and isinstance(cancellation_logs, (list, tuple)) else "없음"
-            # 1024자 제한 적용
-            if len(log_text) > 1024:
-                log_text = log_text[:1021] + "..."
-            embed.add_field(
-                name="❌ 취소",
-                value=log_text,
-                inline=False
-            )
-
-        # 수정 로그 (모든 로그 표시)
-        if logs["수정"]:
-            modification_logs = []
-            for log in logs["수정"]:  # 모든 로그 표시
-                user_mention = f"<@{log['user_id']}>"
-                modification_logs.append(f"**{log['team']}** {user_mention} `{log['time']}`")
-            log_text = "\n".join(modification_logs) if modification_logs and isinstance(modification_logs, (list, tuple)) else "없음"
-            # 1024자 제한 적용
-            if len(log_text) > 1024:
-                log_text = log_text[:1021] + "..."
-            embed.add_field(
-                name="✏️ 수정",
-                value=log_text,
-                inline=False
-            )
-
-        return embed
+        return fields
     
     async def _send_log_as_file(self, interaction: discord.Interaction) -> None:
         """로그를 텍스트 파일로 전송합니다."""
@@ -760,34 +656,19 @@ class TeamInputView(View):
             file_size = os.path.getsize(temp_file_path)
             if file_size > 25 * 1024 * 1024:  # 25MB
                 os.unlink(temp_file_path)
-                error_embed = Embed(
-                    title="❌ 오류",
-                    description="로그 파일이 너무 큽니다. (25MB 초과)",
-                    color=Color.red()
-                )
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(embed=error_embed, ephemeral=True)
-                else:
-                    await interaction.followup.send(embed=error_embed, ephemeral=True)
+                await send_response(interaction, error_view("로그 파일이 너무 큽니다. (25MB 초과)"))
                 return
 
             # 파일명 생성
             current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = f"scrim_log_{current_time}.txt"
 
-            # 파일 전송
-            info_embed = Embed(
-                title="📋 스크림 로그",
-                description="로그가 너무 길어 텍스트 파일로 전송합니다.",
-                color=Color.blue()
-            )
-            
+            # 파일 전송 (AdminView에 안내 텍스트 + 버튼 포함)
+            admin_view = AdminView(self, description="로그가 너무 길어 텍스트 파일로 전송합니다.")
+
             with open(temp_file_path, 'rb') as f:
                 file = discord.File(f, filename=filename)
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(embed=info_embed, file=file, ephemeral=True, view=AdminView(self))
-                else:
-                    await interaction.followup.send(embed=info_embed, file=file, ephemeral=True, view=AdminView(self))
+                await send_response(interaction, admin_view, files=[file])
             
             # 임시 파일 삭제
             try:
@@ -797,15 +678,7 @@ class TeamInputView(View):
                 
         except Exception as e:
             logger.error(f"[뷰] 로그 파일 전송 실패: {e}", exc_info=True)
-            error_embed = Embed(
-                title="❌ 오류",
-                description="로그 파일 생성 중 오류가 발생했습니다.",
-                color=Color.red()
-            )
-            if not interaction.response.is_done():
-                await interaction.response.send_message(embed=error_embed, ephemeral=True)
-            else:
-                await interaction.followup.send(embed=error_embed, ephemeral=True)
+            await send_response(interaction, error_view("로그 파일 생성 중 오류가 발생했습니다."))
     
     async def _send_error_message(self, interaction: discord.Interaction, message: str) -> None:
         await send_error_message(interaction, message)
@@ -850,31 +723,14 @@ class GroupRosterView(View):
         try:
             # 관리자 권한 확인
             if not is_admin(interaction.user):
-                error_embed = Embed(
-                    title="❌ 오류",
-                    description="관리자 권한이 없습니다.",
-                    color=Color.red()
-                )
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(embed=error_embed, ephemeral=True)
-                else:
-                    await interaction.followup.send(embed=error_embed, ephemeral=True)
+                await send_response(interaction, permission_error_view())
                 return
 
-            # 팀 선택 드랍다운 메뉴 표시
+            # 팀 선택 드랍다운 메뉴 표시 (TeamSelectionView에 텍스트 + 셀렉트 포함)
             from .views import TeamSelectionView
             team_selection_view = TeamSelectionView(self)
 
-            embed = Embed(
-                title="팀 선택",
-                description="변경할 팀을 선택하세요.",
-                color=Color.blue()
-            )
-            
-            if not interaction.response.is_done():
-                await interaction.response.send_message(embed=embed, view=team_selection_view, ephemeral=True)
-            else:
-                await interaction.followup.send(embed=embed, view=team_selection_view, ephemeral=True)
+            await send_response(interaction, team_selection_view)
                 
         except discord.InteractionResponded:
             # 이미 응답된 상호작용 - 무시
@@ -902,18 +758,26 @@ class GroupRosterView(View):
             logger.error(f"View 재생성 실패: {e}", exc_info=True)
 
 
-class TeamSelectionView(View):
+class TeamSelectionView(LayoutView):
     """
     팀 선택 뷰
-    
+
     조별 로스터 변경 시 변경할 팀을 선택하는 드롭다운을 제공합니다.
     선택된 팀의 정보를 TeamEditModal로 전달합니다.
     """
-    
+
     def __init__(self, parent_view: 'GroupRosterView'):
         super().__init__(timeout=None)  # 영구적으로 작동
         self.parent_view = parent_view
         self.is_empty = not parent_view.group_teams
+
+        # Container (안내 텍스트)
+        self.add_item(Container(
+            TextDisplay(content="## 팀 선택\n변경할 팀을 선택하세요."),
+            Separator(),
+            TextDisplay(content=FOOTER_TEXT),
+            accent_colour=Color.blue(),
+        ))
 
         if self.is_empty:
             # 빈 팀 리스트일 때 placeholder 옵션 추가
@@ -928,93 +792,89 @@ class TeamSelectionView(View):
                 for i, (team_name, team_data, mmr) in enumerate(parent_view.group_teams)
             ]
 
-        # 팀 선택 드랍다운
+        # ActionRow (팀 선택 드랍다운)
         self.team_select = Select(
             placeholder="변경할 팀을 선택하세요",
             options=options,
             disabled=self.is_empty
         )
         self.team_select.callback = self.team_select_callback
-        self.add_item(self.team_select)
-    
+        self.add_item(ActionRow(self.team_select))
+
     async def on_timeout(self) -> None:
         """View timeout 시 호출되는 메서드 (timeout=None이므로 실제로는 호출되지 않음)"""
-        # timeout=None이므로 이 메서드는 호출되지 않지만, 안전을 위해 구현
         pass
-    
+
     async def team_select_callback(self, interaction: discord.Interaction) -> None:
         """팀 선택 콜백"""
         try:
             selected_team = self.team_select.values[0]
-            
+
             # 선택된 팀의 정보 찾기
             selected_team_data = None
             for team_name, team_data, mmr in self.parent_view.group_teams:
                 if team_name == selected_team:
                     selected_team_data = (team_name, team_data, mmr)
                     break
-            
+
             if not selected_team_data:
-                error_embed = Embed(
-                    title="❌ 오류",
-                    description="선택된 팀 정보를 찾을 수 없습니다.",
-                    color=Color.red()
-                )
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(embed=error_embed, ephemeral=True)
-                else:
-                    await interaction.followup.send(embed=error_embed, ephemeral=True)
+                await send_response(interaction, error_view("선택된 팀 정보를 찾을 수 없습니다."))
                 return
-            
+
             # 팀 정보 수정 모달 표시
             from .modals import TeamEditModal
             if not interaction.response.is_done():
                 await interaction.response.send_modal(TeamEditModal(self.parent_view, selected_team_data))
             else:
                 await interaction.followup.send_modal(TeamEditModal(self.parent_view, selected_team_data))
-                
+
         except discord.InteractionResponded:
-            # 이미 응답된 상호작용 - 무시
             pass  # 이미 응답된 상호작용 무시 (팀 선택)
         except discord.NotFound:
-            # 상호작용을 찾을 수 없음 - View가 만료되었을 가능성
             pass  # 상호작용을 찾을 수 없음 - 팀 선택 View 만료 가능성
         except Exception as e:
             logger.error(f"팀 선택 콜백 처리 실패: {e}", exc_info=True)
-            error_embed = Embed(
-                title="❌ 오류",
-                description="팀 선택 중 오류가 발생했습니다.",
-                color=Color.red()
-            )
             try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(embed=error_embed, ephemeral=True)
-                else:
-                    await interaction.followup.send(embed=error_embed, ephemeral=True)
+                await send_response(interaction, error_view("팀 선택 중 오류가 발생했습니다."))
             except Exception as e2:
                 logger.error(f"에러 메시지 전송 실패: {e2}", exc_info=True)
 
 
-class CancelConfirmView(View):
+class CancelConfirmView(LayoutView):
     """
     팀 취소 확인 뷰
 
     취소 버튼 클릭 후 팀 정보를 표시하고 최종 확인을 받습니다.
     """
 
-    def __init__(self, parent_view: 'TeamInputView', team_name: str):
+    def __init__(
+        self,
+        parent_view: 'TeamInputView',
+        team_name: str,
+        *,
+        cancel_text: str = "",
+        fields: list[tuple[str, str]] | None = None,
+    ):
         super().__init__(timeout=30)
         self.parent_view = parent_view
         self.team_name = team_name
         self.message: Optional[discord.Message] = None
 
+        # Container (안내 텍스트 + 필드)
+        children: list = [TextDisplay(content=f"## 🚫 팀 등록 취소 확인\n{cancel_text}")]
+        if fields:
+            for name, value in fields:
+                children.append(TextDisplay(content=f"**{name}**\n{value}"))
+        children.append(Separator())
+        children.append(TextDisplay(content=FOOTER_TEXT))
+        self.add_item(Container(*children, accent_colour=Color.orange()))
+
+        # ActionRow (확인/돌아가기 버튼)
         self.confirm_button = Button(label="등록 취소하기", style=ButtonStyle.danger, emoji="⚠️")
         self.confirm_button.callback = self.confirm_callback
-        self.add_item(self.confirm_button)
-
         self.back_button = Button(label="돌아가기", style=ButtonStyle.secondary, emoji="↩️")
         self.back_button.callback = self.back_callback
-        self.add_item(self.back_button)
+        self.add_item(ActionRow(self.confirm_button, self.back_button))
 
     async def confirm_callback(self, interaction: discord.Interaction) -> None:
         """취소 확인 버튼 콜백"""
@@ -1029,72 +889,77 @@ class CancelConfirmView(View):
         except Exception as e:
             logger.error(f"[뷰] 팀 취소 확인 콜백 실패: {e}", exc_info=True)
             await interaction.followup.send(
-                embed=Embed(title="❌ 오류", description="팀 취소 중 오류가 발생했습니다.", color=Color.red()),
+                view=error_view("팀 취소 중 오류가 발생했습니다."),
                 ephemeral=True
             )
 
     async def back_callback(self, interaction: discord.Interaction) -> None:
         """돌아가기 버튼 콜백"""
         try:
-            cancel_embed = Embed(
-                title="스크림 안내",
-                description="이전 화면으로 돌아갔습니다.",
-                color=Color.blue()
-            )
-            await interaction.response.edit_message(embed=cancel_embed, view=None)
+            await interaction.response.edit_message(view=info_view("이전 화면으로 돌아갔습니다."), embed=None, content=None)
         except Exception as e:
             logger.error(f"[뷰] 팀 취소 돌아가기 콜백 실패: {e}", exc_info=True)
 
     async def on_timeout(self) -> None:
         """타임아웃 시 버튼 비활성화 및 안내 메시지"""
-        self.confirm_button.disabled = True
-        self.back_button.disabled = True
         if self.message:
             try:
-                timeout_embed = Embed(
-                    title="⏳ 시간 초과",
-                    description="시간이 초과되었습니다. 다시 시도해주세요.",
-                    color=Color.greyple()
-                )
-                await self.message.edit(embed=timeout_embed, view=self)
+                await self.message.edit(view=timeout_view(), embed=None, content=None)
             except Exception:
                 pass
 
 
-class AdminView(View):
+class AdminView(LayoutView):
     """
     관리자 전용 뷰
-    
+
     관리자 권한이 있는 사용자만 접근 가능합니다.
+    로그 텍스트와 CSV 관련 버튼을 함께 포함합니다.
     """
-    
-    def __init__(self, original_view: TeamInputView):
+
+    def __init__(
+        self,
+        original_view: TeamInputView,
+        *,
+        log_fields: list[tuple[str, str]] | None = None,
+        description: str = "",
+    ):
         super().__init__(timeout=None)
         self.original_view = original_view
 
-        # 팀 목록 CSV 내보내기 버튼
+        # Container (로그 텍스트)
+        if description:
+            children: list = [TextDisplay(content=f"## 📋 스크림 로그\n{description}")]
+        elif log_fields:
+            children: list = [TextDisplay(content="## 📋 스크림 로그")]
+            for name, value in log_fields:
+                children.append(TextDisplay(content=f"**{name}**\n{value}"))
+        else:
+            children: list = [TextDisplay(content="## 📋 스크림 로그\n로그가 없습니다.")]
+        children.append(Separator())
+        children.append(TextDisplay(content=FOOTER_TEXT))
+        self.add_item(Container(*children, accent_colour=Color.blue()))
+
+        # ActionRow (CSV 버튼)
         self.export_csv_button = Button(
             label="CSV 내보내기",
             style=ButtonStyle.secondary,
             emoji="📄"
         )
         self.export_csv_button.callback = self.export_csv_callback
-        self.add_item(self.export_csv_button)
-        
-        # CSV 팀 입력 버튼
         self.import_csv_button = Button(
             label="CSV 불러오기",
             style=ButtonStyle.secondary,
             emoji="📥"
         )
         self.import_csv_button.callback = self.import_csv_callback
-        self.add_item(self.import_csv_button)
+        self.add_item(ActionRow(self.export_csv_button, self.import_csv_button))
     
     async def export_csv_callback(self, interaction: discord.Interaction) -> None:
         """현재 등록된 팀 목록을 CSV로 내보냅니다."""
         try:
             if not is_admin(interaction.user):
-                await interaction.response.send_message("관리자만 사용할 수 있습니다.", ephemeral=True)
+                await send_response(interaction, permission_error_view())
                 return
 
             team_data_manager = BotManager.get_instance().get_team_data_manager()
@@ -1125,18 +990,15 @@ class AdminView(View):
         except Exception as e:
             logger.error(f"팀 CSV 내보내기 실패: {e}", exc_info=True)
             try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message("CSV 내보내기 중 오류가 발생했습니다.", ephemeral=True)
-                else:
-                    await interaction.followup.send("CSV 내보내기 중 오류가 발생했습니다.", ephemeral=True)
+                await send_response(interaction, error_view("CSV 내보내기 중 오류가 발생했습니다."))
             except Exception:
                 pass
-    
+
     async def import_csv_callback(self, interaction: discord.Interaction) -> None:
         """CSV 형식으로 팀을 일괄 등록합니다."""
         try:
             if not is_admin(interaction.user):
-                await interaction.response.send_message("관리자만 사용할 수 있습니다.", ephemeral=True)
+                await send_response(interaction, permission_error_view())
                 return
 
             # CSV 입력 모달 표시
@@ -1145,14 +1007,11 @@ class AdminView(View):
                 await interaction.response.send_modal(CSVImportModal(self))
             else:
                 await interaction.followup.send("모달을 표시할 수 없습니다. 다시 시도해주세요.", ephemeral=True)
-                
+
         except Exception as e:
             logger.error(f"CSV 입력 콜백 처리 실패: {e}", exc_info=True)
             try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message("CSV 입력 중 오류가 발생했습니다.", ephemeral=True)
-                else:
-                    await interaction.followup.send("CSV 입력 중 오류가 발생했습니다.", ephemeral=True)
+                await send_response(interaction, error_view("CSV 입력 중 오류가 발생했습니다."))
             except Exception:
                 pass
 
@@ -1160,25 +1019,33 @@ class AdminView(View):
         await send_error_message(interaction, message)
 
 
-class ScrimResetConfirmView(View):
+class ScrimResetConfirmView(LayoutView):
     """
     스크림 초기화 확인 뷰
 
     진행 중인 스크림이 있을 때 /스크림 명령어 실행 시 확인을 받습니다.
     """
 
-    def __init__(self):
+    def __init__(self, *, description: str = ""):
         super().__init__(timeout=30)
         self.confirmed: Optional[bool] = None
         self.message: Optional[discord.Message] = None
 
+        # Container (안내 텍스트)
+        text = description if description else "초기화하시겠습니까?"
+        self.add_item(Container(
+            TextDisplay(content=f"## ⚠️ 진행 중인 스크림이 있습니다\n{text}"),
+            Separator(),
+            TextDisplay(content=FOOTER_TEXT),
+            accent_colour=Color.orange(),
+        ))
+
+        # ActionRow (확인/취소 버튼)
         self.confirm_button = Button(label="초기화", style=ButtonStyle.danger, emoji="⚠️")
         self.confirm_button.callback = self.confirm_callback
-        self.add_item(self.confirm_button)
-
         self.cancel_button = Button(label="취소", style=ButtonStyle.secondary, emoji="↩️")
         self.cancel_button.callback = self.cancel_callback
-        self.add_item(self.cancel_button)
+        self.add_item(ActionRow(self.confirm_button, self.cancel_button))
 
     async def confirm_callback(self, interaction: discord.Interaction) -> None:
         self.confirmed = True
@@ -1191,25 +1058,13 @@ class ScrimResetConfirmView(View):
         self.confirmed = False
         self.confirm_button.disabled = True
         self.cancel_button.disabled = True
-        cancel_embed = Embed(
-            title="스크림 안내",
-            description="스크림 초기화가 취소되었습니다.",
-            color=Color.blue()
-        )
-        await interaction.response.edit_message(embed=cancel_embed, view=self)
+        await interaction.response.edit_message(view=info_view("스크림 초기화가 취소되었습니다."), embed=None, content=None)
         self.stop()
 
     async def on_timeout(self) -> None:
         self.confirmed = None
-        self.confirm_button.disabled = True
-        self.cancel_button.disabled = True
         if self.message:
             try:
-                timeout_embed = Embed(
-                    title="⏳ 시간 초과",
-                    description="시간이 초과되었습니다. 다시 시도해주세요.",
-                    color=Color.greyple()
-                )
-                await self.message.edit(embed=timeout_embed, view=self)
+                await self.message.edit(view=timeout_view(), embed=None, content=None)
             except Exception:
                 pass
