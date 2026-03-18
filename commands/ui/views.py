@@ -84,13 +84,26 @@ class TeamInputView(LayoutView):
 
         # Container (스크림 안내)
         title = f"🏆 {scrim_month}/{scrim_day} ({scrim_weekday}) 스크림"
-        desc = "⏰  `17:00` 조편성 · `20:00` 스크림 (4R)\n아래 버튼으로 팀을 등록해주세요."
-        self.add_item(Container(
-            TextDisplay(content=f"## {title}\n{desc}"),
-            Separator(),
-            TextDisplay(content=FOOTER_TEXT),
-            accent_colour=Color.green(),
-        ))
+        schedule = (
+            "📋 **일정**\n"
+            "`17:00` 자동 조편성\n"
+            "`20:00` 스크림 시작 (4라운드)"
+        )
+
+        children = [
+            TextDisplay(content=f"## {title}"),
+            TextDisplay(content=schedule),
+        ]
+
+        # 공지사항 (정적 설정)
+        if settings.ANNOUNCEMENT_MESSAGE:
+            children.append(TextDisplay(content=f"📢 **공지사항**\n{settings.ANNOUNCEMENT_MESSAGE}"))
+
+        children.append(TextDisplay(content="\n아래 버튼을 눌러 팀을 등록해주세요."))
+        children.append(Separator())
+        children.append(TextDisplay(content=FOOTER_TEXT))
+
+        self.add_item(Container(*children, accent_colour=Color.green()))
 
         # ActionRow (신청/취소/관리 버튼)
         self.add_team_button = Button(
