@@ -695,32 +695,35 @@ class TeamEditModal(Modal):
             from services.image_generator import ImageGenerator
             img_io = ImageGenerator.generate_mmr_image(group_teams)
             
-            # 새로운 로스터 뷰 생성
-            from commands.ui.views import GroupRosterView
-            roster_view = GroupRosterView(group_letter, updated_group_teams)
-            
             # 조별 공지 메시지 생성
             team_processor = BotManager.get_instance().get_team_processor()
             message_content = team_processor._create_group_announcement_message(group_letter, updated_group_teams)
-            
+
             # 조별 역할 멘션 추가
             role_mention = await team_processor._get_group_role_mention(channel.guild, group_letter)
             if role_mention:
                 message_content = role_mention + "\n" + message_content
-            
+
+            # 새로운 로스터 뷰 생성 (공지 텍스트 + 이미지 + 버튼 포함)
+            from commands.ui.views import GroupRosterView
+            roster_view = GroupRosterView(
+                group_letter, updated_group_teams,
+                message_text=message_content, has_image=bool(img_io),
+            )
+
             # 기존 메시지 수정
             if img_io:
                 await target_message.edit(
-                    content=message_content,
-                    embed=None,  # 기존 임베드 제거
+                    view=roster_view,
+                    content=None,
+                    embed=None,
                     attachments=[discord.File(img_io, filename='group_mmr_table.png')],
-                    view=roster_view
                 )
             else:
                 await target_message.edit(
-                    content=message_content,
-                    embed=None,  # 기존 임베드 제거
-                    view=roster_view
+                    view=roster_view,
+                    content=None,
+                    embed=None,
                 )
             
             # 조편성 시작 여부에 따라 로깅 메시지 구분
