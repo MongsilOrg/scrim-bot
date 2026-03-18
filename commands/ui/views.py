@@ -7,8 +7,8 @@ import io
 import csv
 
 import discord
-from discord import ButtonStyle, Color, Embed, SelectOption
-from discord.ui import ActionRow, Button, Container, LayoutView, Select, Separator, TextDisplay, View
+from discord import ButtonStyle, Color, SelectOption
+from discord.ui import ActionRow, Button, Container, LayoutView, MediaGallery, Select, Separator, TextDisplay
 
 from bot.manager import BotManager
 from config.logging_config import get_logger
@@ -71,44 +71,47 @@ if TYPE_CHECKING:
 logger = get_logger('views')
 
 
-class TeamInputView(View):
+class TeamInputView(LayoutView):
     """
     팀 입력 및 관리 뷰
-    
+
     스크림 참가 신청, 취소, 관리자 기능에 대한 버튼들을 제공합니다.
     사용자의 팀 등록 상태에 따라 적절한 모달을 표시합니다.
     """
-    
-    def __init__(self, embed: discord.Embed):
+
+    def __init__(self, *, scrim_day: int, scrim_month: int, scrim_weekday: str):
         super().__init__(timeout=None)
-        self.embed = embed
-        
-        # 팀 신청/수정 버튼
+
+        # Container (스크림 안내)
+        title = f"🏆 {scrim_month}/{scrim_day} ({scrim_weekday}) 스크림"
+        desc = "⏰  `17:00` 조편성 · `20:00` 스크림 (4R)\n아래 버튼으로 팀을 등록해주세요."
+        self.add_item(Container(
+            TextDisplay(content=f"## {title}\n{desc}"),
+            Separator(),
+            TextDisplay(content=FOOTER_TEXT),
+            accent_colour=Color.green(),
+        ))
+
+        # ActionRow (신청/취소/관리 버튼)
         self.add_team_button = Button(
             label="신청/수정",
             style=ButtonStyle.primary,
             emoji="✏️"
         )
         self.add_team_button.callback = self.add_team_callback
-        self.add_item(self.add_team_button)
-
-        # 팀 취소 버튼
         self.cancel_team_button = Button(
             label="취소",
             style=ButtonStyle.secondary,
             emoji="🚫"
         )
         self.cancel_team_button.callback = self.cancel_team_callback
-        self.add_item(self.cancel_team_button)
-
-        # 관리자 기능 버튼
         self.admin_log_button = Button(
             label="관리",
             style=ButtonStyle.danger,
             emoji="⚙️"
         )
         self.admin_log_button.callback = self.admin_log_callback
-        self.add_item(self.admin_log_button)
+        self.add_item(ActionRow(self.add_team_button, self.cancel_team_button, self.admin_log_button))
     
     async def add_team_callback(self, interaction: discord.Interaction) -> None:
         """팀 추가 버튼 콜백 (기존 팀이 있으면 수정 모달 표시)"""
@@ -684,75 +687,76 @@ class TeamInputView(View):
         await send_error_message(interaction, message)
 
 
-class GroupRosterView(View):
+class GroupRosterView(LayoutView):
     """
     조별 로스터 관리 뷰
-    
+
     조별 공지에서 팀 로스터 변경 기능을 제공합니다.
     관리자만 접근 가능하며, 드롭다운을 통해 팀을 선택하고 수정할 수 있습니다.
     """
-    
-    def __init__(self, group_letter: str, group_teams: List[Tuple[str, 'TeamData', float]]):
+
+    def __init__(
+        self,
+        group_letter: str,
+        group_teams: List[Tuple[str, 'TeamData', float]],
+        *,
+        message_text: str = "",
+        has_image: bool = True,
+    ):
         super().__init__(timeout=None)
         self.group_letter = group_letter
         self.group_teams = group_teams
-        
-        # 로스터 변경 버튼 (관리자만 사용 가능)
+        self.message_text = message_text
+        self.has_image = has_image
+
+        # Container (공지 텍스트 + 이미지 + 푸터)
+        children: list = [TextDisplay(content=message_text)]
+        if has_image:
+            children.append(MediaGallery(discord.MediaGalleryItem(media="attachment://group_mmr_table.png")))
+        children.append(Separator())
+        children.append(TextDisplay(content=FOOTER_TEXT))
+        self.add_item(Container(*children, accent_colour=Color.blue()))
+
+        # ActionRow (로스터 변경 버튼)
         self.roster_change_button = Button(
             label="로스터 변경",
             style=ButtonStyle.primary,
             emoji="✏️"
         )
         self.roster_change_button.callback = self.roster_change_callback
-        self.add_item(self.roster_change_button)
-    
-    async def on_timeout(self) -> None:
-        """View timeout 시 호출되는 메서드 (timeout=None이므로 실제로는 호출되지 않음)"""
-        # timeout=None이므로 이 메서드는 호출되지 않지만, 안전을 위해 구현
-        pass
-    
+        self.add_item(ActionRow(self.roster_change_button))
+
     def update_group_teams(self, new_group_teams: List[Tuple[str, 'TeamData', float]]) -> None:
         """팀 정보를 업데이트합니다."""
         self.group_teams = new_group_teams
-    
-    async def _send_error_message(self, interaction: discord.Interaction, message: str) -> None:
-        await send_error_message(interaction, message)
 
     async def roster_change_callback(self, interaction: discord.Interaction) -> None:
         """로스터 변경 버튼 콜백"""
         try:
-            # 관리자 권한 확인
             if not is_admin(interaction.user):
                 await send_response(interaction, permission_error_view())
                 return
 
-            # 팀 선택 드랍다운 메뉴 표시 (TeamSelectionView에 텍스트 + 셀렉트 포함)
             from .views import TeamSelectionView
             team_selection_view = TeamSelectionView(self)
-
             await send_response(interaction, team_selection_view)
-                
+
         except discord.InteractionResponded:
-            # 이미 응답된 상호작용 - 무시
-            pass  # 이미 응답된 상호작용 무시
+            pass
         except discord.NotFound:
-            # 상호작용을 찾을 수 없음 - View가 만료되었을 가능성
-            pass  # 상호작용을 찾을 수 없음 - View 만료 가능성
-            # 새로운 View로 메시지를 업데이트 시도
             await self._recreate_view_on_message(interaction)
         except Exception as e:
             logger.error(f"로스터 변경 콜백 처리 실패: {e}", exc_info=True)
-            await self._send_error_message(interaction, "로스터 변경 중 오류가 발생했습니다.")
-    
+            await send_error_message(interaction, "로스터 변경 중 오류가 발생했습니다.")
+
     async def _recreate_view_on_message(self, interaction: discord.Interaction) -> None:
         """View가 만료된 경우 메시지를 새로운 View로 업데이트"""
         try:
-            # 현재 메시지를 찾아서 새로운 View로 업데이트
             if hasattr(interaction, 'message') and interaction.message:
-                # 새로운 View 생성
-                new_view = GroupRosterView(self.group_letter, self.group_teams)
-                
-                # 메시지 업데이트
+                new_view = GroupRosterView(
+                    self.group_letter, self.group_teams,
+                    message_text=self.message_text, has_image=self.has_image,
+                )
                 await interaction.message.edit(view=new_view)
         except Exception as e:
             logger.error(f"View 재생성 실패: {e}", exc_info=True)
