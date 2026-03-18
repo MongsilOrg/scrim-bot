@@ -6,9 +6,14 @@ from typing import TYPE_CHECKING, Dict, List, Tuple, Union
 import discord
 from discord import SelectOption
 from discord.components import RadioGroupOption
-from discord.ui import FileUpload, Label, Modal, RadioGroup, Select, TextDisplay, TextInput
+from discord.ui import Container, FileUpload, Label, LayoutView, Modal, RadioGroup, Select, Separator, TextDisplay, TextInput
 
 from bot.manager import BotManager
+from commands.ui.layout_helpers import (
+    error_view, success_view, warning_view, info_view,
+    processing_view, timeout_view, custom_view,
+    send_response, edit_to_layout, FOOTER_TEXT,
+)
 from config.logging_config import get_logger
 from utils.validators import (
     check_duplicate_members,
@@ -75,24 +80,19 @@ class TeamModal(Modal):
                 await interaction.response.defer(ephemeral=True)
 
             # 임시 메시지 전송
-            temp_embed = discord.Embed(
-                title="⏳ 처리 중...",
-                description="팀 정보를 확인하고 등록하고 있습니다.\n잠시만 기다려주세요.",
-                color=discord.Color.blue()
-            )
-            temp_message = await interaction.followup.send(embed=temp_embed, ephemeral=True)
+            temp_message = await interaction.followup.send(view=processing_view("팀 정보를 확인하고 등록하고 있습니다."), ephemeral=True, wait=True)
 
             # 입력 데이터 수집
             team_name = self.team_name_input.value.strip()
-            
+
             # 플레이어 목록 파싱 (엔터키로 구분)
             players_text = self.players_input.value.strip()
             players = [player.strip() for player in players_text.split('\n') if player.strip()]
-            
+
             # 스태프 목록 파싱 (엔터키로 구분)
             staff_text = self.staff_input.value.strip()
             staff = [staff_member.strip() for staff_member in staff_text.split('\n') if staff_member.strip()]
-            
+
             # 팀 데이터 구성
             team_data = {
                 'players': players,
@@ -145,40 +145,31 @@ class TeamModal(Modal):
     async def _update_temp_message(self, temp_message: discord.Message, message: str, color: discord.Color) -> None:
         """임시 메시지를 업데이트합니다."""
         try:
-            embed = discord.Embed(
-                title="스크림 안내",
-                description=message,
-                color=color
-            )
-            await temp_message.edit(embed=embed)
+            if color == discord.Color.green():
+                view = success_view(message)
+            elif color == discord.Color.red():
+                view = error_view(message)
+            elif color == discord.Color.orange():
+                view = warning_view(message)
+            else:
+                view = info_view(message)
+            await edit_to_layout(temp_message, view)
         except Exception as e:
             logger.error(f"[모달] 임시 메시지 업데이트 실패: {e}", exc_info=True)
 
     async def _send_error_message(self, interaction: discord.Interaction, message: str) -> None:
         """에러 메시지를 전송합니다."""
         try:
-            error_embed = discord.Embed(
-                title="스크림 안내",
-                description=message,
-                color=discord.Color.red()
-            )
-
-            # 상호작용이 이미 응답되었는지 확인
-            if not interaction.response.is_done():
-                await interaction.response.send_message(embed=error_embed, ephemeral=True)
-            else:
-                # 이미 응답된 경우 followup으로 전송
-                await interaction.followup.send(embed=error_embed, ephemeral=True)
+            await send_response(interaction, error_view(message))
         except Exception as e:
             logger.error(f"[모달] 에러 메시지 전송 실패: {e}", exc_info=True)
-            # 최후의 수단으로 일반 메시지 전송 시도
             try:
                 if not interaction.response.is_done():
                     await interaction.response.send_message(f"오류: {message}", ephemeral=True)
                 else:
                     await interaction.followup.send(f"오류: {message}", ephemeral=True)
-            except Exception as e2:
-                logger.error(f"[모달] 최후의 수단 메시지 전송 실패: {e2}", exc_info=True)
+            except Exception:
+                pass
 
 
 class TeamEditModal(Modal):
@@ -249,12 +240,7 @@ class TeamEditModal(Modal):
                 await interaction.response.defer(ephemeral=True)
             
             # 임시 메시지 전송
-            temp_embed = discord.Embed(
-                title="⏳ 처리 중...",
-                description="변경된 팀 정보를 확인하고 업데이트하고 있습니다.\n잠시만 기다려주세요.",
-                color=discord.Color.blue()
-            )
-            temp_message = await interaction.followup.send(embed=temp_embed, ephemeral=True)
+            temp_message = await interaction.followup.send(view=processing_view("변경된 팀 정보를 확인하고 업데이트하고 있습니다."), ephemeral=True, wait=True)
             
             from commands.ui.views import GroupRosterView
             is_roster_change = isinstance(self.view, GroupRosterView)
@@ -771,30 +757,31 @@ class TeamEditModal(Modal):
     async def _update_temp_message(self, temp_message: discord.Message, message: str, color: discord.Color) -> None:
         """임시 메시지를 업데이트합니다."""
         try:
-            embed = discord.Embed(
-                title="✅ 완료" if color == discord.Color.green() else "❌ 오류",
-                description=message,
-                color=color
-            )
-            await temp_message.edit(embed=embed)
+            if color == discord.Color.green():
+                view = success_view(message)
+            elif color == discord.Color.red():
+                view = error_view(message)
+            elif color == discord.Color.orange():
+                view = warning_view(message)
+            else:
+                view = info_view(message)
+            await edit_to_layout(temp_message, view)
         except Exception as e:
             logger.error(f"[모달] 임시 메시지 업데이트 실패: {e}", exc_info=True)
 
     async def _send_error_message(self, interaction: discord.Interaction, message: str) -> None:
         """에러 메시지를 전송합니다."""
         try:
-            error_embed = discord.Embed(
-                title="❌ 오류",
-                description=message,
-                color=discord.Color.red()
-            )
-
-            if not interaction.response.is_done():
-                await interaction.response.send_message(embed=error_embed, ephemeral=True)
-            else:
-                await interaction.followup.send(embed=error_embed, ephemeral=True)
+            await send_response(interaction, error_view(message))
         except Exception as e:
             logger.error(f"[모달] 에러 메시지 전송 실패: {e}", exc_info=True)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(f"오류: {message}", ephemeral=True)
+                else:
+                    await interaction.followup.send(f"오류: {message}", ephemeral=True)
+            except Exception:
+                pass
 
 
 class WarningReasonModal(Modal):
@@ -860,12 +847,7 @@ class WarningReasonModal(Modal):
             # 사유 결합
             if reason_choice == "직접입력":
                 if not detail:
-                    error_embed = discord.Embed(
-                        title="❌ 오류",
-                        description="직접입력을 선택한 경우 상세 사유를 입력해주세요.",
-                        color=discord.Color.red()
-                    )
-                    await interaction.followup.send(embed=error_embed, ephemeral=True)
+                    await interaction.followup.send(view=error_view("직접입력을 선택한 경우 상세 사유를 입력해주세요."), ephemeral=True)
                     return
                 reason = detail
             else:
@@ -893,83 +875,41 @@ class WarningReasonModal(Modal):
 
                 # 주의 2회 누적으로 경고 전환된 경우
                 if auto_warning and converted_cautions:
-                    embed = discord.Embed(
-                        title="🚨 경고 자동 부여 완료",
-                        description="주의 2회 누적으로 경고가 자동 부여되었습니다.",
-                        color=0xED4245
-                    )
-                    embed.add_field(
-                        name="📌 대상",
-                        value=f"{self.target_user.mention} (`{target_nickname}`)",
-                        inline=True
-                    )
-                    embed.add_field(
-                        name="🚫 제한 해제일",
-                        value=f"`{auto_warning.get('restricted_until', 'N/A')}`",
-                        inline=True
-                    )
-                    embed.add_field(
-                        name="📝 이번 주의 사유",
-                        value=reason,
-                        inline=False
-                    )
                     caution_lines = []
                     for i, caution in enumerate(converted_cautions, 1):
                         caution_date = caution.get('날짜', 'N/A')
                         caution_reason = caution.get('사유', 'N/A')
                         caution_lines.append(f"`{i}회` {caution_date}: {caution_reason}")
-                    embed.add_field(
-                        name="📋 누적 주의 내역",
-                        value="\n".join(caution_lines) if caution_lines else "내역 없음",
-                        inline=False
+                    fields = [
+                        ("📌 대상", f"{self.target_user.mention} (`{target_nickname}`)"),
+                        ("🚫 제한 해제일", f"`{auto_warning.get('restricted_until', 'N/A')}`"),
+                        ("📝 이번 주의 사유", reason),
+                        ("📋 누적 주의 내역", "\n".join(caution_lines) if caution_lines else "내역 없음"),
+                    ]
+                    view_result = custom_view(
+                        "🚨 경고 자동 부여 완료",
+                        "주의 2회 누적으로 경고가 자동 부여되었습니다.",
+                        discord.Color.red(),
+                        fields=fields,
                     )
-                    embed.set_footer(text=f"처리일시: {current_time} • DM 발송 완료")
 
                 # 일반 경고인 경우
                 elif warning_type == '경고':
-                    embed = discord.Embed(
-                        title="🚨 경고 부여 완료",
-                        color=0xED4245
-                    )
-                    embed.add_field(
-                        name="📌 대상",
-                        value=f"{self.target_user.mention} (`{target_nickname}`)",
-                        inline=True
-                    )
-                    embed.add_field(
-                        name="🚫 제한 해제일",
-                        value=f"`{auto_warning.get('restricted_until', 'N/A') if auto_warning else 'N/A'}`",
-                        inline=True
-                    )
-                    embed.add_field(
-                        name="📝 사유",
-                        value=reason,
-                        inline=False
-                    )
-                    embed.set_footer(text=f"처리일시: {current_time} • DM 발송 완료")
+                    fields = [
+                        ("📌 대상", f"{self.target_user.mention} (`{target_nickname}`)"),
+                        ("🚫 제한 해제일", f"`{auto_warning.get('restricted_until', 'N/A') if auto_warning else 'N/A'}`"),
+                        ("📝 사유", reason),
+                    ]
+                    view_result = custom_view("🚨 경고 부여 완료", "", discord.Color.red(), fields=fields)
 
                 # 주의인 경우
                 else:
-                    embed = discord.Embed(
-                        title="⚡ 주의 부여 완료",
-                        color=0xFEE75C
-                    )
-                    embed.add_field(
-                        name="📌 대상",
-                        value=f"{self.target_user.mention} (`{target_nickname}`)",
-                        inline=True
-                    )
-                    embed.add_field(
-                        name="📝 사유",
-                        value=reason,
-                        inline=False
-                    )
-                    embed.add_field(
-                        name="💡 참고",
-                        value="주의 2회 누적 시 경고로 자동 전환됩니다.",
-                        inline=False
-                    )
-                    embed.set_footer(text=f"처리일시: {current_time} • DM 발송 완료")
+                    fields = [
+                        ("📌 대상", f"{self.target_user.mention} (`{target_nickname}`)"),
+                        ("📝 사유", reason),
+                        ("💡 참고", "주의 2회 누적 시 경고로 자동 전환됩니다."),
+                    ]
+                    view_result = custom_view("⚡ 주의 부여 완료", "", discord.Color.from_str("#FEE75C"), fields=fields)
 
                 # 대상자에게 DM 발송
                 await self._send_warning_dm(
@@ -982,25 +922,13 @@ class WarningReasonModal(Modal):
                 )
             else:
                 logger.error(f"[모달] {warning_type} 추가 실패 - 대상: {target_nickname}, 메시지: {message}")
-                embed = discord.Embed(
-                    title="❌ 처리 실패",
-                    description=message,
-                    color=0xED4245
-                )
+                view_result = error_view(message, title="❌ 처리 실패")
 
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await interaction.followup.send(view=view_result, ephemeral=True)
 
         except Exception as e:
             logger.error(f"[모달] 제재 모달 처리 실패 - 대상: {self.target_user.display_name if self.target_user else 'Unknown'}, 오류: {e}", exc_info=True)
-            error_embed = discord.Embed(
-                title="❌ 오류",
-                description="제재 처리 중 오류가 발생했습니다.",
-                color=discord.Color.red()
-            )
-            if not interaction.response.is_done():
-                await interaction.response.send_message(embed=error_embed, ephemeral=True)
-            else:
-                await interaction.followup.send(embed=error_embed, ephemeral=True)
+            await send_response(interaction, error_view("제재 처리 중 오류가 발생했습니다."))
 
     async def _send_warning_dm(
         self,
@@ -1020,80 +948,38 @@ class WarningReasonModal(Modal):
             if auto_warning and converted_cautions:
                 restricted_until = auto_warning.get('restricted_until', 'N/A')
 
-                embed = discord.Embed(
-                    title="🚨 경고 알림",
-                    description="주의 2회 누적으로 인해 **경고**가 부여되었습니다.",
-                    color=0xED4245
-                )
-
                 caution_lines = []
                 for i, caution in enumerate(converted_cautions, 1):
                     caution_date = caution.get('날짜', 'N/A')
                     caution_reason = caution.get('사유', 'N/A')
                     caution_lines.append(f"`{i}회` {caution_date}\n└ {caution_reason}")
 
-                embed.add_field(
-                    name="📋 누적 주의 내역",
-                    value="\n\n".join(caution_lines) if caution_lines else "내역 없음",
-                    inline=False
-                )
-
-                embed.add_field(
-                    name="🚫 참여 제한",
-                    value=f"**{restricted_until}**까지 스크림 참여가 제한됩니다.",
-                    inline=False
-                )
-
-                embed.set_footer(text=f"처리일시: {current_time} • 문의: #ticket")
+                fields = [
+                    ("📋 누적 주의 내역", "\n\n".join(caution_lines) if caution_lines else "내역 없음"),
+                    ("🚫 참여 제한", f"**{restricted_until}**까지 스크림 참여가 제한됩니다."),
+                ]
+                dm_view = custom_view("🚨 경고 알림", "주의 2회 누적으로 인해 **경고**가 부여되었습니다.", discord.Color.red(), fields=fields)
 
             # 일반 경고인 경우 (직접 부여)
             elif warning_type == '경고':
                 restricted_until = auto_warning.get('restricted_until', 'N/A') if auto_warning else 'N/A'
 
-                embed = discord.Embed(
-                    title="🚨 경고 알림",
-                    description="**경고**가 부여되었습니다.",
-                    color=0xED4245
-                )
-
-                embed.add_field(
-                    name="📝 사유",
-                    value=reason,
-                    inline=False
-                )
-
-                embed.add_field(
-                    name="🚫 참여 제한",
-                    value=f"**{restricted_until}**까지 스크림 참여가 제한됩니다.",
-                    inline=False
-                )
-
-                embed.set_footer(text=f"처리일시: {current_time} • 문의: #ticket")
+                fields = [
+                    ("📝 사유", reason),
+                    ("🚫 참여 제한", f"**{restricted_until}**까지 스크림 참여가 제한됩니다."),
+                ]
+                dm_view = custom_view("🚨 경고 알림", "**경고**가 부여되었습니다.", discord.Color.red(), fields=fields)
 
             # 주의인 경우
             else:
-                embed = discord.Embed(
-                    title="⚡ 주의 알림",
-                    description="**주의**가 부여되었습니다.",
-                    color=0xFEE75C
-                )
-
-                embed.add_field(
-                    name="📝 사유",
-                    value=reason,
-                    inline=False
-                )
-
-                embed.add_field(
-                    name="💡 안내",
-                    value="주의 2회 누적 시 경고로 전환되며,\n스크림 참여가 제한됩니다.",
-                    inline=False
-                )
-
-                embed.set_footer(text=f"처리일시: {current_time} • 문의: #ticket")
+                fields = [
+                    ("📝 사유", reason),
+                    ("💡 안내", "주의 2회 누적 시 경고로 전환되며,\n스크림 참여가 제한됩니다."),
+                ]
+                dm_view = custom_view("⚡ 주의 알림", "**주의**가 부여되었습니다.", discord.Color.from_str("#FEE75C"), fields=fields)
 
             # DM 발송
-            await target_user.send(embed=embed)
+            await target_user.send(view=dm_view)
 
         except discord.Forbidden:
             logger.warning(f"[모달] DM 발송 실패 (DM 차단) - 대상: {target_user.display_name}")
@@ -1129,12 +1015,7 @@ class CSVImportModal(Modal):
                 await interaction.response.defer(ephemeral=True)
             
             # 임시 메시지 전송
-            temp_embed = discord.Embed(
-                title="⏳ 처리 중...",
-                description="CSV를 파싱하고 팀을 등록하고 있습니다.\n잠시만 기다려주세요.",
-                color=discord.Color.blue()
-            )
-            temp_message = await interaction.followup.send(embed=temp_embed, ephemeral=True)
+            temp_message = await interaction.followup.send(view=processing_view("CSV를 파싱하고 팀을 등록하고 있습니다."), ephemeral=True, wait=True)
 
             # 업로드된 파일에서 CSV 내용 읽기
             if not self.csv_upload.values:
@@ -1286,14 +1167,18 @@ class CSVImportModal(Modal):
     async def _update_temp_message(self, temp_message: discord.Message, content: str, color: discord.Color) -> None:
         """임시 메시지를 업데이트합니다."""
         try:
-            embed = discord.Embed(
-                description=content,
-                color=color
-            )
-            await temp_message.edit(embed=embed)
+            if color == discord.Color.green():
+                view = success_view(content)
+            elif color == discord.Color.red():
+                view = error_view(content)
+            elif color == discord.Color.orange():
+                view = warning_view(content)
+            else:
+                view = info_view(content)
+            await edit_to_layout(temp_message, view)
         except Exception as e:
             logger.error(f"[모달] 임시 메시지 업데이트 실패: {e}", exc_info=True)
-    
+
     async def _update_mmr_background(self, team_data_manager, channel) -> None:
         """백그라운드에서 MMR 갱신 및 메시지 업데이트"""
         try:
@@ -1321,14 +1206,13 @@ class CSVImportModal(Modal):
     async def _send_error_message(self, interaction: discord.Interaction, message: str) -> None:
         """에러 메시지를 전송합니다."""
         try:
-            error_embed = discord.Embed(
-                title="❌ 오류",
-                description=message,
-                color=discord.Color.red()
-            )
-            if not interaction.response.is_done():
-                await interaction.response.send_message(embed=error_embed, ephemeral=True)
-            else:
-                await interaction.followup.send(embed=error_embed, ephemeral=True)
+            await send_response(interaction, error_view(message))
         except Exception as e:
             logger.error(f"[모달] 에러 메시지 전송 실패: {e}", exc_info=True)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(f"오류: {message}", ephemeral=True)
+                else:
+                    await interaction.followup.send(f"오류: {message}", ephemeral=True)
+            except Exception:
+                pass
