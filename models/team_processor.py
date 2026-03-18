@@ -1153,10 +1153,12 @@ class TeamProcessor:
         date_str = current_time.strftime('%m.%d')
 
         [server_info, broadcast] = check_notion_for_tags()
+        server_emoji = "🟠" if server_info else "🟢"
         server_type = "Tournament" if server_info else "Live"
+        broadcast_emoji = "📡" if broadcast else "🚫"
         broadcast_status = "송출 가능" if broadcast else "송출 불가"
 
-        message = f"📢 {date_str} 20시 스크림 {group_letter}조 조편성 결과\n🖥️ {server_type} 서버 | 📡 {broadcast_status}"
+        message = f"📢 {date_str} 20시 스크림 {group_letter}조 조편성 결과\n{server_emoji} {server_type} 서버 | {broadcast_emoji} {broadcast_status}"
 
         return message
     

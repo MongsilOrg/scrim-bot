@@ -681,7 +681,6 @@ class TeamDataManager:
                 )
                 return
 
-            [server_info, broadcast] = check_notion_for_tags()
             total_teams_current = len(team_data_manager.teams)
             team_data_manager.log_state_snapshot(prefix="start_team_assignment")
 
@@ -786,17 +785,13 @@ class TeamDataManager:
             logger.error(f"[Discord] 서비스 실행 실패: {e}", exc_info=True)
     
     async def update_mmr_message(self, channel: discord.TextChannel, mmr_fail_count: int = 0) -> None:
-        [server_info, broadcast] = check_notion_for_tags()
-        operate = ["Live 서버 , 송출 가능",  "Live 서버 , 송출 불가능" , "Tournament 서버 , 송출 불가능" ]
-        if not server_info :
-            if broadcast:
-                operate = operate[0]
-            else:
-                operate = operate[1]
-        else:
-            operate = operate[2]   
-
         """MMR 메시지를 이미지로 업데이트합니다."""
+        [server_info, broadcast] = check_notion_for_tags()
+        server_emoji = "🟠" if server_info else "🟢"
+        server_type = "Tournament" if server_info else "Live"
+        broadcast_emoji = "📡" if broadcast else "🚫"
+        broadcast_status = "송출 가능" if broadcast else "송출 불가"
+        operate = f"{server_emoji} {server_type} 서버 | {broadcast_emoji} {broadcast_status}"
         try:
             # 조편성 시작 이후인지 확인
             if self.is_team_assignment_started:
@@ -822,7 +817,7 @@ class TeamDataManager:
             children = [
                 TextDisplay(content=f"## 📊 팀 MMR 정보\n{desc}"),
                 MediaGallery(discord.MediaGalleryItem(media="attachment://mmr_table.png")),
-                TextDisplay(content=f"🖥️ **운영 정보**\n`{operate}`"),
+                TextDisplay(content=f"**운영 정보**\n{operate}"),
                 Separator(),
                 TextDisplay(content=FOOTER_TEXT),
             ]
