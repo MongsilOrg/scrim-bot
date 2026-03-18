@@ -9,6 +9,7 @@ import discord
 import pandas as pd
 import pytz
 
+from commands.ui.layout_helpers import image_response_view, custom_view, FOOTER_TEXT
 from config.logging_config import get_logger
 from config.settings import settings
 from services.image_generator import ImageGenerator
@@ -93,15 +94,16 @@ async def _process_csv_attachments(message: discord.Message) -> None:
         from bot.manager import BotManager
         BotManager.get_instance().set_ban_list(group_letter, ban_list)
 
-    score_embed = _build_score_embed(current_round_count, group_info, date_str)
+    score_view = _build_score_view(current_round_count, group_info, date_str)
     score_file = discord.File(img_buf, filename='score_table.png')
-    score_embed.set_image(url="attachment://score_table.png")
-    await channel.send(embed=score_embed, file=score_file)
+    await channel.send(view=score_view, file=score_file)
 
     if current_round_count == 4:
-        gameid_embed = _build_gameid_embed(csv_data_list, group_info, date_str)
-        await channel.send(embed=gameid_embed)
-        await _send_gameid_to_backup_channel(gameid_embed)
+        gameid_view = _build_gameid_view(csv_data_list, group_info, date_str)
+        await channel.send(view=gameid_view)
+        # 백업 채널에는 별도 LayoutView 인스턴스 생성 (View는 상태를 가지므로 재사용 불가)
+        backup_gameid_view = _build_gameid_view(csv_data_list, group_info, date_str)
+        await _send_gameid_to_backup_channel(backup_gameid_view)
 
 
 async def _collect_today_csv_data(channel, start_utc: datetime, limit: int = 200) -> List[CSVRow]:
@@ -265,30 +267,29 @@ def _extract_ban_list(last_csv_df: Optional[pd.DataFrame]) -> List[str]:
     return list(char_counts[char_counts >= 3].index)
 
 
-def _build_score_embed(current_round_count: int, group_info: str, date_str: str) -> discord.Embed:
+def _build_score_view(current_round_count: int, group_info: str, date_str: str) -> 'LayoutView':
     title = f"📊 스크림 결과 - {current_round_count}R - {group_info} {date_str}"
-    return discord.Embed(title=title, color=discord.Color.blue())
+    return image_response_view(title, "", "attachment://score_table.png", discord.Color.blue())
 
 
-def _build_gameid_embed(csv_data_list: List[CSVRow], group_info: str, date_str: str) -> discord.Embed:
+def _build_gameid_view(csv_data_list: List[CSVRow], group_info: str, date_str: str) -> 'LayoutView':
     lines = [f"**{round_num}R**: `{game_id}`" for round_num, (game_id, _, _) in enumerate(csv_data_list, 1)]
-    return discord.Embed(
-        title=f"🎮 GameId 정보 - {group_info} {date_str}",
-        description="\n".join(lines),
-        color=discord.Color.blue(),
+    return custom_view(
+        f"🎮 GameId 정보 - {group_info} {date_str}",
+        "\n".join(lines),
+        discord.Color.blue(),
     )
 
 
-async def _send_gameid_to_backup_channel(gameid_embed: discord.Embed) -> None:
-    """백업 채널로 gameId 임베드를 전송합니다."""
+async def _send_gameid_to_backup_channel(gameid_view) -> None:
+    """백업 채널로 gameId LayoutView를 전송합니다."""
     try:
         from bot.manager import BotManager
-
         client = BotManager.get_instance().get_client()
         if not client:
             return
         backup_channel = client.get_channel(settings.BACKUP_ANALYSIS_CHANNEL_ID)
         if backup_channel:
-            await backup_channel.send(embed=gameid_embed)
+            await backup_channel.send(view=gameid_view)
     except Exception as e:
         logger.error(f"[이벤트] 백업 채널 전송 실패: {e}", exc_info=True)

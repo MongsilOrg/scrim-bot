@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 import discord
 
+from commands.ui.layout_helpers import error_view, custom_view, image_response_view, FOOTER_TEXT
 from config.logging_config import get_logger
 from config.settings import settings
 from utils.helpers import get_current_kst_time
@@ -701,40 +702,20 @@ class TeamDataManager:
             else:
                 start_channel = None
             if start_channel:
-                # 조편성 시작 임베드 생성
-                start_embed = discord.Embed(
-                    title="⚙️ 자동 조편성 시작",
-                    description="팀 데이터를 처리하고 있습니다...",
-                    color=discord.Color.blue()
+                # 조편성 시작 LayoutView 생성
+                start_view = custom_view(
+                    "⚙️ 자동 조편성 시작",
+                    "팀 데이터를 처리하고 있습니다...",
+                    discord.Color.blue(),
+                    fields=[
+                        ("현재 시각", current_time.strftime('%H:%M')),
+                        ("총 팀 수", str(total_teams_current)),
+                        ("예비팀 수", str(total_teams_current % settings.TEAMS_PER_GROUP)),
+                        ("서버 정보", "Tournament" if server_info else "Live"),
+                        ("방송 정보", "송출 가능" if broadcast else "송출 불가"),
+                    ],
                 )
-                start_embed.add_field(
-                    name="현재 시각",
-                    value=current_time.strftime('%H:%M'),
-                    inline=True
-                )
-                start_embed.add_field(
-                    name="총 팀 수",
-                    value=str(total_teams_current),
-                    inline=True
-                )
-                start_embed.add_field(
-                    name="예비팀 수",
-                    value=str(total_teams_current % settings.TEAMS_PER_GROUP),
-                    inline=True
-                )
-                start_embed.add_field(
-                    name="서버 정보",
-                    value="Tournament" if server_info else "Live",
-                    inline=True
-                )
-                start_embed.add_field(
-                    name="방송 정보",
-                    value="송출 가능" if broadcast else "송출 불가",
-                    inline=True
-                )
-                start_embed.set_footer(text="ER Scrim", icon_url=settings.THUMBNAIL_URL)
-                
-                await start_channel.send(embed=start_embed)
+                await start_channel.send(view=start_view)
                 
                 # ✅ 조편성 실행
                 await team_data_manager.execute_auto_assignment()
@@ -754,13 +735,7 @@ class TeamDataManager:
             team_data_manager.is_team_assignment_started = False
             
             if start_channel:
-                error_embed = discord.Embed(
-                    title="❌ 오류",
-                    description=error_msg,
-                    color=discord.Color.red()
-                )
-                error_embed.set_footer(text="ER Scrim", icon_url=settings.THUMBNAIL_URL)
-                await start_channel.send(embed=error_embed)
+                await start_channel.send(view=error_view(error_msg))
     
     async def execute_auto_assignment(self) -> None:
         """실제 조편성을 실행합니다."""
@@ -811,12 +786,7 @@ class TeamDataManager:
                 if client and team_data_manager.scrim_channel_id:
                     channel = client.get_channel(team_data_manager.scrim_channel_id)
                     if channel:
-                        error_embed = discord.Embed(
-                            title="❌ 오류",
-                            description=error_msg,
-                            color=discord.Color.red()
-                        )
-                        await channel.send(embed=error_embed)
+                        await channel.send(view=error_view(error_msg))
             except Exception as e2:
                 logger.error(f"[Discord] 오류 메시지 전송 실패: {e2}", exc_info=True)
         finally:
@@ -875,40 +845,31 @@ class TeamDataManager:
                 logger.error("[MMR메시지] 이미지 생성 실패", exc_info=True)
                 return
 
-            # 임베드 생성
+            # 임베드 생성 → LayoutView로 변환
             desc_parts = [f"총 **{len(self.teams)}**팀 • 마지막 갱신: `{get_current_kst_time().strftime('%H:%M')}`"]
             if mmr_fail_count > 0:
                 desc_parts.append(f"⚠️ {mmr_fail_count}개 팀 MMR 갱신 실패")
 
-            embed = discord.Embed(
-                title="📊 팀 MMR 정보",
-                description="\n".join(desc_parts),
-                color=discord.Color.blue()
-            )
-
-            embed.add_field(
-                name="🖥️ 운영 정보",
-                value=f"`{operate}`",
-                inline=False
-            )
-
-            # 공지사항 추가 (설정에서 가져오기) - 이미지 위에 배치
+            fields = [("🖥️ 운영 정보", f"`{operate}`")]
             if settings.ANNOUNCEMENT_MESSAGE:
-                embed.add_field(
-                    name="📢 공지사항",
-                    value=settings.ANNOUNCEMENT_MESSAGE,
-                    inline=False
-                )
+                fields.append(("📢 공지사항", settings.ANNOUNCEMENT_MESSAGE))
 
-            embed.set_image(url="attachment://mmr_table.png")
-            embed.set_footer(text="ER Scrim", icon_url=settings.THUMBNAIL_URL)
-            
+            mmr_view = image_response_view(
+                "📊 팀 MMR 정보",
+                "\n".join(desc_parts),
+                "attachment://mmr_table.png",
+                discord.Color.blue(),
+                fields=fields,
+            )
+
             # 기존 메시지가 있는지 확인하고 업데이트 시도
             if self.mmr_message:
                 try:
                     # 기존 메시지 편집 시도
                     await self.mmr_message.edit(
-                        embed=embed,
+                        view=mmr_view,
+                        embed=None,
+                        content=None,
                         attachments=[discord.File(img_io, filename='mmr_table.png')]
                     )
                     return
@@ -924,10 +885,10 @@ class TeamDataManager:
                     logger.error(f"[MMR메시지] 기존 메시지 편집 실패: {e}", exc_info=True)
                     # 편집 실패 시 새로 생성
                     self.mmr_message = None
-            
+
             # 기존 메시지가 없거나 편집에 실패한 경우 새로 생성
             new_message = await channel.send(
-                embed=embed, 
+                view=mmr_view,
                 file=discord.File(img_io, filename='mmr_table.png')
             )
             

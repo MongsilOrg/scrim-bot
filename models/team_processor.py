@@ -17,6 +17,7 @@ import pandas as pd
 from discord.ext import commands
 from google.oauth2.service_account import Credentials
 
+from commands.ui.layout_helpers import processing_view, custom_view, error_view, FOOTER_TEXT
 from config.logging_config import get_logger
 from config.settings import settings
 from services.bser_api import BSERAPIClient
@@ -667,33 +668,20 @@ class TeamProcessor:
                 groups[1].append(team)
     
     
-    def _create_progress_embed(self, title: str) -> discord.Embed:
-        """진행 상황 임베드를 생성합니다."""
-        return discord.Embed(
-            title=title,
-            description="⏳ **팀 데이터를 처리하고 있습니다...**",
-            color=discord.Color.blue()
-        )
+    def _create_progress_view(self, title: str) -> 'LayoutView':
+        """진행 상황 LayoutView를 생성합니다."""
+        return processing_view(f"**{title}**")
     
-    def _create_global_announcement_embed(self, groups: List[List], unmatched_teams: List[Tuple[str, TeamData, float]] = None) -> discord.Embed:
-        """전체 공지 임베드를 생성합니다."""
+    def _create_global_announcement_view(self, groups: List[List], unmatched_teams: List[Tuple[str, TeamData, float]] = None) -> 'LayoutView':
+        """전체 공지 LayoutView를 생성합니다."""
         from utils.helpers import get_current_kst_time
-        
         current_time = get_current_kst_time()
-        total_teams = sum(len(group) for group in groups)
-        total_groups = len(groups)
-        
-        # 날짜와 시간 형식: 09.19 20시
         date_str = current_time.strftime('%m.%d')
-        
-        embed = discord.Embed(
-            title=f"# 📢 {date_str} 20시 스크림 조편성입니다",
-            color=discord.Color.green()
+        return custom_view(
+            f"📢 {date_str} 20시 스크림 조편성입니다",
+            "",
+            discord.Color.green(),
         )
-        
-        embed.set_footer(text=settings.EMBED_FOOTER_TEXT, icon_url=settings.THUMBNAIL_URL)
-        
-        return embed
     
     def _create_global_announcement_message(self, groups: List[List], unmatched_teams: List[Tuple[str, TeamData, float]] = None) -> str:
         """전체 공지 메시지를 생성합니다."""
@@ -1234,19 +1222,16 @@ class TeamProcessor:
         except Exception as e:
             logger.error(f"[Discord] 음성채널 이름 변경 실패: {e}", exc_info=True)
     
-    def _create_group_embed(self, group_letter: str, group: List[Tuple[str, TeamData, float]]) -> discord.Embed:
-        """그룹 임베드를 생성합니다."""
+    def _create_group_view(self, group_letter: str, group: List[Tuple[str, TeamData, float]]) -> 'LayoutView':
+        """그룹 LayoutView를 생성합니다."""
         from utils.helpers import get_current_kst_time
-        
         current_time = get_current_kst_time()
         date_str = current_time.strftime('%m.%d')
-        
-        embed = discord.Embed(
-            title=f"📢 {date_str} 20시 스크림 {group_letter}조 조편성 결과",
-            color=discord.Color.blue()
+        return custom_view(
+            f"📢 {date_str} 20시 스크림 {group_letter}조 조편성 결과",
+            "",
+            discord.Color.blue(),
         )
-        
-        return embed
     
     def _create_group_announcement_message(self, group_letter: str, group: List[Tuple[str, TeamData, float]]) -> str:
         """조별 공지 메시지를 생성합니다."""
