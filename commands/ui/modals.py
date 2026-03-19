@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING, Dict, List, Tuple, Union
 
 import discord
 from discord import SelectOption
-from discord.components import RadioGroupOption
-from discord.ui import Container, FileUpload, Label, LayoutView, Modal, RadioGroup, Select, Separator, TextDisplay, TextInput
+from discord.components import CheckboxGroupOption, RadioGroupOption
+from discord.ui import CheckboxGroup, Container, FileUpload, Label, LayoutView, Modal, RadioGroup, Select, Separator, TextDisplay, TextInput
 
 from bot.manager import BotManager
 from commands.ui.layout_helpers import (
@@ -17,6 +17,7 @@ from commands.ui.layout_helpers import (
 from config.logging_config import get_logger
 from utils.validators import (
     check_duplicate_members,
+    normalize_nickname_for_comparison,
     validate_discord_user_in_team,
     validate_members_in_guild,
     validate_team_data,
@@ -231,6 +232,31 @@ class TeamEditModal(Modal):
             default=staff_text
         )
         self.add_item(self.staff_input)
+
+        # 로스터 변경 시 주의 부여 옵션 추가
+        from commands.ui.views import GroupRosterView
+        self.warning_checkbox = None
+        self.warning_reason_input = None
+        if isinstance(view, GroupRosterView):
+            members = ', '.join(original_players)
+            self.warning_checkbox = CheckboxGroup(
+                options=[
+                    CheckboxGroupOption(
+                        label="주의 1회 부여",
+                        value="yes",
+                        description=f"{self.original_team_name} 선수 {len(original_players)}명: {members}",
+                    ),
+                ],
+                required=False,
+            )
+            self.add_item(Label(text="주의 부여", component=self.warning_checkbox))
+            self.warning_reason_input = TextInput(
+                placeholder="주의 부여 시 사유",
+                max_length=100,
+                required=False,
+                default="대타",
+            )
+            self.add_item(Label(text="사유", component=self.warning_reason_input))
     
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """모달 제출 처리"""
@@ -450,17 +476,128 @@ class TeamEditModal(Modal):
                 f"스태프: [{original_staff_str}] → [{new_staff_str}]"
             )
             
+            # 로스터 변경 시 주의 부여 처리
+            if is_roster_change and self.warning_checkbox and self.warning_checkbox.values:
+                await self._apply_roster_warnings(interaction, original_players, temp_message)
+
             # 조별 공지 업데이트 (조 내 팀 수정 시에만)
             if is_roster_change:
                 await self._update_group_announcement(interaction)
             else:
                 # 개별 팀 수정 시에는 MMR 메시지만 업데이트
                 await self._update_mmr_message_for_individual_team(team_data_manager)
-            
+
         except Exception as e:
             logger.error(f"[모달] 팀 정보 수정 실패: {e}", exc_info=True)
             await self._send_error_message(interaction, "팀 정보 수정 중 오류가 발생했습니다.")
     
+    async def _apply_roster_warnings(self, interaction: discord.Interaction, original_players: list, temp_message: discord.Message) -> None:
+        """로스터 변경 시 빠지는 팀 선수에게 주의를 부여합니다."""
+        try:
+            reason = self.warning_reason_input.value.strip() if self.warning_reason_input and self.warning_reason_input.value else "대타"
+            if not reason:
+                reason = "대타"
+
+            admin_name = interaction.user.display_name or interaction.user.name
+            warning_manager = BotManager.get_instance().get_warning_manager()
+
+            # 길드 멤버 매핑 (닉네임 → Member)
+            from config.settings import settings
+            client = BotManager.get_instance().get_client()
+            guild = client.get_guild(settings.GUILD_ID) if client else None
+
+            member_map = {}
+            if guild:
+                for m in guild.members:
+                    member_map[normalize_nickname_for_comparison(m.display_name)] = m
+                    if m.global_name:
+                        member_map[normalize_nickname_for_comparison(m.global_name)] = m
+                    member_map[normalize_nickname_for_comparison(m.name)] = m
+
+            success_count = 0
+            fail_names = []
+
+            for player in original_players:
+                discord_member = member_map.get(normalize_nickname_for_comparison(player))
+                target_id = str(discord_member.id) if discord_member else ""
+                target_name = discord_member.display_name if discord_member else player
+
+                success, message, auto_warning, converted_cautions = await warning_manager.add_warning(
+                    target=target_name,
+                    target_id=target_id,
+                    warning_type="주의",
+                    reason=reason,
+                    admin_display_name=admin_name,
+                )
+
+                if success:
+                    success_count += 1
+                    # DM 발송
+                    if discord_member:
+                        try:
+                            await self._send_roster_warning_dm(discord_member, reason, auto_warning, converted_cautions)
+                        except Exception as e:
+                            logger.warning(f"[로스터주의] DM 발송 실패 - 대상: {target_name}, 오류: {e}")
+                else:
+                    fail_names.append(target_name)
+                    logger.error(f"[로스터주의] 주의 부여 실패 - 대상: {target_name}, 메시지: {message}")
+
+            # 결과 메시지 추가
+            result_parts = [f"주의 {success_count}명 부여 완료"]
+            if fail_names:
+                result_parts.append(f"실패: {', '.join(fail_names)}")
+            result_text = " | ".join(result_parts)
+
+            try:
+                current_content = temp_message.content if hasattr(temp_message, 'content') else ""
+                await self._update_temp_message(
+                    temp_message,
+                    f"**{self.original_team_name}** → 로스터 변경 완료\n⚡ {result_text}",
+                    discord.Color.green()
+                )
+            except Exception:
+                pass
+
+            logger.info(f"[로스터주의] {self.original_team_name} - {result_text} (사유: {reason})")
+
+        except Exception as e:
+            logger.error(f"[로스터주의] 주의 부여 처리 실패: {e}", exc_info=True)
+
+    async def _send_roster_warning_dm(
+        self,
+        target_user: discord.Member,
+        reason: str,
+        auto_warning: dict = None,
+        converted_cautions: list = None,
+    ) -> None:
+        """로스터 변경으로 인한 주의 DM을 발송합니다."""
+        try:
+            if auto_warning and converted_cautions:
+                restricted_until = auto_warning.get('restricted_until', 'N/A')
+                caution_lines = []
+                for i, caution in enumerate(converted_cautions, 1):
+                    caution_date = caution.get('날짜', 'N/A')
+                    caution_reason = caution.get('사유', 'N/A')
+                    caution_lines.append(f"`{i}회` {caution_date}\n└ {caution_reason}")
+                fields = [
+                    ("📋 누적 주의 내역", "\n\n".join(caution_lines) if caution_lines else "내역 없음"),
+                    ("🚫 참여 제한", f"**{restricted_until}**까지 스크림 참여가 제한됩니다."),
+                ]
+                dm_view = custom_view("🚨 경고 알림", "주의 2회 누적으로 인해 **경고**가 부여되었습니다.", discord.Color.red(), fields=fields)
+            else:
+                fields = [
+                    ("📝 사유", reason),
+                    ("💡 안내", "주의 2회 누적 시 경고로 전환되며,\n스크림 참여가 제한됩니다."),
+                ]
+                dm_view = custom_view("⚡ 주의 알림", "**주의**가 부여되었습니다.", discord.Color.from_str("#FEE75C"), fields=fields)
+
+            await target_user.send(view=dm_view)
+
+        except discord.Forbidden:
+            logger.warning(f"[로스터주의] DM 발송 실패 (DM 차단) - 대상: {target_user.display_name}")
+        except Exception as e:
+            logger.error(f"[로스터주의] DM 발송 실패 - 대상: {target_user.display_name}, 오류: {e}", exc_info=True)
+
     def _check_duplicate_within_group(self, new_team_name: str, new_team_members: List[str]) -> Tuple[bool, str]:
         """같은 조 내에서만 중복 검사"""
         try:
