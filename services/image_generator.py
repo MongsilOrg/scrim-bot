@@ -120,13 +120,8 @@ class ImageGenerator:
         return html_template
 
     @staticmethod
-    def generate_mmr_image(teams_data: dict, *, substitute_teams: set = None) -> Optional[BytesIO]:
-        """MMR 이미지를 HTML/CSS 기반으로 생성하는 함수
-
-        Args:
-            teams_data: {team_name: TeamData} 딕셔너리 (삽입 순서 유지)
-            substitute_teams: 대타팀 이름 집합 (이미지에서 시각적으로 구분)
-        """
+    def generate_mmr_image(teams_data: dict) -> Optional[BytesIO]:
+        """MMR 이미지를 HTML/CSS 기반으로 생성하는 함수"""
         try:
             # 딕셔너리 삽입 순서를 그대로 사용 (팀 번호 유지)
             ordered_teams = list(teams_data.items())
@@ -134,9 +129,7 @@ class ImageGenerator:
             from utils.helpers import get_current_kst_time
             current_time = get_current_kst_time().strftime('%H:%M')
 
-            html_str = ImageGenerator._create_mmr_html_template(
-                ordered_teams, current_time, substitute_teams=substitute_teams or set()
-            )
+            html_str = ImageGenerator._create_mmr_html_template(ordered_teams, current_time)
             return _render_html_to_image(html_str, width=1000)
 
         except Exception as e:
@@ -144,16 +137,14 @@ class ImageGenerator:
             return None
 
     @staticmethod
-    def _create_mmr_html_template(sorted_teams: list, current_time: str, *, substitute_teams: set = None) -> str:
+    def _create_mmr_html_template(sorted_teams: list, current_time: str) -> str:
         """MMR 테이블 HTML 템플릿 생성"""
-        substitute_teams = substitute_teams or set()
         num_teams = len(sorted_teams)
 
         # 팀 행 HTML 생성
         rows_html = []
         for idx, (team_name, team_data) in enumerate(sorted_teams):
-            is_substitute = team_name in substitute_teams
-            rows_html.append(ImageGenerator._build_team_row_html(idx + 1, team_name, team_data, is_substitute=is_substitute))
+            rows_html.append(ImageGenerator._build_team_row_html(idx + 1, team_name, team_data))
 
         # 8팀 구분선 적용
         body_html = ''
@@ -227,19 +218,6 @@ class ImageGenerator:
         border-radius: 3px;
         margin-left: 2px;
     }}
-    .substitute-badge {{
-        display: inline-block;
-        background-color: #5a3a2a;
-        color: #ff9b5e;
-        font-size: 11px;
-        font-weight: bold;
-        padding: 1px 6px;
-        border-radius: 3px;
-        margin-left: 6px;
-    }}
-    .row-substitute td {{
-        border-left: 3px solid #ff9b5e;
-    }}
     .row-even td {{
         background-color: #2d2d2d;
     }}
@@ -268,24 +246,17 @@ class ImageGenerator:
         return html
 
     @staticmethod
-    def _build_team_row_html(rank: int, team_name: str, team_data, *, is_substitute: bool = False) -> str:
+    def _build_team_row_html(rank: int, team_name: str, team_data) -> str:
         """한 팀의 HTML 테이블 행을 생성"""
         mmr = team_data.mmr
         players = list(team_data.players)
         staff = list(team_data.staff)
 
         row_class = 'row-even' if (rank - 1) % 2 == 0 else 'row-odd'
-        if is_substitute:
-            row_class += ' row-substitute'
 
         # HTML 이스케이프
         def _esc(s: str) -> str:
             return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-
-        # 팀명 (대타팀이면 배지 추가)
-        team_name_html = _esc(team_name)
-        if is_substitute:
-            team_name_html += ' <span class="substitute-badge">대타</span>'
 
         # 멤버 셀: 선수는 · 구분, 스태프는 배지로 시각 구분
         sep = '<span class="separator">·</span>'
@@ -305,7 +276,7 @@ class ImageGenerator:
 
         return f"""<tr class="row {row_class}">
     <td>{rank}</td>
-    <td>{team_name_html}</td>
+    <td>{_esc(team_name)}</td>
     <td class="mmr-value">{mmr:.2f}</td>
     <td>{members_html}</td>
 </tr>

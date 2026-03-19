@@ -536,11 +536,6 @@ class TeamEditModal(Modal):
             # view의 group_teams 업데이트 (로스터 변경 메뉴에 반영)
             self.view.update_group_teams(group_teams)
 
-            # 팀명이 변경된 경우 대타팀으로 표시
-            if new_team_name != self.original_team_name:
-                self.view.substitute_teams.discard(self.original_team_name)
-                self.view.substitute_teams.add(new_team_name)
-
             # 조별 역할 업데이트
             await self._update_group_roles(group_teams)
 
@@ -670,12 +665,9 @@ class TeamEditModal(Modal):
             for team_name, team_data, team_mmr in updated_group_teams:
                 group_teams[team_name] = team_data
 
-            # 대타팀 정보를 이미지에 전달
-            substitute_teams = getattr(self.view, 'substitute_teams', set())
-
             # 새로운 MMR 이미지 생성
             from services.image_generator import ImageGenerator
-            img_io = ImageGenerator.generate_mmr_image(group_teams, substitute_teams=substitute_teams)
+            img_io = ImageGenerator.generate_mmr_image(group_teams)
             
             # 조별 공지 메시지 생성
             team_processor = BotManager.get_instance().get_team_processor()
@@ -691,7 +683,6 @@ class TeamEditModal(Modal):
             roster_view = GroupRosterView(
                 group_letter, updated_group_teams,
                 message_text=message_content, has_image=bool(img_io),
-                substitute_teams=substitute_teams,
             )
 
             # 기존 메시지 수정
