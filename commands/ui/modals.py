@@ -413,11 +413,11 @@ class TeamEditModal(Modal):
             # 로그 기록
             team_data_manager.log_action("수정", interaction.user, new_team_name)
             
-            # 조 내 순위 재정렬 (조 내 팀 수정 시에만)
+            # 변경된 팀 데이터 업데이트 (조 내 팀 수정 시에만)
             from commands.ui.views import GroupRosterView
             is_roster_change = isinstance(self.view, GroupRosterView)
             if is_roster_change:
-                await self._reorder_group_teams(team_data_manager, new_team_name, new_team_mmr)
+                await self._update_changed_team(team_data_manager, new_team_name, new_team_mmr)
             
             # 해당 조의 MMR 메시지 업데이트 (전체 MMR 메시지는 업데이트하지 않음)
             # 로스터 변경 시에는 조별 공지만 업데이트
@@ -514,116 +514,99 @@ class TeamEditModal(Modal):
         except Exception as e:
             logger.error(f"[모달] 개별 팀 수정 후 MMR 메시지 업데이트 실패: {e}", exc_info=True)
     
-    async def _reorder_group_teams(self, team_data_manager, new_team_name: str, new_team_mmr: float) -> None:
-        """조 내 팀 순위 재정렬"""
+    async def _update_changed_team(self, team_data_manager, new_team_name: str, new_team_mmr: float) -> None:
+        """변경된 팀의 데이터만 업데이트 (팀 번호/순서 유지)"""
         try:
-            # 현재 조의 팀들만 수집
-            group_teams = []
-            for team_name, team_data, mmr in self.view.group_teams:
+            # 변경된 팀의 인덱스 찾기
+            changed_index = None
+            for i, (team_name, team_data, mmr) in enumerate(self.view.group_teams):
                 if team_name == self.original_team_name:
-                    # 수정된 팀은 새로운 정보로 업데이트
-                    updated_team_data = team_data_manager.teams[new_team_name]
-                    group_teams.append((new_team_name, updated_team_data, new_team_mmr))
-                else:
-                    # 기존 팀은 현재 MMR로 업데이트
-                    current_mmr = team_data_manager.get_team_mmr(team_name) or mmr
-                    # team_data_manager.teams에 없는 경우 view의 기존 데이터 사용
-                    if team_name in team_data_manager.teams:
-                        updated_team_data = team_data_manager.teams[team_name]
-                    else:
-                        updated_team_data = team_data
-                    group_teams.append((team_name, updated_team_data, current_mmr))
-            
-            # MMR 기준으로 정렬
-            group_teams.sort(key=lambda x: x[2], reverse=True)
-            
+                    changed_index = i
+                    break
+
+            if changed_index is None:
+                logger.warning(f"[모달] 변경된 팀을 찾을 수 없음: {self.original_team_name}")
+                return
+
+            # 해당 팀만 새 데이터로 교체 (순서 유지)
+            updated_team_data = team_data_manager.teams[new_team_name]
+            group_teams = list(self.view.group_teams)
+            group_teams[changed_index] = (new_team_name, updated_team_data, new_team_mmr)
+
             # view의 group_teams 업데이트 (로스터 변경 메뉴에 반영)
             self.view.update_group_teams(group_teams)
-            
-            # 조별 역할 업데이트 (제거된 팀의 역할 제거 및 새 팀의 역할 부여)
+
+            # 팀명이 변경된 경우 대타팀으로 표시
+            if new_team_name != self.original_team_name:
+                self.view.substitute_teams.discard(self.original_team_name)
+                self.view.substitute_teams.add(new_team_name)
+
+            # 조별 역할 업데이트
             await self._update_group_roles(group_teams)
-            
-            # 조별 음성채널 이름 변경
-            await self._update_voice_channels(group_teams)
-            
+
+            # 변경된 팀의 음성채널 이름만 변경
+            await self._update_voice_channel_for_team(changed_index, new_team_name)
+
         except Exception as e:
-            logger.error(f"[모달] 조 내 팀 순위 재정렬 실패: {e}", exc_info=True)
+            logger.error(f"[모달] 팀 데이터 업데이트 실패: {e}", exc_info=True)
     
-    async def _update_group_roles(self, sorted_teams: List[Tuple[str, 'TeamData', float]]) -> None:
+    async def _update_group_roles(self, group_teams: List[Tuple[str, 'TeamData', float]]) -> None:
         """조별 역할을 업데이트합니다."""
         try:
             from config.settings import settings
-            
+
             client = BotManager.get_instance().get_client()
             team_processor = BotManager.get_instance().get_team_processor()
             guild = client.get_guild(settings.GUILD_ID)
-            
+
             if not guild:
                 logger.warning("[모달] 서버 정보를 찾을 수 없음")
                 return
-            
+
             group_letter = self.view.group_letter
-            
-            # TeamProcessor의 조별 역할 업데이트 메서드 호출
-            await team_processor.update_group_roles(guild, group_letter, sorted_teams)
+
+            await team_processor.update_group_roles(guild, group_letter, group_teams)
             
         except Exception as e:
             logger.error(f"[모달] 조별 역할 업데이트 실패: {e}", exc_info=True)
     
-    async def _update_voice_channels(self, sorted_teams: List[Tuple[str, 'TeamData', float]]) -> None:
-        """음성채널 이름을 MMR 순서대로 변경"""
+    async def _update_voice_channel_for_team(self, team_index: int, new_team_name: str) -> None:
+        """변경된 팀의 음성채널 이름만 변경"""
         try:
             from config.settings import settings
-            
+
             client = BotManager.get_instance().get_client()
             guild = client.get_guild(settings.GUILD_ID)
-            
+
             if not guild:
                 logger.warning("[모달] 서버 정보를 찾을 수 없음")
                 return
-            
+
             group_letter = self.view.group_letter
             category_name = settings.GROUP_CATEGORY_PATTERN.format(letter=group_letter)
-            
+
             if not category_name:
                 logger.warning(f"[모달] 카테고리 패턴이 설정되지 않음 - 조: {group_letter}조")
                 return
-            
-            # 해당 카테고리 찾기
+
             category = discord.utils.get(guild.categories, name=category_name)
             if not category:
                 logger.warning(f"[모달] 카테고리를 찾을 수 없음 - 카테고리: {category_name}")
                 return
-            
-            # 카테고리 내의 음성채널들을 가져오기 (정렬)
+
             voice_channels = [ch for ch in category.voice_channels if isinstance(ch, discord.VoiceChannel)]
-            voice_channels.sort(key=lambda x: x.position)  # 위치 순으로 정렬
-            
-            # 팀 순서대로 음성채널 이름 변경
-            for i, (team_name, team_data, mmr) in enumerate(sorted_teams):
-                if i < len(voice_channels):
-                    voice_channel = voice_channels[i]
-                    new_name = f"{i+1}. {team_name}"
-                    
-                    try:
-                        await voice_channel.edit(name=new_name)
-                    except discord.HTTPException as e:
-                        logger.error(f"[모달] 음성채널 이름 변경 실패: {e}", exc_info=True)
-                    except discord.Forbidden:
-                        logger.warning("[모달] 음성채널 이름 변경 권한 없음")
-            
-            # 남은 채널들을 TBD로 변경
-            for i in range(len(sorted_teams), len(voice_channels)):
-                voice_channel = voice_channels[i]
-                new_name = "TBD"
-                
+            voice_channels.sort(key=lambda x: x.position)
+
+            if team_index < len(voice_channels):
+                voice_channel = voice_channels[team_index]
+                new_name = f"{team_index + 1}. {new_team_name}"
                 try:
                     await voice_channel.edit(name=new_name)
                 except discord.HTTPException as e:
                     logger.error(f"[모달] 음성채널 이름 변경 실패: {e}", exc_info=True)
                 except discord.Forbidden:
-                    logger.error("[모달] 음성채널 이름 변경 권한 없음")
-            
+                    logger.warning("[모달] 음성채널 이름 변경 권한 없음")
+
         except Exception as e:
             logger.error(f"[모달] 음성채널 이름 변경 실패: {e}", exc_info=True)
     
@@ -682,18 +665,17 @@ class TeamEditModal(Modal):
                 logger.warning(f"[모달] 조별 공지 메시지를 찾을 수 없음 - 조: {group_letter}조")
                 return
             
-            # 조별 팀 데이터 수집
+            # 조별 팀 데이터 수집 (삽입 순서 = 팀 번호 순서)
             group_teams = {}
-            group_mmr_averages = {}
-            
             for team_name, team_data, team_mmr in updated_group_teams:
-                # TeamData 객체를 그대로 전달 (ImageGenerator가 TeamData 객체를 기대함)
                 group_teams[team_name] = team_data
-                group_mmr_averages[team_name] = team_mmr
-            
+
+            # 대타팀 정보를 이미지에 전달
+            substitute_teams = getattr(self.view, 'substitute_teams', set())
+
             # 새로운 MMR 이미지 생성
             from services.image_generator import ImageGenerator
-            img_io = ImageGenerator.generate_mmr_image(group_teams)
+            img_io = ImageGenerator.generate_mmr_image(group_teams, substitute_teams=substitute_teams)
             
             # 조별 공지 메시지 생성
             team_processor = BotManager.get_instance().get_team_processor()
@@ -709,6 +691,7 @@ class TeamEditModal(Modal):
             roster_view = GroupRosterView(
                 group_letter, updated_group_teams,
                 message_text=message_content, has_image=bool(img_io),
+                substitute_teams=substitute_teams,
             )
 
             # 기존 메시지 수정
@@ -726,36 +709,10 @@ class TeamEditModal(Modal):
                     embed=None,
                 )
             
-            # 조편성 시작 여부에 따라 로깅 메시지 구분
-            team_data_manager = BotManager.get_instance().get_team_data_manager()
-            if team_data_manager.is_team_assignment_started:
-                logger.debug(f"[모달] 조별 공지 업데이트 완료 - 조: {group_letter}조 (조편성 완료 후 로스터 변경)")
-            else:
-                logger.debug(f"[모달] 조별 공지 업데이트 완료 - 조: {group_letter}조")
+            logger.debug(f"[모달] 조별 공지 업데이트 완료 - 조: {group_letter}조")
             
         except Exception as e:
             logger.error(f"[모달] 기존 조별 공지 메시지 수정 실패: {e}", exc_info=True)
-    
-    async def _clear_channel_messages(self, channel: discord.TextChannel) -> None:
-        """채널의 모든 메시지를 삭제합니다."""
-        try:
-            # 메시지 삭제 (limit 없이 모든 메시지)
-            async for message in channel.history(limit=None):
-                try:
-                    await message.delete()
-                except discord.NotFound:
-                    # 메시지가 이미 삭제된 경우
-                    pass
-                except discord.Forbidden:
-                    # 삭제 권한이 없는 경우
-                    logger.warning(f"[모달] 메시지 삭제 권한 없음 - 채널: {channel.name}")
-                    break
-                except Exception as e:
-                    logger.error(f"[모달] 메시지 삭제 실패: {e}", exc_info=True)
-                    continue
-            
-        except Exception as e:
-            logger.error(f"[모달] 채널 메시지 삭제 실패 - 채널: {channel.name}: {e}", exc_info=True)
     
     async def _update_temp_message(self, temp_message: discord.Message, message: str, color: discord.Color) -> None:
         """임시 메시지를 업데이트합니다."""

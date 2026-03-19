@@ -715,12 +715,14 @@ class GroupRosterView(LayoutView):
         *,
         message_text: str = "",
         has_image: bool = True,
+        substitute_teams: set = None,
     ):
         super().__init__(timeout=None)
         self.group_letter = group_letter
         self.group_teams = group_teams
         self.message_text = message_text
         self.has_image = has_image
+        self.substitute_teams: set = substitute_teams or set()
 
         # Container (공지 텍스트 + 이미지 + 푸터)
         children: list = [TextDisplay(content=message_text)]
@@ -769,6 +771,7 @@ class GroupRosterView(LayoutView):
                 new_view = GroupRosterView(
                     self.group_letter, self.group_teams,
                     message_text=self.message_text, has_image=self.has_image,
+                    substitute_teams=self.substitute_teams,
                 )
                 await interaction.message.edit(view=new_view)
         except Exception as e:
