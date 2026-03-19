@@ -665,9 +665,9 @@ class TeamEditModal(Modal):
             for team_name, team_data, team_mmr in updated_group_teams:
                 group_teams[team_name] = team_data
 
-            # 새로운 MMR 이미지 생성
+            # 새로운 MMR 이미지 생성 (팀 번호 순서 유지)
             from services.image_generator import ImageGenerator
-            img_io = ImageGenerator.generate_mmr_image(group_teams)
+            img_io = ImageGenerator.generate_mmr_image(group_teams, sort_by_mmr=False)
             
             # 조별 공지 메시지 생성
             team_processor = BotManager.get_instance().get_team_processor()

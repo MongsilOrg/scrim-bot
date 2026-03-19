@@ -120,11 +120,22 @@ class ImageGenerator:
         return html_template
 
     @staticmethod
-    def generate_mmr_image(teams_data: dict) -> Optional[BytesIO]:
-        """MMR 이미지를 HTML/CSS 기반으로 생성하는 함수"""
+    def generate_mmr_image(teams_data: dict, *, sort_by_mmr: bool = True) -> Optional[BytesIO]:
+        """MMR 이미지를 HTML/CSS 기반으로 생성하는 함수
+
+        Args:
+            teams_data: {team_name: TeamData} 딕셔너리
+            sort_by_mmr: True면 MMR 내림차순 정렬, False면 딕셔너리 삽입 순서 유지
+        """
         try:
-            # 딕셔너리 삽입 순서를 그대로 사용 (팀 번호 유지)
-            ordered_teams = list(teams_data.items())
+            if sort_by_mmr:
+                ordered_teams = sorted(
+                    teams_data.items(),
+                    key=lambda x: x[1].mmr if hasattr(x[1], 'mmr') else 0,
+                    reverse=True
+                )
+            else:
+                ordered_teams = list(teams_data.items())
 
             from utils.helpers import get_current_kst_time
             current_time = get_current_kst_time().strftime('%H:%M')
