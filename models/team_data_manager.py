@@ -824,7 +824,8 @@ class TeamDataManager:
 
             from discord.ui import LayoutView as _LayoutView
             mmr_view = _LayoutView()
-            mmr_view.add_item(Container(*children, accent_colour=discord.Color.blue()))
+            accent = discord.Color.from_str('#FB9206') if server_info else discord.Color.blue()
+            mmr_view.add_item(Container(*children, accent_colour=accent))
 
             # 기존 메시지가 있는지 확인하고 업데이트 시도
             if self.mmr_message:
