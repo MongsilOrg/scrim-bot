@@ -185,6 +185,37 @@ async def send_response(
         return None
 
 
+async def update_temp_message(temp_message: discord.Message, message: str, color: discord.Color) -> None:
+    """임시 메시지를 LayoutView로 업데이트합니다."""
+    try:
+        if color == discord.Color.green():
+            view = success_view(message)
+        elif color == discord.Color.red():
+            view = error_view(message)
+        elif color == discord.Color.orange():
+            view = warning_view(message)
+        else:
+            view = info_view(message)
+        await edit_to_layout(temp_message, view)
+    except Exception as e:
+        logger.error(f"[레이아웃] 임시 메시지 업데이트 실패: {e}", exc_info=True)
+
+
+async def send_error_message(interaction: discord.Interaction, message: str) -> None:
+    """에러 메시지를 전송하는 공통 유틸리티 함수"""
+    try:
+        await send_response(interaction, error_view(message))
+    except Exception as e:
+        logger.error(f"[레이아웃] 에러 메시지 전송 실패: {e}", exc_info=True)
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"오류: {message}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"오류: {message}", ephemeral=True)
+        except Exception:
+            pass
+
+
 async def edit_to_layout(
     message: discord.Message,
     view: LayoutView,
