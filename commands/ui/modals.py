@@ -669,6 +669,12 @@ class TeamEditModal(Modal):
             # view의 group_teams 업데이트 (로스터 변경 메뉴에 반영)
             self.view.update_group_teams(group_teams)
 
+            # team_data_manager.groups도 동기화
+            group_index = ord(self.view.group_letter) - ord('A')
+            if team_data_manager.groups and 0 <= group_index < len(team_data_manager.groups):
+                team_data_manager.groups[group_index] = group_teams
+                team_data_manager._save_backup()
+
             # 조별 역할 업데이트
             await self._update_group_roles(group_teams)
 
@@ -777,18 +783,16 @@ class TeamEditModal(Modal):
     async def _update_existing_group_announcement(self, channel: discord.TextChannel, group_letter: str, updated_group_teams: List[Tuple[str, 'TeamData', float]]) -> None:
         """기존 조별 공지 메시지를 찾아서 수정합니다."""
         try:
-            # 조별 공지 메시지 찾기 (가장 최근 메시지 중에서)
+            # 저장된 message_id로 직접 fetch
+            team_data_manager = BotManager.get_instance().get_team_data_manager()
+            message_id = team_data_manager.group_message_ids.get(group_letter)
             target_message = None
-            async for message in channel.history(limit=20):
-                # 조별 공지 메시지인지 확인
-                # 1. 메시지에 이미지가 있고
-                # 2. 로스터 변경 버튼이 있는 메시지
-                if (message.attachments and 
-                    message.components and 
-                    any(component.type.value == 2 for component in message.components[0].children)):  # 버튼이 있는 메시지
-                    target_message = message
-                    break
-            
+            if message_id:
+                try:
+                    target_message = await channel.fetch_message(message_id)
+                except discord.NotFound:
+                    logger.warning(f"[모달] 저장된 공지 메시지를 찾을 수 없음 (id={message_id})")
+
             if not target_message:
                 logger.warning(f"[모달] 조별 공지 메시지를 찾을 수 없음 - 조: {group_letter}조")
                 return
@@ -833,8 +837,12 @@ class TeamEditModal(Modal):
                     embed=None,
                 )
             
+            # 백업에 갱신된 텍스트 저장
+            team_data_manager.group_message_texts[group_letter] = message_content
+            team_data_manager._save_backup()
+
             logger.debug(f"[모달] 조별 공지 업데이트 완료 - 조: {group_letter}조")
-            
+
         except Exception as e:
             logger.error(f"[모달] 기존 조별 공지 메시지 수정 실패: {e}", exc_info=True)
 
