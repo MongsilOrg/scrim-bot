@@ -370,13 +370,37 @@ class TeamEditModal(Modal):
                 # API 닉네임 검증 (게임 내 닉네임 확인)
                 if not has_test_account:
                     api_invalid_members = []
+                    is_maintenance = False
+                    api_error = False
                     try:
                         async with BSERAPIClient() as client_instance:
                             for member in all_members:
                                 if not await client_instance.get_user_uid(member):
                                     api_invalid_members.append(member)
+
+                            # 과반수 이상 조회 실패 시 서버 점검 확인
+                            if api_invalid_members and len(api_invalid_members) >= len(all_members) / 2:
+                                try:
+                                    is_maintenance = await client_instance.check_server_maintenance()
+                                except Exception as e:
+                                    logger.warning(f"[모달] 서버 점검 확인 실패: {e}")
                     except Exception as e:
                         logger.error(f"[모달] API 닉네임 검증 실패: {e}", exc_info=True)
+                        api_error = True
+                        # 예외 발생 시에도 점검 여부 확인 시도
+                        try:
+                            async with BSERAPIClient() as check_client:
+                                is_maintenance = await check_client.check_server_maintenance()
+                        except Exception:
+                            pass
+
+                    # 점검 중이면 점검 안내 우선 출력
+                    if is_maintenance:
+                        await update_temp_message(temp_message, "🔧 현재 이터널 리턴 서버가 점검 중입니다.\n\n점검이 끝난 후 다시 시도해주세요.", discord.Color.orange())
+                        return
+
+                    # API 예외로 검증 자체가 실패한 경우
+                    if api_error:
                         await update_temp_message(temp_message, "⚠️ 닉네임 확인 중 문제가 발생했습니다.\n\n💡 잠시 후 다시 시도해주세요.", discord.Color.red())
                         return
 
