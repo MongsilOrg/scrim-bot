@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional
 
+from utils.helpers import get_current_kst_time
+
 
 @dataclass
 class TeamData:
@@ -21,9 +23,9 @@ class TeamData:
     def __post_init__(self):
         """초기화 후 처리"""
         if self.created_at is None:
-            self.created_at = datetime.now()
+            self.created_at = get_current_kst_time()
         if self.updated_at is None:
-            self.updated_at = datetime.now()
+            self.updated_at = get_current_kst_time()
     
     @property
     def all_members(self) -> List[str]:
@@ -49,7 +51,7 @@ class TeamData:
         """플레이어 추가"""
         if player and player.strip() and player not in self.players:
             self.players.append(player.strip())
-            self.updated_at = datetime.now()
+            self.updated_at = get_current_kst_time()
             return True
         return False
     
@@ -57,7 +59,7 @@ class TeamData:
         """플레이어 제거"""
         if player in self.players:
             self.players.remove(player)
-            self.updated_at = datetime.now()
+            self.updated_at = get_current_kst_time()
             return True
         return False
     
@@ -65,7 +67,7 @@ class TeamData:
         """스태프 추가"""
         if staff and staff.strip() and staff not in self.staff:
             self.staff.append(staff.strip())
-            self.updated_at = datetime.now()
+            self.updated_at = get_current_kst_time()
             return True
         return False
     
@@ -73,7 +75,7 @@ class TeamData:
         """스태프 제거"""
         if staff in self.staff:
             self.staff.remove(staff)
-            self.updated_at = datetime.now()
+            self.updated_at = get_current_kst_time()
             return True
         return False
     
@@ -83,12 +85,19 @@ class TeamData:
     
     def to_dict(self) -> Dict:
         """딕셔너리로 변환 (백업/직렬화 포함)"""
-        return {
+        result = {
             'players': self.players,
             'staff': self.staff,
             'user_id': self.user_id,
-            'mmr': self.mmr
+            'mmr': self.mmr,
         }
+        if self.mmr_updated_at:
+            result['mmr_updated_at'] = self.mmr_updated_at.isoformat()
+        if self.created_at:
+            result['created_at'] = self.created_at.isoformat()
+        if self.updated_at:
+            result['updated_at'] = self.updated_at.isoformat()
+        return result
 
     @classmethod
     def from_dict(cls, name: str, data: Dict) -> 'TeamData':
@@ -100,6 +109,10 @@ class TeamData:
             user_id=data.get('user_id')
         )
         team.mmr = data.get('mmr', 0.0)
+        for attr in ('mmr_updated_at', 'created_at', 'updated_at'):
+            val = data.get(attr)
+            if val:
+                setattr(team, attr, datetime.fromisoformat(val))
         return team
     
     def __str__(self) -> str:
