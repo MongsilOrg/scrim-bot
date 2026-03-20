@@ -99,9 +99,15 @@ class BotManager:
             self._warning_manager = WarningManager()
         return self._warning_manager
 
+    def _trigger_backup(self) -> None:
+        """팀 데이터 매니저의 백업을 트리거합니다."""
+        if self._team_data_manager:
+            self._team_data_manager._save_backup()
+
     def set_ban_list(self, group_letter: str, ban_list: List[str]) -> None:
         """조별 밴 리스트 저장"""
         self._ban_lists[group_letter] = ban_list
+        self._trigger_backup()
 
     def get_ban_list(self, group_letter: str) -> List[str]:
         """조별 밴 리스트 반환"""
@@ -112,6 +118,7 @@ class BotManager:
         if group_letter not in self._selected_weathers:
             self._selected_weathers[group_letter] = []
         self._selected_weathers[group_letter].append(weather)
+        self._trigger_backup()
 
     def get_selected_weathers(self, group_letter: str) -> List[str]:
         """조별 선택된 서브 날씨 리스트 반환"""

@@ -769,18 +769,24 @@ class TeamProcessor:
             )
 
             if img_io:
-                await channel.send(
+                sent_message = await channel.send(
                     view=roster_view,
                     file=discord.File(img_io, filename='group_mmr_table.png'),
                     allowed_mentions=discord.AllowedMentions(roles=True),
                 )
             else:
-                await channel.send(
+                sent_message = await channel.send(
                     view=roster_view,
                     allowed_mentions=discord.AllowedMentions(roles=True),
                 )
                 logger.warning(f"[Discord] 이미지 생성 실패 - 채널: {channel.name}, 메시지만 전송")
-                
+
+            # message_id를 TeamDataManager에 저장
+            from bot.manager import BotManager
+            team_data_manager = BotManager.get_instance().get_team_data_manager()
+            team_data_manager.group_message_ids[group_letter] = sent_message.id
+            team_data_manager._save_backup()
+
         except Exception as e:
             logger.error(f"[Discord] 조별 공지 전송 실패 - 채널: {channel.name}: {e}", exc_info=True)
             try:
