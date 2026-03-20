@@ -444,7 +444,7 @@ class TeamInputView(LayoutView):
             # 성공 메시지 처리
             players_str = ', '.join(players) if players else '(없음)'
             staff_str = ', '.join(staff) if staff else '(없음)'
-            logger.info(f"[팀등록] 팀 등록 완료 - 팀명: {team_name}, MMR: {team_mmr:.2f}, 선수: [{players_str}], 스태프: [{staff_str}]")
+            logger.info(f"[팀신청] {team_name} | MMR: {team_mmr:.2f} | 선수: [{players_str}] | 스태프: [{staff_str}]")
 
             success_msg = (
                 f"**{team_name}** 팀이 성공적으로 등록되었습니다!\n\n"
@@ -561,13 +561,19 @@ class TeamInputView(LayoutView):
 
             team_data_manager.log_action("취소", interaction.user, team_name)
 
+            players_str = ', '.join(players) if players else '(없음)'
+            staff_str = ', '.join(staff) if staff else '(없음)'
+            logger.info(f"[팀취소] {team_name} | 선수: [{players_str}] | 스태프: [{staff_str}]")
+
             # 성공 메시지 전송
             await send_response(interaction, success_view(f"**{team_name}** 팀이 성공적으로 취소되었습니다."))
-            
+
             # 백그라운드에서 MMR 갱신 및 메시지 업데이트
             import asyncio
-            asyncio.create_task(self._update_mmr_background(team_data_manager, interaction.channel))
-            
+            task = asyncio.create_task(self._update_mmr_background(team_data_manager, interaction.channel))
+            team_data_manager._pending_tasks.add(task)
+            task.add_done_callback(team_data_manager._pending_tasks.discard)
+
         except Exception as e:
             logger.error(f"[뷰] 팀 취소 실행 실패: {e}", exc_info=True)
             await send_response(interaction, error_view("팀 취소 중 오류가 발생했습니다."))

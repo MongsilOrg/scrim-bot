@@ -443,7 +443,7 @@ class TeamEditModal(Modal):
             new_staff_str = ', '.join(new_staff) if new_staff else '(없음)'
 
             logger.info(
-                f"[팀수정] {self.original_team_name} → {new_team_name}, MMR: {new_team_mmr:.2f} | "
+                f"[팀수정] {self.original_team_name} → {new_team_name} | MMR: {new_team_mmr:.2f} | "
                 f"선수: [{original_players_str}] → [{new_players_str}] | "
                 f"스태프: [{original_staff_str}] → [{new_staff_str}]"
             )
