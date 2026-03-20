@@ -781,10 +781,11 @@ class TeamProcessor:
                 )
                 logger.warning(f"[Discord] 이미지 생성 실패 - 채널: {channel.name}, 메시지만 전송")
 
-            # message_id를 TeamDataManager에 저장
+            # message_id와 텍스트를 TeamDataManager에 저장
             from bot.manager import BotManager
             team_data_manager = BotManager.get_instance().get_team_data_manager()
             team_data_manager.group_message_ids[group_letter] = sent_message.id
+            team_data_manager.group_message_texts[group_letter] = full_message
             team_data_manager._save_backup()
 
         except Exception as e:

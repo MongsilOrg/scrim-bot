@@ -50,10 +50,12 @@ async def _bootstrap_on_ready(client: ScrimBot, logger) -> None:
                 )
                 if is_scrim_day:
                     if current_time.hour >= 17:
-                        # 스크림 당일 17시 이후 재시작 — 조편성 미완료 → 즉시 실행
+                        # 스크림 당일 17시 이후 재시작 — 조편성 미완료 → 즉시 실행 (비동기)
                         logger.info("[시작] 17시 이후 재시작 - 조편성 미완료, 즉시 실행")
                         total_teams, _, spare_teams = team_data_manager.get_team_counts()
-                        await team_data_manager._start_team_assignment(total_teams, spare_teams)
+                        asyncio.create_task(
+                            team_data_manager._start_team_assignment(total_teams, spare_teams)
+                        )
                     else:
                         # 스크림 당일 17시 이전 — 태스크 재시작
                         team_data_manager.auto_assignment_task = asyncio.create_task(

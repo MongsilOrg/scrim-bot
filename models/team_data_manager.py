@@ -57,6 +57,7 @@ class TeamDataManager:
         self._pending_tasks: set = set()  # fire-and-forget 태스크 추적
         self.groups: Optional[List[List[Tuple[str, TeamData, float]]]] = None
         self.group_message_ids: Dict[str, int] = {}  # "A" → message_id
+        self.group_message_texts: Dict[str, str] = {}  # "A" → message_text
     
     def _save_backup(self) -> None:
         """팀 데이터를 JSON 파일로 백업합니다 (날짜 메타데이터 포함)."""
@@ -103,6 +104,7 @@ class TeamDataManager:
                 'logs': serialized_logs,
                 'groups': serialized_groups,
                 'group_message_ids': self.group_message_ids,
+                'group_message_texts': self.group_message_texts,
                 'ban_lists': bot_manager._ban_lists,
                 'selected_weathers': bot_manager._selected_weathers,
             }
@@ -168,10 +170,13 @@ class TeamDataManager:
                         restored_group.append((team_name, TeamData.from_dict(team_name, team_dict), mmr))
                     self.groups.append(restored_group)
 
-            # group_message_ids 복구
+            # group_message_ids / texts 복구
             saved_msg_ids = data.get('group_message_ids')
             if saved_msg_ids:
                 self.group_message_ids = saved_msg_ids
+            saved_msg_texts = data.get('group_message_texts')
+            if saved_msg_texts:
+                self.group_message_texts = saved_msg_texts
 
             # BotManager에 밴/날씨 데이터 주입
             from bot.manager import BotManager
@@ -299,6 +304,7 @@ class TeamDataManager:
             self.scrim_month = None
             self.groups = None
             self.group_message_ids = {}
+            self.group_message_texts = {}
 
             self.clear_backup()
             self.log_state_snapshot(prefix="reset")
@@ -877,15 +883,16 @@ class TeamDataManager:
 
                 # groups에서 해당 조의 데이터 복원
                 group_index = ord(group_letter) - ord('A')
-                if group_index >= len(self.groups):
+                if group_index < 0 or group_index >= len(self.groups):
                     continue
 
                 group_teams = self.groups[group_index]
 
                 # 새 GroupRosterView 생성 및 재등록
+                saved_text = self.group_message_texts.get(group_letter, "")
                 roster_view = GroupRosterView(
                     group_letter, group_teams,
-                    message_text="", has_image=True,
+                    message_text=saved_text, has_image=True,
                 )
                 await message.edit(view=roster_view)
                 restored += 1
