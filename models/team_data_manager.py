@@ -842,7 +842,60 @@ class TeamDataManager:
             
         except Exception as e:
             logger.error(f"[Discord] 서비스 실행 실패: {e}", exc_info=True)
-    
+
+    async def restore_group_roster_views(self, client) -> None:
+        """조편성 후 재시작 시 GroupRosterView를 복구합니다."""
+        if not self.groups or not self.group_message_ids:
+            logger.info("[복구] groups 또는 group_message_ids가 없어 복구 건너뜀")
+            return
+
+        from commands.ui.views import GroupRosterView
+
+        guild = client.get_guild(settings.GUILD_ID)
+        if not guild:
+            logger.warning(f"[복구] 서버를 찾을 수 없음 - 서버 ID: {settings.GUILD_ID}")
+            return
+
+        restored = 0
+        for group_letter, message_id in self.group_message_ids.items():
+            try:
+                channel_id = settings.GROUP_CHANNEL_IDS.get(group_letter)
+                if not channel_id:
+                    continue
+
+                channel = guild.get_channel(channel_id)
+                if not channel:
+                    logger.warning(f"[복구] {group_letter}조 채널을 찾을 수 없음")
+                    continue
+
+                # 메시지 fetch
+                try:
+                    message = await channel.fetch_message(message_id)
+                except discord.NotFound:
+                    logger.warning(f"[복구] {group_letter}조 메시지를 찾을 수 없음 (id={message_id})")
+                    continue
+
+                # groups에서 해당 조의 데이터 복원
+                group_index = ord(group_letter) - ord('A')
+                if group_index >= len(self.groups):
+                    continue
+
+                group_teams = self.groups[group_index]
+
+                # 새 GroupRosterView 생성 및 재등록
+                roster_view = GroupRosterView(
+                    group_letter, group_teams,
+                    message_text="", has_image=True,
+                )
+                await message.edit(view=roster_view)
+                restored += 1
+                logger.info(f"[복구] {group_letter}조 GroupRosterView 재등록 완료")
+
+            except Exception as e:
+                logger.error(f"[복구] {group_letter}조 복구 실패: {e}", exc_info=True)
+
+        logger.info(f"[복구] GroupRosterView 복구 완료 - {restored}개 조")
+
     async def update_mmr_message(self, channel: discord.TextChannel, mmr_fail_count: int = 0) -> None:
         """MMR 메시지를 이미지로 업데이트합니다."""
         info = get_server_info()
