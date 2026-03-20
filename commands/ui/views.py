@@ -720,7 +720,8 @@ class GroupRosterView(LayoutView):
         self.roster_change_button = Button(
             label="로스터 변경",
             style=ButtonStyle.primary,
-            emoji="✏️"
+            emoji="✏️",
+            custom_id=f"roster_change_{group_letter}"
         )
         self.roster_change_button.callback = self.roster_change_callback
         self.add_item(ActionRow(self.roster_change_button))
