@@ -152,7 +152,8 @@ class BSERAPIClient:
                             await asyncio.sleep(wait_time + random.random())
                             retries += 1
                             continue
-                        return data
+                        logger.warning(f"[API] 429 재시도 횟수 초과 ({self.MAX_RETRIES}회)")
+                        return None
 
                     # 5xx 재시도
                     if 500 <= status < 600 and retries < self.MAX_RETRIES:
