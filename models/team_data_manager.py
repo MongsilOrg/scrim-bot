@@ -19,7 +19,7 @@ from utils.validators import normalize_nickname_for_comparison
 
 from .team_data import TeamData
 
-from services.notion_api import check_notion_for_tags
+from services.notion_api import get_server_info
 
 if TYPE_CHECKING:  # pragma: no cover
     from bot.manager import BotManager  # type: ignore
@@ -786,12 +786,8 @@ class TeamDataManager:
     
     async def update_mmr_message(self, channel: discord.TextChannel, mmr_fail_count: int = 0) -> None:
         """MMR 메시지를 이미지로 업데이트합니다."""
-        [server_info, broadcast] = check_notion_for_tags()
-        server_emoji = "🟠" if server_info else "🟢"
-        server_type = "Tournament" if server_info else "Live"
-        broadcast_emoji = "📡" if broadcast else "🚫"
-        broadcast_status = "송출 가능" if broadcast else "송출 불가"
-        operate = f"{server_emoji} {server_type} 서버 | {broadcast_emoji} {broadcast_status}"
+        info = get_server_info()
+        operate = info['operate']
         try:
             # 조편성 시작 이후인지 확인
             if self.is_team_assignment_started:
@@ -824,7 +820,7 @@ class TeamDataManager:
 
             from discord.ui import LayoutView as _LayoutView
             mmr_view = _LayoutView()
-            accent = discord.Color.from_str('#FB9206') if server_info else discord.Color.blue()
+            accent = discord.Color.from_str('#FB9206') if info['is_tournament'] else discord.Color.blue()
             mmr_view.add_item(Container(*children, accent_colour=accent))
 
             # 기존 메시지가 있는지 확인하고 업데이트 시도

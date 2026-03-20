@@ -6,7 +6,7 @@ import platform
 from io import BytesIO
 from typing import Dict, List, Optional
 
-from services.notion_api import check_notion_for_tags
+from services.notion_api import get_server_info
 
 import imgkit
 import pandas as pd
@@ -20,11 +20,6 @@ if platform.system() == 'Windows':
     WKHTML_PATH = r'C:\Program Files\wkhtmltopdf\bin\wkhtmltoimage.exe'
 else:
     WKHTML_PATH = '/usr/bin/wkhtmltoimage'
-
-def _get_server_info() -> bool:
-    """Notion API를 호출하여 현재 서버 타입(Tournament 여부)을 반환합니다."""
-    server_info, *_ = check_notion_for_tags()
-    return server_info
 
 def _render_html_to_image(html_str: str, width: int = 800, height: int = None) -> Optional[BytesIO]:
     """HTML 문자열을 PNG 이미지로 변환하는 공통 유틸리티."""
@@ -70,10 +65,10 @@ class ImageGenerator:
     @staticmethod
     def _create_html_template(df: pd.DataFrame) -> str:
         """결과 이미지용 HTML 템플릿 생성"""
-        server_info = _get_server_info()
+        is_tournament = get_server_info()['is_tournament']
         table_html = df.to_html(index=False, escape=False, classes='table')
 
-        header_color = '#FB9206' if server_info else '#4a9eff'
+        header_color = '#FB9206' if is_tournament else '#4a9eff'
 
         html_template = f"""
         <!DOCTYPE html>
@@ -156,11 +151,11 @@ class ImageGenerator:
     @staticmethod
     def _create_mmr_html_template(sorted_teams: list, current_time: str) -> str:
         """MMR 테이블 HTML 템플릿 생성"""
-        server_info = _get_server_info()
+        is_tournament = get_server_info()['is_tournament']
         num_teams = len(sorted_teams)
 
-        accent_color = '#FB9206' if server_info else '#4a9eff'
-        border_color = '#FB9206' if server_info else '#3a8ee0'
+        accent_color = '#FB9206' if is_tournament else '#4a9eff'
+        border_color = '#FB9206' if is_tournament else '#3a8ee0'
 
         # 팀 행 HTML 생성
         rows_html = []
@@ -315,8 +310,8 @@ class ImageGenerator:
     @staticmethod
     def _build_score_html(team_data: List[Dict]) -> str:
         """점수표 HTML 생성"""
-        server_info = _get_server_info()
-        accent_color = '#FB9206' if server_info else '#4a9eff'
+        is_tournament = get_server_info()['is_tournament']
+        accent_color = '#FB9206' if is_tournament else '#4a9eff'
 
         rows_html = ''
         for team in team_data:
