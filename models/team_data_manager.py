@@ -217,7 +217,7 @@ class TeamDataManager:
         비동기 태스크를 완전히 종료할 때까지 대기한 후 데이터를 초기화합니다.
         """
         try:
-            logger.info("[팀데이터] 초기화 시작")
+            logger.debug("[팀데이터] 초기화 시작")
             
             # 비동기 태스크를 완전히 종료할 때까지 대기
             await self._cancel_task_and_wait(self.auto_assignment_task, "auto_assignment_task")
@@ -454,7 +454,7 @@ class TeamDataManager:
         try:
             auto_alive = bool(self.auto_assignment_task and not self.auto_assignment_task.done())
             mmr_alive = bool(self.mmr_update_task and not self.mmr_update_task.done())
-            logger.info(
+            logger.debug(
                 f"[{prefix}] teams={len(self.teams)}, scrim_date={self.scrim_month}/{self.scrim_day}, "
                 f"scrim_channel={self.scrim_channel_id}, auto_task_alive={auto_alive}, mmr_task_alive={mmr_alive}"
             )
@@ -736,9 +736,9 @@ class TeamDataManager:
             if client:
                 await team_data_manager._execute_discord_services(client, groups, unmatched_teams)
             else:
-                logger.warning("클라이언트가 없어 Discord 서비스를 건너뜁니다.")
+                logger.warning("[조편성] 클라이언트가 없어 Discord 서비스를 건너뜁니다.")
         except Exception as e:
-            error_msg = f"자동 조편성 실행 중 오류 발생: {e}"
+            error_msg = f"[조편성] 자동 조편성 실행 중 오류 발생: {e}"
             logger.error(error_msg)
             # 오류 발생 시 조편성 플래그 해제 (최신 인스턴스에서)
             from bot.manager import BotManager

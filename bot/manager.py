@@ -80,13 +80,13 @@ class BotManager:
             try:
                 self._team_processor.group_image_cache.clear()
                 self._team_processor.current_cache_size = 0
-                logger.info("[봇관리] TeamProcessor 이미지 캐시 클리어 완료")
+                logger.debug("[봇관리] TeamProcessor 이미지 캐시 클리어 완료")
             except Exception as exc:
                 logger.warning(f"[봇관리] 이미지 캐시 클리어 중 예외 무시: {exc}")
         
         self._ban_lists.clear()
         self._selected_weathers.clear()
-        logger.info("[봇관리] 밴 리스트 및 날씨 상태 초기화 완료")
+        logger.debug("[봇관리] 밴 리스트 및 날씨 상태 초기화 완료")
 
         self._team_data_manager = TeamDataManager(client or self._client)
         return self._team_data_manager

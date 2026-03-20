@@ -18,7 +18,7 @@ async def 제재부여(interaction: discord.Interaction, user: discord.Member) -
         admin_name = interaction.user.display_name or interaction.user.name
         target_name = user.display_name or user.name
 
-        logger.info(f"[명령어] 제재 부여 시작 - 관리자: {admin_name}, 대상: {target_name} (ID: {user.id})")
+        logger.debug(f"[명령어] 제재 부여 시작 - 관리자: {admin_name}, 대상: {target_name} (ID: {user.id})")
 
         # 관리자 권한 확인
         if not is_admin(interaction.user):

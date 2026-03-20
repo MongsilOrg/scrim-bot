@@ -759,7 +759,7 @@ class GroupRosterView(LayoutView):
         except discord.NotFound:
             await self._recreate_view_on_message(interaction)
         except Exception as e:
-            logger.error(f"로스터 변경 콜백 처리 실패: {e}", exc_info=True)
+            logger.error(f"[뷰] 로스터 변경 콜백 처리 실패: {e}", exc_info=True)
             await send_error_message(interaction, "로스터 변경 중 오류가 발생했습니다.")
 
     async def _recreate_view_on_message(self, interaction: discord.Interaction) -> None:
@@ -772,7 +772,7 @@ class GroupRosterView(LayoutView):
                 )
                 await interaction.message.edit(view=new_view)
         except Exception as e:
-            logger.error(f"View 재생성 실패: {e}", exc_info=True)
+            logger.error(f"[뷰] View 재생성 실패: {e}", exc_info=True)
 
 
 class TeamSelectionView(LayoutView):
@@ -850,11 +850,11 @@ class TeamSelectionView(LayoutView):
         except discord.NotFound:
             pass  # 상호작용을 찾을 수 없음 - 팀 선택 View 만료 가능성
         except Exception as e:
-            logger.error(f"팀 선택 콜백 처리 실패: {e}", exc_info=True)
+            logger.error(f"[뷰] 팀 선택 콜백 처리 실패: {e}", exc_info=True)
             try:
                 await send_response(interaction, error_view("팀 선택 중 오류가 발생했습니다."))
             except Exception as e2:
-                logger.error(f"에러 메시지 전송 실패: {e2}", exc_info=True)
+                logger.error(f"[뷰] 에러 메시지 전송 실패: {e2}", exc_info=True)
 
 
 class CancelConfirmView(LayoutView):
@@ -1005,7 +1005,7 @@ class AdminView(LayoutView):
                 await interaction.followup.send(file=file, ephemeral=True)
 
         except Exception as e:
-            logger.error(f"팀 CSV 내보내기 실패: {e}", exc_info=True)
+            logger.error(f"[뷰] 팀 CSV 내보내기 실패: {e}", exc_info=True)
             try:
                 await send_response(interaction, error_view("CSV 내보내기 중 오류가 발생했습니다."))
             except Exception:
@@ -1026,7 +1026,7 @@ class AdminView(LayoutView):
                 await interaction.followup.send("모달을 표시할 수 없습니다. 다시 시도해주세요.", ephemeral=True)
 
         except Exception as e:
-            logger.error(f"CSV 입력 콜백 처리 실패: {e}", exc_info=True)
+            logger.error(f"[뷰] CSV 입력 콜백 처리 실패: {e}", exc_info=True)
             try:
                 await send_response(interaction, error_view("CSV 입력 중 오류가 발생했습니다."))
             except Exception:
