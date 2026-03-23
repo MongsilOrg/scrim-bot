@@ -1,8 +1,12 @@
 import os
+import re
 import requests
 
 from datetime import datetime, timezone, timedelta
-from utils.number_er import is_number
+
+
+def _is_number(tag: str) -> bool:
+    return re.match(r"^[0-9]+(\.[0-9]+)?$", tag) is not None
 
 
 # 1. 설정 정보
@@ -67,14 +71,14 @@ def check_notion_for_tags():
         if start_date <= today <= end_date:
             for tag in tag_list:
                 tag_name = tag["name"]
-                if is_number(tag_name):
+                if _is_number(tag_name):
                     today_numbers.append(float(tag_name))
 
         if start_date <= tomorrow <= end_date:
             for tag in tag_list:
                 tag_name = tag["name"]
                 count += 1
-                if is_number(tag_name):
+                if _is_number(tag_name):
                     tomorrow_numbers.append(float(tag_name))
             if count > 1:
                 broadcast = False
