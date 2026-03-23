@@ -77,17 +77,14 @@ class ScheduleManager:
             f"{next_monday.month}/{next_monday.day} ~ "
             f"{next_saturday.month}/{next_saturday.day}"
         )
-        # 초기화
+        # 초기화 (상태 메시지 참조는 유지 — 기존 메시지를 갱신하기 위해)
         self.availability.clear()
         self.absence_reasons.clear()
         self.admin_names.clear()
         self.assignments.clear()
         self.actual_deployments.clear()
-        self.status_message_id = None
-        self.status_channel_id = None
 
         self._save_backup()
-        logger.info(f"[일정] 주간 일정 초기화: {self.week_label}")
         return self.week_label
 
     # ------------------------------------------------------------------
@@ -100,24 +97,15 @@ class ScheduleManager:
         display_name: str,
         available_days: Set[int],
     ) -> None:
-        """관리자의 가용 요일을 등록합니다."""
+        """관리자의 가용 요일을 등록합니다.
+
+        참가 등록은 기존 불참 사유를 전체 초기화합니다.
+        """
         self.admin_names[user_id] = display_name
         self.availability[user_id] = available_days
-        # 가용일이 있으면 해당 요일의 불참 사유 제거
-        if user_id in self.absence_reasons:
-            for day in available_days:
-                self.absence_reasons[user_id].pop(day, None)
-            # 전체 불참 사유도 제거
-            if available_days:
-                self.absence_reasons[user_id].pop(-1, None)
-            # 빈 dict이면 삭제
-            if not self.absence_reasons[user_id]:
-                del self.absence_reasons[user_id]
+        # 참가 등록 → 기존 불참 사유 전체 삭제
+        self.absence_reasons.pop(user_id, None)
         self._save_backup()
-        logger.info(
-            f"[일정] {display_name} 가용일 등록: "
-            f"{[WEEKDAYS[d] for d in sorted(available_days)]}"
-        )
 
     def register_absence(
         self,
@@ -128,29 +116,32 @@ class ScheduleManager:
     ) -> None:
         """불참 사유를 등록합니다.
 
-        specific_days가 None이면 전체 불참(-1 키), 아니면 특정 요일별 사유.
+        specific_days가 None이면 전체 불참, 아니면 특정 요일별 사유.
+        전체 불참은 기존 상태를 완전 교체합니다.
+        부분 불참은 해당 요일만 조정하고 전체 불참 플래그를 해제합니다.
         """
         self.admin_names[user_id] = display_name
-        if user_id not in self.absence_reasons:
-            self.absence_reasons[user_id] = {}
 
         if specific_days is None:
-            # 전체 불참
-            self.absence_reasons[user_id][-1] = reason
+            # 전체 불참 → 기존 상태 완전 교체
+            self.absence_reasons[user_id] = {-1: reason}
             self.availability[user_id] = set()
         else:
+            # 부분 불참 → 전체 불참 플래그 해제, 해당 요일만 추가
+            if user_id not in self.absence_reasons:
+                self.absence_reasons[user_id] = {}
+            self.absence_reasons[user_id].pop(-1, None)
             for day in specific_days:
                 self.absence_reasons[user_id][day] = reason
-                # 해당 요일을 가용일에서 제거
-                if user_id in self.availability:
+            # 기존 가용일이 있으면 불참 요일만 제거
+            if user_id in self.availability:
+                for day in specific_days:
                     self.availability[user_id].discard(day)
+            else:
+                # 가용일 미등록 상태 → 불참 요일 외 전체 가용으로 설정
+                self.availability[user_id] = set(ACTIVE_DAYS) - specific_days
 
         self._save_backup()
-        if specific_days is None:
-            logger.info(f"[일정] {display_name} 전체 불참: {reason}")
-        else:
-            days_str = ', '.join(WEEKDAYS[d] for d in sorted(specific_days))
-            logger.info(f"[일정] {display_name} 부분 불참({days_str}): {reason}")
 
     def remove_response(self, user_id: str) -> bool:
         """관리자의 응답을 삭제합니다."""
@@ -172,10 +163,8 @@ class ScheduleManager:
     def get_responded_user_ids(self) -> Set[str]:
         """응답한 관리자 ID 집합을 반환합니다."""
         responded = set(self.availability.keys())
-        # 전체 불참 사유만 등록한 경우도 응답으로 간주
-        for uid, reasons in self.absence_reasons.items():
-            if -1 in reasons:
-                responded.add(uid)
+        # 불참 사유 등록자도 응답으로 간주
+        responded.update(self.absence_reasons.keys())
         return responded
 
     def get_status_text(self, all_admin_ids: List[Tuple[str, str]]) -> str:
@@ -202,7 +191,7 @@ class ScheduleManager:
                 reasons = self.absence_reasons.get(uid, {})
 
                 if -1 in reasons:
-                    lines.append(f'> ❌ {name} — 전체 불참 ({reasons[-1]})')
+                    lines.append(f'> ❌ {name} — 불참 ({reasons[-1]})')
                 elif avail:
                     day_labels = ', '.join(WEEKDAYS[d] for d in sorted(avail))
                     absence_parts = []
@@ -213,6 +202,16 @@ class ScheduleManager:
                     if absence_parts:
                         suffix = f' | 불참: {", ".join(absence_parts)}'
                     lines.append(f'> ✅ {name} — {day_labels}{suffix}')
+                elif reasons:
+                    # 부분 불참만 등록 (가용일 미설정 — 방어 코드)
+                    absence_parts = [
+                        f"{WEEKDAYS[d]}({reasons[d]})"
+                        for d in sorted(reasons) if d >= 0
+                    ]
+                    if absence_parts:
+                        lines.append(f'> ⚠️ {name} — 불참: {", ".join(absence_parts)}')
+                    else:
+                        lines.append(f'> ❌ {name} — 가용일 없음')
                 else:
                     lines.append(f'> ❌ {name} — 가용일 없음')
 
@@ -246,11 +245,18 @@ class ScheduleManager:
                 # 실투입 완료 표시
                 if day_idx in self.actual_deployments:
                     deployed = self.actual_deployments[day_idx]
-                    lines.append(
-                        f'> ✅ **{WEEKDAYS[day_idx]}** — '
-                        f'{", ".join(member_names)} '
-                        f'(투입 {len(deployed)}명)'
-                    )
+                    if deployed:
+                        deployed_names = [
+                            self.admin_names.get(uid, '?') for uid in deployed
+                        ]
+                        lines.append(
+                            f'> ✅ **{WEEKDAYS[day_idx]}** — '
+                            f'{", ".join(deployed_names)}'
+                        )
+                    else:
+                        lines.append(
+                            f'> ✅ **{WEEKDAYS[day_idx]}** — 투입 없음'
+                        )
                 else:
                     lines.append(
                         f'> **{WEEKDAYS[day_idx]}** — '
@@ -315,6 +321,11 @@ class ScheduleManager:
             for uid in selected:
                 assign_count[uid] += 1
 
+        # 가용 인원이 없는 요일도 포함
+        for day in ACTIVE_DAYS:
+            if day not in assignments:
+                assignments[day] = []
+
         self.assignments = assignments
         self._save_backup()
         logger.info("[일정] 편성 완료")
@@ -324,11 +335,45 @@ class ScheduleManager:
     # 동적 재조정
     # ------------------------------------------------------------------
 
-    def record_actual_deployment(self, day_index: int, deployed_ids: List[str]) -> None:
-        """실투입 결과를 기록하고 남은 요일의 편성을 재조정합니다."""
+    def toggle_self_deployment(self, day_index: int, user_id: str) -> bool:
+        """본인의 투입 상태를 토글합니다.
+
+        Returns:
+            True면 투입 등록, False면 투입 해제
+        """
+        if day_index not in self.actual_deployments:
+            self.actual_deployments[day_index] = []
+
+        deployed = self.actual_deployments[day_index]
+        if user_id in deployed:
+            deployed.remove(user_id)
+            self._save_backup()
+            return False
+        else:
+            deployed.append(user_id)
+            self._save_backup()
+            return True
+
+    def record_actual_deployment(self, day_index: int, deployed_ids: List[str]) -> List[int]:
+        """실투입 결과를 기록하고 남은 요일의 편성을 재조정합니다.
+
+        Returns:
+            재조정된 요일 인덱스 목록 (빈 리스트면 재조정 없음)
+        """
         self.actual_deployments[day_index] = deployed_ids
+        # 재조정 전 편성 상태 저장
+        remaining_before = {
+            d: list(members) for d, members in self.assignments.items()
+            if d > day_index and d not in self.actual_deployments
+        }
         self._readjust_remaining(day_index)
+        # 재조정된 요일 파악
+        readjusted_days = [
+            d for d, old_members in remaining_before.items()
+            if self.assignments.get(d, []) != old_members
+        ]
         self._save_backup()
+        return sorted(readjusted_days)
 
     def _readjust_remaining(self, completed_day: int) -> None:
         """완료된 요일 이후의 편성을 투입 횟수 기반으로 재조정합니다."""
