@@ -26,7 +26,7 @@ from utils.validators import validate_team_name
 
 # 버튼 cooldown 관리 (사용자별 마지막 클릭 시간)
 _button_cooldowns: Dict[int, float] = {}
-BUTTON_COOLDOWN_SECONDS = 3
+BUTTON_COOLDOWN_SECONDS = 1
 
 
 async def send_error_message(interaction: discord.Interaction, message: str) -> None:
