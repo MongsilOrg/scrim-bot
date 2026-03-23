@@ -1140,19 +1140,11 @@ class ScheduleView(LayoutView):
         )
         self.deploy_button.callback = self.deploy_callback
 
-        self.cancel_assign_button = Button(
-            label="편성 취소",
-            style=ButtonStyle.danger,
-            emoji="↩️",
-        )
-        self.cancel_assign_button.callback = self.cancel_assign_callback
-
         self.add_item(ActionRow(
             self.register_button,
             self.absence_button,
             self.assign_button,
             self.deploy_button,
-            self.cancel_assign_button,
         ))
 
     async def register_callback(self, interaction: discord.Interaction) -> None:
@@ -1197,7 +1189,7 @@ class ScheduleView(LayoutView):
         await interaction.response.send_modal(AbsenceReasonModal())
 
     async def assign_callback(self, interaction: discord.Interaction) -> None:
-        """자동 편성 버튼"""
+        """편성 버튼 — 상태에 따라 편성/재편성/편성취소 분기"""
         if await _check_cooldown(interaction):
             return
         if not is_admin(interaction.user):
@@ -1209,64 +1201,83 @@ class ScheduleView(LayoutView):
             await send_response(interaction, error_view("주간 일정이 초기화되지 않았습니다."))
             return
 
-        if not schedule_mgr.availability:
-            await send_response(interaction, error_view("참가 등록된 관리자가 없습니다."))
+        # 편성 전 → 바로 편성
+        if not schedule_mgr.assignments:
+            if not schedule_mgr.availability:
+                await send_response(interaction, error_view("참가 등록된 관리자가 없습니다."))
+                return
+
+            assignments = schedule_mgr.generate_assignments()
+            assigned_days = sum(1 for v in assignments.values() if v)
+            await send_response(
+                interaction,
+                success_view(
+                    f"**{schedule_mgr.week_label}** 편성 완료\n"
+                    f"{assigned_days}일 배정되었습니다.",
+                    title="📋 편성 완료",
+                ),
+            )
+            await _refresh_schedule_status(interaction)
             return
 
-        # 투입 기록이 있으면 재편성 차단
-        if schedule_mgr.actual_deployments:
-            await send_response(interaction, error_view(
-                "투입 기록이 존재하여 재편성할 수 없습니다.\n"
-                "편성 취소 후 다시 진행해주세요."
-            ))
-            return
+        # 편성 후 → 재편성 / 편성 취소 선택
+        reassign_btn = Button(label="재편성", style=ButtonStyle.primary, emoji="🔄")
+        cancel_btn = Button(label="편성 취소", style=ButtonStyle.danger, emoji="↩️")
+        back_btn = Button(label="닫기", style=ButtonStyle.secondary)
 
-        # 기존 편성이 있으면 확인
-        if schedule_mgr.assignments:
-            confirm_btn = Button(label="편성", style=ButtonStyle.danger, emoji="📋")
-            cancel_btn = Button(label="취소", style=ButtonStyle.secondary)
+        async def do_reassign(btn_interaction: discord.Interaction):
+            if schedule_mgr.actual_deployments:
+                await send_response(btn_interaction, error_view(
+                    "투입 기록이 존재하여 재편성할 수 없습니다.\n"
+                    "편성 취소 후 다시 진행해주세요."
+                ))
+                return
+            if not schedule_mgr.availability:
+                await send_response(btn_interaction, error_view("참가 등록된 관리자가 없습니다."))
+                return
+            assignments = schedule_mgr.generate_assignments()
+            assigned_days = sum(1 for v in assignments.values() if v)
+            await send_response(
+                btn_interaction,
+                success_view(
+                    f"**{schedule_mgr.week_label}** 재편성 완료\n"
+                    f"{assigned_days}일 배정되었습니다.",
+                    title="🔄 재편성 완료",
+                ),
+            )
+            await _refresh_schedule_status(btn_interaction)
 
-            async def confirm_assign(confirm_interaction: discord.Interaction):
-                assignments = schedule_mgr.generate_assignments()
-                assigned_days = sum(1 for v in assignments.values() if v)
-                await send_response(
-                    confirm_interaction,
-                    success_view(
-                        f"**{schedule_mgr.week_label}** 편성 완료\n"
-                        f"{assigned_days}일 배정되었습니다.",
-                        title="📋 편성 완료",
-                    ),
-                )
-                await _refresh_schedule_status(confirm_interaction)
+        async def do_cancel(btn_interaction: discord.Interaction):
+            schedule_mgr.assignments.clear()
+            schedule_mgr.actual_deployments.clear()
+            schedule_mgr._save_backup()
+            await send_response(
+                btn_interaction,
+                success_view("주간 일정 편성과 투입 기록이 초기화되었습니다.", title="↩️ 편성 취소"),
+            )
+            await _refresh_schedule_status(btn_interaction)
 
-            async def cancel_assign(cancel_interaction: discord.Interaction):
-                await send_response(cancel_interaction, info_view("편성이 취소되었습니다."))
+        async def do_back(btn_interaction: discord.Interaction):
+            await btn_interaction.response.defer_update()
 
-            confirm_btn.callback = confirm_assign
-            cancel_btn.callback = cancel_assign
+        reassign_btn.callback = do_reassign
+        cancel_btn.callback = do_cancel
+        back_btn.callback = do_back
 
-            confirm_view = LayoutView()
-            confirm_view.add_item(Container(
-                TextDisplay(content="## ⚠️ 편성 확인\n기존 편성 결과를 덮어씁니다.\n계속하시겠습니까?"),
-                Separator(),
-                TextDisplay(content=FOOTER_TEXT),
-                accent_colour=Color.orange(),
-            ))
-            confirm_view.add_item(ActionRow(confirm_btn, cancel_btn))
-            await send_response(interaction, confirm_view)
-            return
+        deploy_count = len(schedule_mgr.actual_deployments)
+        desc = "재편성 시 기존 편성을 덮어씁니다."
+        if deploy_count:
+            desc += f"\n편성 취소 시 투입 기록 {deploy_count}건도 함께 삭제됩니다."
 
-        assignments = schedule_mgr.generate_assignments()
-        assigned_days = sum(1 for v in assignments.values() if v)
-        await send_response(
-            interaction,
-            success_view(
-                f"**{schedule_mgr.week_label}** 편성 완료\n"
-                f"{assigned_days}일 배정되었습니다.",
-                title="📋 편성 완료",
-            ),
-        )
-        await _refresh_schedule_status(interaction)
+        menu_view = LayoutView()
+        menu_view.add_item(Container(
+            TextDisplay(content=f"## 📋 편성 관리\n{desc}"),
+            Separator(),
+            TextDisplay(content=FOOTER_TEXT),
+            accent_colour=Color.blue(),
+        ))
+        menu_view.add_item(ActionRow(reassign_btn, cancel_btn, back_btn))
+        await send_response(interaction, menu_view)
 
     async def deploy_callback(self, interaction: discord.Interaction) -> None:
         """투입 기록 버튼 — 요일별 버튼으로 본인 투입 토글"""
@@ -1278,7 +1289,7 @@ class ScheduleView(LayoutView):
 
         schedule_mgr = BotManager.get_instance().get_schedule_manager()
         if not schedule_mgr.assignments:
-            await send_response(interaction, error_view("편성 결과가 없습니다.\n먼저 편성을 실행하세요."))
+            await send_response(interaction, error_view("주간 일정이 편성되지 않았습니다.\n먼저 편성을 실행하세요."))
             return
 
         from models.schedule_manager import WEEKDAYS, ACTIVE_DAYS
@@ -1288,27 +1299,56 @@ class ScheduleView(LayoutView):
         # 요일별 버튼 생성
         day_buttons = []
         for d in ACTIVE_DAYS:
-            has_assignment = bool(schedule_mgr.assignments.get(d))
             deployed = schedule_mgr.actual_deployments.get(d, [])
             is_self_deployed = user_id in deployed
 
             if is_self_deployed:
                 style = ButtonStyle.success
                 label = f"{WEEKDAYS[d]} ✓"
-            elif has_assignment:
+            else:
                 style = ButtonStyle.primary
                 label = WEEKDAYS[d]
-            else:
-                style = ButtonStyle.secondary
-                label = WEEKDAYS[d]
 
-            btn = Button(label=label, style=style, disabled=not has_assignment)
+            btn = Button(label=label, style=style)
 
             def make_day_callback(day_index: int):
                 async def day_btn_callback(day_interaction: discord.Interaction):
                     uid = str(day_interaction.user.id)
                     schedule_mgr.toggle_self_deployment(day_index, uid)
-                    await day_interaction.response.defer_update()
+
+                    # 투입 뷰 자체를 갱신된 상태로 다시 표시
+                    updated_buttons = []
+                    for dd in ACTIVE_DAYS:
+                        dep = schedule_mgr.actual_deployments.get(dd, [])
+                        is_dep = uid in dep
+                        if is_dep:
+                            st = ButtonStyle.success
+                            lb = f"{WEEKDAYS[dd]} ✓"
+                        else:
+                            st = ButtonStyle.primary
+                            lb = WEEKDAYS[dd]
+                        b = Button(label=lb, style=st)
+                        b.callback = make_day_callback(dd)
+                        updated_buttons.append(b)
+
+                    my = [WEEKDAYS[dd] for dd in ACTIVE_DAYS if uid in schedule_mgr.actual_deployments.get(dd, [])]
+                    ms = ', '.join(my) if my else "없음"
+
+                    updated_view = LayoutView()
+                    updated_view.add_item(Container(
+                        TextDisplay(
+                            content=f"## ✅ 투입 기록\n"
+                            f"내 투입: **{ms}**\n\n"
+                            f"투입한 요일을 선택하세요. (다시 누르면 해제)"
+                        ),
+                        Separator(),
+                        TextDisplay(content=FOOTER_TEXT),
+                        accent_colour=Color.blue(),
+                    ))
+                    updated_view.add_item(ActionRow(*updated_buttons[:5]))
+                    updated_view.add_item(ActionRow(*updated_buttons[5:]))
+
+                    await day_interaction.response.edit_message(view=updated_view)
                     await _refresh_schedule_status(day_interaction)
 
                 return day_btn_callback
@@ -1338,55 +1378,6 @@ class ScheduleView(LayoutView):
         deploy_view.add_item(ActionRow(*day_buttons[5:]))
         await send_response(interaction, deploy_view)
 
-    async def cancel_assign_callback(self, interaction: discord.Interaction) -> None:
-        """편성 취소 버튼 — 편성 결과와 투입 기록을 초기화"""
-        if await _check_cooldown(interaction):
-            return
-        if not is_admin(interaction.user):
-            await send_response(interaction, permission_error_view())
-            return
-
-        schedule_mgr = BotManager.get_instance().get_schedule_manager()
-
-        if not schedule_mgr.assignments:
-            await send_response(interaction, error_view("편성 결과가 없습니다."))
-            return
-
-        confirm_btn = Button(label="편성 취소", style=ButtonStyle.danger, emoji="↩️")
-        cancel_btn = Button(label="돌아가기", style=ButtonStyle.secondary)
-
-        async def confirm_cancel(confirm_interaction: discord.Interaction):
-            schedule_mgr.assignments.clear()
-            schedule_mgr.actual_deployments.clear()
-            schedule_mgr._save_backup()
-            await send_response(
-                confirm_interaction,
-                success_view("편성 결과와 투입 기록이 초기화되었습니다.", title="↩️ 편성 취소"),
-            )
-            await _refresh_schedule_status(confirm_interaction)
-
-        async def deny_cancel(cancel_interaction: discord.Interaction):
-            await send_response(cancel_interaction, info_view("편성 취소가 취소되었습니다."))
-
-        confirm_btn.callback = confirm_cancel
-        cancel_btn.callback = deny_cancel
-
-        # 요약
-        deploy_count = len(schedule_mgr.actual_deployments)
-        desc = "편성 결과"
-        if deploy_count:
-            desc += f"와 투입 기록 {deploy_count}건"
-        desc += "이 삭제됩니다."
-
-        confirm_view = LayoutView()
-        confirm_view.add_item(Container(
-            TextDisplay(content=f"## ⚠️ 편성 취소 확인\n{desc}\n참가/불참 데이터는 유지됩니다."),
-            Separator(),
-            TextDisplay(content=FOOTER_TEXT),
-            accent_colour=Color.orange(),
-        ))
-        confirm_view.add_item(ActionRow(confirm_btn, cancel_btn))
-        await send_response(interaction, confirm_view)
 
 
 async def _refresh_schedule_status(interaction: discord.Interaction) -> None:

@@ -228,41 +228,36 @@ class ScheduleManager:
             lines.append('')
             lines.append('> ✅ 모든 관리자가 응답 완료')
 
-        # 편성 결과
+        # 주간 편성
         if self.assignments:
             lines.append('')
-            lines.append('**📊 편성 결과**')
+            lines.append('**📊 주간 편성**')
             for day_idx in ACTIVE_DAYS:
-                if day_idx not in self.assignments:
-                    continue
-                members = self.assignments[day_idx]
-                if not members:
-                    lines.append(f'> **{WEEKDAYS[day_idx]}** — (가용 인원 없음)')
-                    continue
-                member_names = [
-                    self.admin_names.get(uid, '?') for uid in members
-                ]
-                # 실투입 완료 표시
-                if day_idx in self.actual_deployments:
-                    deployed = self.actual_deployments[day_idx]
-                    if deployed:
-                        deployed_names = [
-                            self.admin_names.get(uid, '?') for uid in deployed
-                        ]
-                        lines.append(
-                            f'> ✅ **{WEEKDAYS[day_idx]}** — '
-                            f'{", ".join(deployed_names)}'
-                        )
+                members = self.assignments.get(day_idx, [])
+                deployed = self.actual_deployments.get(day_idx, [])
+
+                # 배정자 + 배정 외 투입자를 합산
+                all_uids = list(members)
+                extra_deployed = [uid for uid in deployed if uid not in members]
+
+                name_parts = []
+                for uid in all_uids:
+                    name = self.admin_names.get(uid, '?')
+                    if uid in deployed:
+                        name_parts.append(f'**{name}** ✅')
                     else:
-                        lines.append(
-                            f'> ✅ **{WEEKDAYS[day_idx]}** — 투입 없음'
-                        )
-                else:
+                        name_parts.append(name)
+                for uid in extra_deployed:
+                    name = self.admin_names.get(uid, '?')
+                    name_parts.append(f'**{name}** ✅')
+
+                if name_parts:
                     lines.append(
                         f'> **{WEEKDAYS[day_idx]}** — '
-                        f'{", ".join(member_names)} '
-                        f'({len(members)}명)'
+                        f'{", ".join(name_parts)}'
                     )
+                else:
+                    lines.append(f'> **{WEEKDAYS[day_idx]}** — (배정 없음)')
 
         return '\n'.join(lines)
 
@@ -336,7 +331,7 @@ class ScheduleManager:
     # ------------------------------------------------------------------
 
     def toggle_self_deployment(self, day_index: int, user_id: str) -> bool:
-        """본인의 투입 상태를 토글합니다.
+        """본인의 투입 상태를 토글하고 남은 요일 편성을 재조정합니다.
 
         Returns:
             True면 투입 등록, False면 투입 해제
@@ -347,12 +342,15 @@ class ScheduleManager:
         deployed = self.actual_deployments[day_index]
         if user_id in deployed:
             deployed.remove(user_id)
-            self._save_backup()
-            return False
+            if not deployed:
+                del self.actual_deployments[day_index]
         else:
             deployed.append(user_id)
-            self._save_backup()
-            return True
+            self.admin_names.setdefault(user_id, user_id)
+
+        self._readjust_remaining_all()
+        self._save_backup()
+        return user_id in self.actual_deployments.get(day_index, [])
 
     def record_actual_deployment(self, day_index: int, deployed_ids: List[str]) -> List[int]:
         """실투입 결과를 기록하고 남은 요일의 편성을 재조정합니다.
@@ -375,15 +373,19 @@ class ScheduleManager:
         self._save_backup()
         return sorted(readjusted_days)
 
+    def _readjust_remaining_all(self) -> None:
+        """투입 기록이 없는 모든 요일의 편성을 재조정합니다."""
+        self._readjust_remaining(-1)
+
     def _readjust_remaining(self, completed_day: int) -> None:
-        """완료된 요일 이후의 편성을 투입 횟수 기반으로 재조정합니다."""
+        """completed_day 이후 투입 미완료 요일의 편성을 투입 횟수 기반으로 재조정합니다."""
         # 실투입 횟수 계산
         deploy_count: Dict[str, int] = defaultdict(int)
         for day_idx, deployed in self.actual_deployments.items():
             for uid in deployed:
                 deploy_count[uid] += 1
 
-        # 아직 편성이 안 끝난 요일만 재조정
+        # 투입 기록이 없는 요일만 재조정
         remaining_days = sorted(
             d for d in self.assignments if d > completed_day
             and d not in self.actual_deployments
