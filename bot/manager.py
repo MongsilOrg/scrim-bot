@@ -10,6 +10,7 @@ from config.logging_config import get_logger
 from config.settings import settings
 from models.team_data_manager import TeamDataManager
 from models.team_processor import TeamProcessor
+from models.schedule_manager import ScheduleManager
 
 logger = get_logger("bot_manager")
 
@@ -39,6 +40,7 @@ class BotManager:
         self._team_data_manager: Optional[TeamDataManager] = None
         self._team_processor: Optional[TeamProcessor] = None
         self._warning_manager = None
+        self._schedule_manager: Optional[ScheduleManager] = None
         self._ban_lists: Dict[str, List[str]] = {}
         self._selected_weathers: Dict[str, List[str]] = {}
         self._initialized = True
@@ -90,6 +92,13 @@ class BotManager:
 
         self._team_data_manager = TeamDataManager(client or self._client)
         return self._team_data_manager
+
+    def get_schedule_manager(self) -> ScheduleManager:
+        """일정 관리자 반환"""
+        if self._schedule_manager is None:
+            self._schedule_manager = ScheduleManager()
+            self._schedule_manager.load_backup()
+        return self._schedule_manager
 
     def get_warning_manager(self):
         """경고 관리자 반환"""

@@ -19,6 +19,7 @@ from bot.client import ScrimBot
 from bot.events import on_message as handle_message
 from bot.manager import BotManager
 from commands.room_code import 방코드
+from commands.schedule import 일정
 from commands.scrim import 스크림
 from commands.scrim_csv_assign import 조편성_csv
 from commands.warning import 제재부여
@@ -127,6 +128,14 @@ def _register_app_commands(client: ScrimBot) -> None:
     )
     async def scrim_command(interaction: discord.Interaction):
         await 스크림(interaction)
+
+    @client.tree.command(
+        name="일정",
+        description="주간 관리자 일정을 관리합니다",
+        guild=discord.Object(id=settings.GUILD_ID),
+    )
+    async def schedule_command(interaction: discord.Interaction):
+        await 일정(interaction)
 
     @client.tree.context_menu(
         name="조편성", guild=discord.Object(id=settings.GUILD_ID)
