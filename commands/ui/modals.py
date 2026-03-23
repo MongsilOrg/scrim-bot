@@ -1306,14 +1306,69 @@ class CSVImportModal(Modal):
                 pass
 
 
-class AbsenceReasonModal(Modal):
-    """불참 사유 입력 모달
+class AvailabilityModal(Modal):
+    """참가 요일 선택 모달 (체크박스)"""
 
-    전체 불참 또는 특정 요일 불참 시 사유를 입력받습니다.
-    """
+    def __init__(self, current_days: set):
+        super().__init__(title="참가 등록")
+        from models.schedule_manager import WEEKDAYS, ACTIVE_DAYS
+
+        options = [
+            CheckboxGroupOption(
+                label=f"{WEEKDAYS[i]}요일",
+                value=str(i),
+                default=i in current_days,
+            )
+            for i in ACTIVE_DAYS
+        ]
+        self.days_checkbox = CheckboxGroup(
+            options=options,
+            min_values=1,
+            max_values=len(ACTIVE_DAYS),
+        )
+        self.add_item(Label(text="참가 가능한 요일", component=self.days_checkbox))
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        from models.schedule_manager import WEEKDAYS
+        try:
+            selected_days = {int(v) for v in self.days_checkbox.values}
+            if not selected_days:
+                await send_response(interaction, error_view(
+                    "최소 1개 이상의 요일을 선택해주세요.\n불참 시 불참 버튼을 사용하세요."
+                ))
+                return
+
+            schedule_mgr = BotManager.get_instance().get_schedule_manager()
+            schedule_mgr.register_availability(
+                user_id=str(interaction.user.id),
+                display_name=interaction.user.display_name,
+                available_days=selected_days,
+            )
+            day_str = ', '.join(WEEKDAYS[d] for d in sorted(selected_days))
+            await send_response(
+                interaction,
+                success_view(
+                    f"{day_str} ({len(selected_days)}일) 참가 등록되었습니다.",
+                    title="✅ 참가 등록",
+                ),
+            )
+
+            from .views import _refresh_schedule_status
+            await _refresh_schedule_status(interaction)
+
+        except Exception as e:
+            logger.error(f"[모달] 참가 등록 실패: {e}", exc_info=True)
+            await send_response(
+                interaction,
+                error_view("참가 등록 중 오류가 발생했습니다."),
+            )
+
+
+class AbsenceReasonModal(Modal):
+    """전체 불참 사유 입력 모달"""
 
     def __init__(self):
-        super().__init__(title="불참 사유 등록")
+        super().__init__(title="불참 등록")
 
         self.reason_input = TextInput(
             label="불참 사유",
@@ -1324,88 +1379,33 @@ class AbsenceReasonModal(Modal):
         )
         self.add_item(self.reason_input)
 
-        self.days_input = TextInput(
-            label="불참 요일 (비우면 전체 불참, 월~토)",
-            placeholder="예: 월,수,금 (쉼표로 구분) 또는 비워두세요",
-            max_length=30,
-            required=False,
-        )
-        self.add_item(self.days_input)
-
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """모달 제출 처리"""
-        from models.schedule_manager import WEEKDAYS, ACTIVE_DAYS
-
         try:
             reason = self.reason_input.value.strip()
-            days_text = self.days_input.value.strip() if self.days_input.value else ''
 
             schedule_mgr = BotManager.get_instance().get_schedule_manager()
             user_id = str(interaction.user.id)
             display_name = interaction.user.display_name
 
-            active_weekdays = [WEEKDAYS[d] for d in ACTIVE_DAYS]
-
-            if not days_text:
-                # 전체 불참
-                schedule_mgr.register_absence(user_id, display_name, reason)
-                await send_response(
-                    interaction,
-                    success_view(
-                        f"전체 불참으로 등록되었습니다.\n사유: {reason}",
-                        title="🚫 불참 등록",
-                    ),
-                )
-            else:
-                # 특정 요일 불참
-                day_map = {WEEKDAYS[i]: i for i in ACTIVE_DAYS}
-                specific_days = set()
-                invalid_days = []
-                for part in days_text.replace(' ', '').split(','):
-                    part = part.strip()
-                    if part in day_map:
-                        specific_days.add(day_map[part])
-                    elif part:
-                        invalid_days.append(part)
-
-                if invalid_days:
-                    await send_response(
-                        interaction,
-                        error_view(
-                            f"잘못된 요일 입력: {', '.join(invalid_days)}\n"
-                            f"사용 가능: {', '.join(active_weekdays)}"
-                        ),
-                    )
-                    return
-
-                if not specific_days:
-                    await send_response(
-                        interaction,
-                        error_view("유효한 요일이 입력되지 않았습니다."),
-                    )
-                    return
-
-                schedule_mgr.register_absence(
-                    user_id, display_name, reason, specific_days
-                )
-                day_labels = ', '.join(
-                    f'{WEEKDAYS[d]}' for d in sorted(specific_days)
-                )
-                await send_response(
-                    interaction,
-                    success_view(
-                        f"{day_labels} 불참으로 등록되었습니다.\n사유: {reason}",
-                        title="🚫 불참 등록",
-                    ),
-                )
+            schedule_mgr.register_absence(user_id, display_name, reason)
+            await send_response(
+                interaction,
+                success_view(
+                    f"불참으로 등록되었습니다.\n사유: {reason}",
+                    title="🚫 불참 등록",
+                ),
+            )
 
             # 상태 메시지 갱신
             from .views import _refresh_schedule_status
             await _refresh_schedule_status(interaction)
 
         except Exception as e:
-            logger.error(f"[모달] 불참 사유 등록 실패: {e}", exc_info=True)
+            logger.error(f"[모달] 불참 등록 실패: {e}", exc_info=True)
             await send_response(
                 interaction,
-                error_view("불참 사유 등록 중 오류가 발생했습니다."),
+                error_view("불참 등록 중 오류가 발생했습니다."),
             )
+
+
