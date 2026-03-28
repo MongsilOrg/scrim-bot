@@ -68,4 +68,15 @@ async def setup_scrim_dashboard(client: ScrimBot) -> None:
     team_data_manager.scrim_channel_id = SCRIM_CHANNEL_ID
 
     await _refresh_scrim_dashboard(channel)
+
+    # 스크림 활성 + 조편성 전이면 MMR 메시지 재생성
+    if (team_data_manager.scrim_day is not None
+            and not team_data_manager.is_team_assignment_started
+            and team_data_manager.teams):
+        try:
+            await team_data_manager.update_mmr_message(channel)
+            logger.info("[스크림] MMR 메시지 재생성 완료")
+        except Exception as e:
+            logger.error(f"[스크림] MMR 메시지 재생성 실패: {e}", exc_info=True)
+
     logger.info("[스크림] 대시보드 연동 완료")

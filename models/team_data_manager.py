@@ -1016,14 +1016,18 @@ class TeamDataManager:
                         team_data_manager.mmr_update_task = None
                         return
                     
-                    # 팀이 있고 MMR 메시지가 있는 경우에만 업데이트
-                    if team_data_manager.teams and team_data_manager.mmr_message and team_data_manager.mmr_message.channel:
-                        # 모든 팀의 MMR을 주기적으로 갱신
+                    # 팀이 있는 경우 MMR 갱신
+                    if team_data_manager.teams:
                         success, fail = await team_data_manager._update_all_team_mmr()
-                        await team_data_manager.update_mmr_message(
-                            team_data_manager.mmr_message.channel,
-                            mmr_fail_count=fail
-                        )
+                        # mmr_message가 있으면 해당 채널, 없으면 scrim_channel_id 사용
+                        if team_data_manager.mmr_message and team_data_manager.mmr_message.channel:
+                            channel = team_data_manager.mmr_message.channel
+                        elif team_data_manager.scrim_channel_id and team_data_manager.client:
+                            channel = team_data_manager.client.get_channel(team_data_manager.scrim_channel_id)
+                        else:
+                            channel = None
+                        if channel:
+                            await team_data_manager.update_mmr_message(channel, mmr_fail_count=fail)
                 except discord.NotFound:
                     # 최신 인스턴스에서 메시지 참조 제거
                     from bot.manager import BotManager
