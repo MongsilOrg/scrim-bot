@@ -116,58 +116,6 @@ class ScheduleManager:
 
         self._save_backup()
 
-    def register_availability(
-        self,
-        user_id: str,
-        display_name: str,
-        available_days: Set[int],
-    ) -> None:
-        """관리자의 가용 요일을 등록합니다.
-
-        참가 등록은 기존 불참 사유를 전체 초기화합니다.
-        """
-        self.admin_names[user_id] = display_name
-        self.availability[user_id] = available_days
-        # 참가 등록 → 기존 불참 사유 전체 삭제
-        self.absence_reasons.pop(user_id, None)
-        self._save_backup()
-
-    def register_absence(
-        self,
-        user_id: str,
-        display_name: str,
-        reason: str,
-        specific_days: Optional[Set[int]] = None,
-    ) -> None:
-        """불참 사유를 등록합니다.
-
-        specific_days가 None이면 전체 불참, 아니면 특정 요일별 사유.
-        전체 불참은 기존 상태를 완전 교체합니다.
-        부분 불참은 해당 요일만 조정하고 전체 불참 플래그를 해제합니다.
-        """
-        self.admin_names[user_id] = display_name
-
-        if specific_days is None:
-            # 전체 불참 → 기존 상태 완전 교체
-            self.absence_reasons[user_id] = {-1: reason}
-            self.availability[user_id] = set()
-        else:
-            # 부분 불참 → 전체 불참 플래그 해제, 해당 요일만 추가
-            if user_id not in self.absence_reasons:
-                self.absence_reasons[user_id] = {}
-            self.absence_reasons[user_id].pop(-1, None)
-            for day in specific_days:
-                self.absence_reasons[user_id][day] = reason
-            # 기존 가용일이 있으면 불참 요일만 제거
-            if user_id in self.availability:
-                for day in specific_days:
-                    self.availability[user_id].discard(day)
-            else:
-                # 가용일 미등록 상태 → 불참 요일 외 전체 가용으로 설정
-                self.availability[user_id] = set(ACTIVE_DAYS) - specific_days
-
-        self._save_backup()
-
     def remove_response(self, user_id: str) -> bool:
         """관리자의 응답을 삭제합니다."""
         removed = False
