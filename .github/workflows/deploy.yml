@@ -9,11 +9,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
-          host: mongsil.dev
-          port: 1557
+          host: REDACTED-IP
+          port: 22
           username: blackout
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           timeout: 60s
