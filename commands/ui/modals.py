@@ -139,6 +139,8 @@ class TeamModal(Modal):
             # 팀 등록 처리
             await self.view._process_team_registration(interaction, team_name, team_data, temp_message)
             
+        except discord.NotFound:
+            logger.warning("[모달] 팀 등록 interaction 만료")
         except Exception as e:
             logger.error(f"[모달] 팀 모달 제출 처리 실패: {e}", exc_info=True)
             await send_error_message(interaction, "팀 등록 중 오류가 발생했습니다.")
@@ -281,6 +283,8 @@ class TeamEditModal(Modal):
             # 팀 정보 수정 처리
             await self._process_team_edit(interaction, new_team_name, new_team_data, temp_message)
             
+        except discord.NotFound:
+            logger.warning("[모달] 팀 수정 interaction 만료")
         except Exception as e:
             logger.error(f"[모달] 팀 정보 수정 모달 제출 처리 실패: {e}", exc_info=True)
             await send_error_message(interaction, "팀 정보 수정 중 오류가 발생했습니다.")

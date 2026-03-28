@@ -296,11 +296,10 @@ class TeamDataManager:
 
     async def initialize_new_scrim(self, scrim_day: int, scrim_month: int, scrim_channel_id: int) -> None:
         """
-        새로운 스크림을 시작하기 위한 하드 리셋 및 날짜/채널 설정.
-        
-        이전 스크림의 모든 태스크를 완전히 종료하고 데이터를 초기화합니다.
+        새로운 스크림 날짜/채널을 설정합니다.
+
+        Note: reset_team_data()는 호출자(reset_team_data_manager)가 이미 수행합니다.
         """
-        await self.reset_team_data()
         self.scrim_day = scrim_day
         self.scrim_month = scrim_month
         self.scrim_channel_id = scrim_channel_id
@@ -739,7 +738,6 @@ class TeamDataManager:
     
     async def _start_team_assignment(self, total_teams: int, spare_teams: int) -> None:
         """조편성을 시작합니다."""
-        start_channel = None  # 변수를 메서드 시작 부분에서 초기화
         try:
             # ✅ 최신 TeamDataManager 인스턴스를 동적으로 가져오기
             from bot.manager import BotManager
@@ -754,10 +752,12 @@ class TeamDataManager:
                 )
                 return
 
-            total_teams_current = len(team_data_manager.teams)
-            team_data_manager.log_state_snapshot(prefix="start_team_assignment")
+            # 이미 시작된 경우 중복 실행 방지
+            if team_data_manager.is_team_assignment_started:
+                return
 
-            logger.info(f"[조편성] 조편성 시작 - 총 팀 수: {total_teams_current}개, 예비팀: {spare_teams}개")
+            total_teams_current = len(team_data_manager.teams)
+            logger.info(f"[조편성] 조편성 시작 - {total_teams_current}팀")
 
             if total_teams_current < settings.TEAMS_PER_GROUP:
                 logger.warning(f"[조편성] 팀 부족으로 중단 - {total_teams_current}팀 < {settings.TEAMS_PER_GROUP}팀")

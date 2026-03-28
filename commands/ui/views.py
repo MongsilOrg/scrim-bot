@@ -211,6 +211,8 @@ class TeamInputView(LayoutView):
                 else:
                     await interaction.followup.send("모달을 표시할 수 없습니다. 다시 시도해주세요.", ephemeral=True)
 
+        except discord.NotFound:
+            logger.warning("[뷰] 팀 추가 interaction 만료")
         except Exception as e:
             logger.error(f"[뷰] 팀 추가 콜백 처리 실패: {e}", exc_info=True)
             await send_error_message(interaction, "팀 추가 중 오류가 발생했습니다.")
@@ -262,6 +264,8 @@ class TeamInputView(LayoutView):
                 msg = await interaction.followup.send(view=confirm_view, ephemeral=True, wait=True)
                 confirm_view.message = msg
 
+        except discord.NotFound:
+            logger.warning("[뷰] 팀 취소 interaction 만료")
         except Exception as e:
             logger.error(f"[뷰] 팀 취소 콜백 처리 실패: {e}", exc_info=True)
             await send_error_message(interaction, "팀 취소 중 오류가 발생했습니다.")
