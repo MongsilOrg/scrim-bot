@@ -89,14 +89,15 @@ class ScrimIdleView(LayoutView):
         bot_manager = BotManager.get_instance()
         date_info = get_next_scrim_date()
 
-        # 기존 스크림이 있으면 확인
+        # 기존 스크림이 있으면 만료 여부 확인
         existing_tdm = bot_manager.get_team_data_manager()
         if existing_tdm and existing_tdm.teams:
-            await send_response(interaction, error_view(
-                f"현재 {len(existing_tdm.teams)}개 팀이 등록된 스크림이 진행 중입니다.\n"
-                "초기화가 필요하면 관리 버튼을 사용하세요."
-            ))
-            return
+            from commands.scrim import _is_scrim_expired
+            if not _is_scrim_expired(existing_tdm):
+                await send_response(interaction, error_view(
+                    f"현재 {len(existing_tdm.teams)}개 팀이 등록된 스크림이 진행 중입니다."
+                ))
+                return
 
         team_data_manager = await bot_manager.reset_team_data_manager(interaction.client)
         # 대시보드 메시지 ID 유지

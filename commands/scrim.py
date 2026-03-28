@@ -19,6 +19,30 @@ logger = get_logger('scrim')
 SCRIM_CHANNEL_ID = settings.SCRIM_CHANNEL_ID
 
 
+def _is_scrim_expired(team_data_manager) -> bool:
+    """스크림이 만료되었는지 확인합니다 (스크림 당일 22시 기준)."""
+    from datetime import date
+
+    if not team_data_manager.scrim_day or not team_data_manager.scrim_month:
+        return True
+
+    try:
+        now = get_current_kst_time()
+        today = now.date()
+        scrim_date = date(now.year, team_data_manager.scrim_month, team_data_manager.scrim_day)
+
+        if (scrim_date - today).days > 180:
+            scrim_date = date(now.year - 1, team_data_manager.scrim_month, team_data_manager.scrim_day)
+
+        if scrim_date < today:
+            return True
+        if scrim_date == today and now.hour >= 22:
+            return True
+        return False
+    except ValueError:
+        return True
+
+
 async def _refresh_scrim_dashboard(channel: discord.TextChannel) -> None:
     """스크림 대시보드 메시지를 현재 상태로 갱신합니다."""
     from commands.ui.views import TeamInputView, ScrimIdleView
@@ -66,6 +90,14 @@ async def setup_scrim_dashboard(client: ScrimBot) -> None:
 
     team_data_manager = BotManager.get_instance().get_team_data_manager()
     team_data_manager.scrim_channel_id = SCRIM_CHANNEL_ID
+
+    # 만료된 스크림이면 초기화하여 ScrimIdleView로 전환
+    if team_data_manager.scrim_day is not None and _is_scrim_expired(team_data_manager):
+        old_msg_id = team_data_manager.dashboard_message_id
+        team_data_manager = await BotManager.get_instance().reset_team_data_manager()
+        team_data_manager.dashboard_message_id = old_msg_id
+        team_data_manager.scrim_channel_id = SCRIM_CHANNEL_ID
+        logger.info("[스크림] 만료된 스크림 자동 초기화")
 
     await _refresh_scrim_dashboard(channel)
 
