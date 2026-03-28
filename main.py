@@ -20,7 +20,7 @@ from bot.events import on_message as handle_message
 from bot.manager import BotManager
 from commands.room_code import 방코드
 from commands.schedule import setup_schedule_dashboard
-from commands.scrim import 스크림
+from commands.scrim import setup_scrim_dashboard
 from commands.scrim_csv_assign import 조편성_csv
 from commands.warning import 제재부여
 from commands.ui.layout_helpers import error_view, send_response
@@ -85,6 +85,11 @@ async def _bootstrap_on_ready(client: ScrimBot, logger) -> None:
         logger.info("[시작] 경고 관리 시스템 초기화 완료")
 
     try:
+        await setup_scrim_dashboard(client)
+    except Exception as e:
+        logger.error(f"[시작] 스크림 대시보드 연동 실패: {e}", exc_info=True)
+
+    try:
         await setup_schedule_dashboard(client)
     except Exception as e:
         logger.error(f"[시작] 일정 대시보드 연동 실패: {e}", exc_info=True)
@@ -139,14 +144,6 @@ def _register_app_commands(client: ScrimBot) -> None:
     )
     async def room_code_command(interaction: discord.Interaction, room_code: str):
         await 방코드(interaction, room_code)
-
-    @client.tree.command(
-        name="스크림",
-        description="스크림을 시작합니다",
-        guild=discord.Object(id=settings.GUILD_ID),
-    )
-    async def scrim_command(interaction: discord.Interaction):
-        await 스크림(interaction)
 
     @client.tree.context_menu(
         name="조편성", guild=discord.Object(id=settings.GUILD_ID)

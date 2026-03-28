@@ -1,153 +1,71 @@
 """
-스크림 명령어
+스크림 대시보드
+
+지정 채널에 스크림 대시보드 메시지를 유지합니다.
+봇 시작 시 기존 메시지를 찾아 뷰를 재등록하고, 없으면 새로 생성합니다.
 """
+import asyncio
+
 import discord
 
+from bot.client import ScrimBot
 from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
-from commands.ui.layout_helpers import error_view, send_response
-from commands.ui.views import ScrimResetConfirmView, TeamInputView
 from utils.helpers import get_current_kst_time, get_next_scrim_date, is_admin
 
 logger = get_logger('scrim')
 
+SCRIM_CHANNEL_ID = 1444006965331234896
 
-async def 스크림(interaction: discord.Interaction) -> None:
-    """스크림 명령어 처리"""
-    try:
-        # 관리자 권한 확인
-        if not is_admin(interaction.user):
-            await _send_error_message(interaction, "관리자 권한이 없습니다.")
-            return
-        
-        # 현재 시간 기준으로 다음 스크림 날짜 자동 계산
-        current_time = get_current_kst_time()
-        date_info = get_next_scrim_date(current_time)
-        scrim_day = date_info["day"]
-        scrim_month = date_info["month"]
-        scrim_weekday = date_info["weekday_name"]
 
-        bot_manager = BotManager.get_instance()
+async def _refresh_scrim_dashboard(channel: discord.TextChannel) -> None:
+    """스크림 대시보드 메시지를 현재 상태로 갱신합니다."""
+    from commands.ui.views import TeamInputView, ScrimIdleView
 
-        # 진행 중인 스크림이 있으면 확인 요청 (22시 이후면 자동 초기화)
-        existing_tdm = bot_manager.get_team_data_manager()
-        if existing_tdm and existing_tdm.teams:
-            if not _is_scrim_expired(existing_tdm, current_time):
-                if existing_tdm.is_team_assignment_started:
-                    description = (
-                        f"⚠️ **조편성이 이미 완료된 상태입니다!**\n"
-                        f"현재 **{len(existing_tdm.teams)}개 팀**이 등록되어 있고, "
-                        f"조별 채널에 공지가 전송된 상태입니다.\n\n"
-                        f"초기화하면 모든 팀 데이터, 조편성 결과, 밴/날씨 정보가 삭제됩니다.\n\n"
-                        f"정말 초기화하시겠습니까?"
-                    )
-                else:
-                    description = (
-                        f"현재 **{len(existing_tdm.teams)}개 팀**이 등록되어 있습니다.\n"
-                        f"초기화하면 모든 팀 데이터가 삭제됩니다.\n\n"
-                        f"초기화하시겠습니까?"
-                    )
-                confirm_view = ScrimResetConfirmView(
-                    description=description
-                )
-                await interaction.response.send_message(view=confirm_view, ephemeral=True)
-                confirm_view.message = await interaction.original_response()
+    team_data_manager = BotManager.get_instance().get_team_data_manager()
 
-                # 사용자 응답 대기
-                await confirm_view.wait()
-                if not confirm_view.confirmed:
-                    return
+    # 활성 스크림이 있는지 판단
+    has_scrim = team_data_manager.scrim_day is not None
 
-        # 전역 team_data_manager 새로 생성하여 이전 스크림 데이터 완전 초기화
-        # 이전 태스크가 완전히 종료될 때까지 대기합니다
-        team_data_manager = await bot_manager.reset_team_data_manager(interaction.client)
-        
-        # 새 스크림 세팅 (이전 데이터가 완전히 초기화된 후 실행)
-        await team_data_manager.initialize_new_scrim(
-            scrim_day=scrim_day,
-            scrim_month=scrim_month,
-            scrim_channel_id=interaction.channel_id
-        )
-        
-        
-        # 자동 조편성 태스크 시작
-        import asyncio
-        team_data_manager.auto_assignment_task = asyncio.create_task(
-            team_data_manager.check_and_auto_assign()
-        )
-        
-        # MMR 업데이트 루프 시작
-        team_data_manager.mmr_update_task = asyncio.create_task(
-            team_data_manager.mmr_update_loop()
-        )
-        
-        # 팀 입력 뷰 생성
+    if has_scrim:
+        date_info = get_next_scrim_date()
         view = TeamInputView(
-            scrim_day=scrim_day,
-            scrim_month=scrim_month,
-            scrim_weekday=scrim_weekday,
+            scrim_day=team_data_manager.scrim_day,
+            scrim_month=team_data_manager.scrim_month,
+            scrim_weekday=date_info['weekday_name'],
         )
+    else:
+        view = ScrimIdleView()
 
-        # 응답 전송 (확인 뷰로 이미 응답한 경우 channel.send 사용)
-        if interaction.response.is_done():
-            await interaction.channel.send(view=view)
-        else:
-            await interaction.response.send_message(view=view)
-        
-        # MMR 메시지 즉시 전송 (팀 여부와 상관없이)
+    # 기존 메시지 갱신 또는 새로 생성
+    if team_data_manager.dashboard_message_id:
         try:
-            # 조편성이 시작되지 않은 경우에만 MMR 갱신
-            if not team_data_manager.is_team_assignment_started:
-                # 팀이 있는 경우 MMR 갱신도 함께 진행
-                if team_data_manager.teams:
-                    await team_data_manager._update_all_team_mmr()
-                
-                await team_data_manager.update_mmr_message(interaction.channel)
-        except Exception as e:
-            logger.error(f"[명령어] MMR 갱신 실패: {e}", exc_info=True)
-        
-    except Exception as e:
-        logger.error(f"[명령어] 스크림 명령어 처리 실패: {e}", exc_info=True)
-        await _send_error_message(interaction, "스크림 명령어 처리 중 오류가 발생했습니다.")
+            msg = await channel.fetch_message(team_data_manager.dashboard_message_id)
+            await msg.edit(view=view, content=None, embed=None)
+            return
+        except (discord.NotFound, discord.HTTPException):
+            pass
+
+    msg = await channel.send(view=view)
+    team_data_manager.dashboard_message_id = msg.id
+    team_data_manager._save_backup()
 
 
+async def setup_scrim_dashboard(client: ScrimBot) -> None:
+    """봇 시작 시 스크림 대시보드를 연동합니다."""
+    guild = client.guilds[0] if client.guilds else None
+    if not guild:
+        logger.warning("[스크림] 서버를 찾을 수 없습니다.")
+        return
 
+    channel = guild.get_channel(SCRIM_CHANNEL_ID)
+    if not channel:
+        logger.warning("[스크림] 대시보드 채널을 찾을 수 없습니다.")
+        return
 
-def _is_scrim_expired(team_data_manager, current_time) -> bool:
-    """이전 스크림이 만료되었는지 확인합니다 (스크림 당일 22시 기준)."""
-    from datetime import date
+    team_data_manager = BotManager.get_instance().get_team_data_manager()
+    team_data_manager.scrim_channel_id = SCRIM_CHANNEL_ID
 
-    if not team_data_manager.scrim_day or not team_data_manager.scrim_month:
-        return True
-
-    try:
-        today = current_time.date()
-        scrim_date = date(current_time.year, team_data_manager.scrim_month, team_data_manager.scrim_day)
-
-        # 스크림 날짜가 6개월 이상 미래이면 작년 스크림으로 판단
-        if (scrim_date - today).days > 180:
-            scrim_date = date(current_time.year - 1, team_data_manager.scrim_month, team_data_manager.scrim_day)
-
-        if scrim_date < today:
-            return True
-        if scrim_date == today and current_time.hour >= 22:
-            return True
-        return False
-    except ValueError:
-        return True
-
-
-async def _send_error_message(interaction: discord.Interaction, message: str) -> None:
-    """에러 메시지를 전송합니다."""
-    try:
-        await send_response(interaction, error_view(message))
-    except Exception as e:
-        logger.error(f"[명령어] 에러 메시지 전송 실패: {e}", exc_info=True)
-        try:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"오류: {message}", ephemeral=True)
-            else:
-                await interaction.followup.send(f"오류: {message}", ephemeral=True)
-        except Exception as e2:
-            logger.error(f"[명령어] 최후의 수단 메시지 전송 실패: {e2}", exc_info=True)
+    await _refresh_scrim_dashboard(channel)
+    logger.info("[스크림] 대시보드 연동 완료")

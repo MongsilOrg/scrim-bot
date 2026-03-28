@@ -57,6 +57,86 @@ if TYPE_CHECKING:
 logger = get_logger('views')
 
 
+class ScrimIdleView(LayoutView):
+    """스크림 대기 상태 뷰 — 활성 스크림이 없을 때 표시"""
+
+    def __init__(self):
+        super().__init__(timeout=None)
+
+        self.add_item(Container(
+            TextDisplay(content="## 🏆 스크림\n현재 진행 중인 스크림이 없습니다."),
+            Separator(),
+            TextDisplay(content=FOOTER_TEXT),
+            accent_colour=Color.greyple(),
+        ))
+
+        self.start_button = Button(
+            label="스크림 시작",
+            style=ButtonStyle.success,
+            emoji="🚀",
+        )
+        self.start_button.callback = self.start_callback
+        self.add_item(ActionRow(self.start_button))
+
+    async def start_callback(self, interaction: discord.Interaction) -> None:
+        """스크림 시작 버튼 — 관리자만 새 스크림을 시작합니다"""
+        if await _check_cooldown(interaction):
+            return
+        if not is_admin(interaction.user):
+            await send_response(interaction, permission_error_view())
+            return
+
+        import asyncio
+        from utils.helpers import get_next_scrim_date
+
+        bot_manager = BotManager.get_instance()
+        date_info = get_next_scrim_date()
+
+        # 기존 스크림이 있으면 확인
+        existing_tdm = bot_manager.get_team_data_manager()
+        if existing_tdm and existing_tdm.teams:
+            await send_response(interaction, error_view(
+                f"현재 {len(existing_tdm.teams)}개 팀이 등록된 스크림이 진행 중입니다.\n"
+                "초기화가 필요하면 관리 버튼을 사용하세요."
+            ))
+            return
+
+        team_data_manager = await bot_manager.reset_team_data_manager(interaction.client)
+        # 대시보드 메시지 ID 유지
+        old_msg_id = existing_tdm.dashboard_message_id if existing_tdm else None
+        if old_msg_id:
+            team_data_manager.dashboard_message_id = old_msg_id
+
+        await team_data_manager.initialize_new_scrim(
+            scrim_day=date_info['day'],
+            scrim_month=date_info['month'],
+            scrim_channel_id=interaction.channel_id,
+        )
+
+        team_data_manager.auto_assignment_task = asyncio.create_task(
+            team_data_manager.check_and_auto_assign()
+        )
+        team_data_manager.mmr_update_task = asyncio.create_task(
+            team_data_manager.mmr_update_loop()
+        )
+
+        await send_response(interaction, success_view(
+            f"**{date_info['month']}/{date_info['day']} ({date_info['weekday_name']})** 스크림이 시작되었습니다.",
+            title="🚀 스크림 시작",
+        ))
+
+        # 대시보드 갱신
+        from commands.scrim import _refresh_scrim_dashboard
+        await _refresh_scrim_dashboard(interaction.channel)
+
+        # MMR 메시지 전송
+        try:
+            if not team_data_manager.is_team_assignment_started:
+                await team_data_manager.update_mmr_message(interaction.channel)
+        except Exception as e:
+            logger.error(f"[스크림] MMR 메시지 전송 실패: {e}", exc_info=True)
+
+
 class TeamInputView(LayoutView):
     """
     팀 입력 및 관리 뷰

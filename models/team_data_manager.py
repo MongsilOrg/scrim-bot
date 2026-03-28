@@ -58,6 +58,7 @@ class TeamDataManager:
         self.groups: Optional[List[List[Tuple[str, TeamData, float]]]] = None
         self.group_message_ids: Dict[str, int] = {}  # "A" → message_id
         self.group_message_texts: Dict[str, str] = {}  # "A" → message_text
+        self.dashboard_message_id: Optional[int] = None  # 스크림 대시보드 메시지 ID
     
     def _save_backup(self) -> None:
         """팀 데이터를 JSON 파일로 백업합니다 (날짜 메타데이터 포함)."""
@@ -94,6 +95,7 @@ class TeamDataManager:
                 'groups': serialized_groups,
                 'group_message_ids': self.group_message_ids,
                 'group_message_texts': self.group_message_texts,
+                'dashboard_message_id': self.dashboard_message_id,
                 'ban_lists': bot_manager._ban_lists,
                 'selected_weathers': bot_manager._selected_weathers,
             }
@@ -156,6 +158,8 @@ class TeamDataManager:
             saved_msg_texts = data.get('group_message_texts')
             if saved_msg_texts:
                 self.group_message_texts = saved_msg_texts
+
+            self.dashboard_message_id = data.get('dashboard_message_id')
 
             # BotManager에 밴/날씨 데이터 주입
             from bot.manager import BotManager
