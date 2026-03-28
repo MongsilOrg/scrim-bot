@@ -51,7 +51,7 @@ def get_notion_data():
 def check_notion_for_tags():
     kst = timezone(timedelta(hours=9))
     now = datetime.now(kst)
-    today = now.date()
+    today = now.date() + timedelta(days=1) if now.hour >= 22 else now.date()
     tomorrow = (now + timedelta(days=1)).date()
 
     results = get_notion_data()
