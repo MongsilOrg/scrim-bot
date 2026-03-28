@@ -300,6 +300,7 @@ class TeamDataManager:
         self.scrim_day = scrim_day
         self.scrim_month = scrim_month
         self.scrim_channel_id = scrim_channel_id
+        self._save_backup()
         self.log_state_snapshot(prefix="initialize_new_scrim")
 
     def _cancel_task(self, task: Optional[asyncio.Task], label: str) -> None:
