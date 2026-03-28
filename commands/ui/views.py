@@ -69,8 +69,10 @@ class TeamInputView(LayoutView):
         title = f"🏆 {scrim_month}/{scrim_day} ({scrim_weekday}) 스크림"
         schedule = (
             "📋 **일정**\n"
+            "`~17:00` 팀 등록/수정 마감\n"
             "`17:00` 자동 조편성\n"
-            "`20:00` 스크림 시작 (4라운드)"
+            "`20:00` 스크림 시작 (4라운드)\n"
+            "`22:00` 다음날 스크림 자동 전환"
         )
 
         children = [
@@ -220,121 +222,100 @@ class TeamInputView(LayoutView):
     async def _process_team_registration(self, interaction: discord.Interaction, team_name: str, team_data: dict, temp_message: discord.Message = None) -> None:
         """팀 등록 처리"""
         try:
-            # 현재 시간 확인
             current_time = get_current_kst_time()
-            
-            # 전역 team_data_manager 인스턴스 사용 (순환 참조 방지)
             team_data_manager = BotManager.get_instance().get_team_data_manager()
-            
-            # 조편성 시작 이후인지 확인
-            if team_data_manager.is_team_assignment_started:
-                if temp_message:
-                    await update_temp_message(temp_message, "17시 조편성이 완료되어 팀 등록이 불가능합니다. 다음 스크림에 신청해주세요.", discord.Color.red())
-                else:
-                    await send_error_message(interaction, "17시 조편성이 완료되어 팀 등록이 불가능합니다. 다음 스크림에 신청해주세요.")
-                return
-            
-            # 팀 등록 가능 여부 확인
-            is_allowed, error_message = await team_data_manager.check_team_registration_allowed(current_time)
-            
-            if not is_allowed:
-                if temp_message:
-                    await update_temp_message(temp_message, error_message, discord.Color.red())
-                else:
-                    await send_error_message(interaction, error_message)
-                return
-            
-            # 팀원 목록 생성
-            if isinstance(team_data, dict):
-                team_members = team_data.get('players', []) + team_data.get('staff', [])
-            else:
-                team_members = team_data
-            
-            # 봇으로 등록된 팀들과 중복 검사
-            is_bot_valid, bot_error = team_data_manager.check_duplicate_with_bot_teams(team_name, team_members)
-            if not is_bot_valid:
-                if temp_message:
-                    await update_temp_message(temp_message, bot_error, discord.Color.red())
-                else:
-                    await send_error_message(interaction, bot_error)
-                return
-            
-            # 팀원 중 테스트 계정이 있는지 확인
-            team_processor = BotManager.get_instance().get_team_processor()
-            
-            has_test_account = any(team_processor._is_test_account(member) for member in team_members)
 
-            # 닉네임 검증 (테스트 계정이 없는 경우에만)
-            if not has_test_account:
-                # 디스코드 서버 멤버 검증 (로컬, API 호출 전에 먼저 수행)
+            # ── 1단계: 로컬 검증 (즉시, 네트워크 불필요) ──
+            errors = []
+
+            if team_data_manager.is_team_assignment_started:
+                errors.append("17시 조편성이 완료되어 팀 등록이 불가능합니다. 다음 스크림에 신청해주세요.")
+
+            if not errors:
+                is_allowed, err = await team_data_manager.check_team_registration_allowed(current_time)
+                if not is_allowed:
+                    errors.append(err)
+
+            team_members = team_data.get('players', []) + team_data.get('staff', []) if isinstance(team_data, dict) else team_data
+
+            if not errors:
+                is_bot_valid, bot_err = team_data_manager.check_duplicate_with_bot_teams(team_name, team_members)
+                if not is_bot_valid:
+                    errors.append(bot_err)
+
+            if not errors:
                 from utils.validators import validate_members_in_guild
                 client = BotManager.get_instance().get_client()
                 guild = client.get_guild(settings.GUILD_ID) if client else None
-
                 if guild:
-                    is_guild_valid, not_found_members = validate_members_in_guild(guild, team_members)
+                    is_guild_valid, not_found = validate_members_in_guild(guild, team_members)
                     if not is_guild_valid:
-                        not_found_str = ', '.join(not_found_members)
-                        error_msg = (
-                            f"❌ 다음 닉네임이 디스코드 서버에서 확인되지 않습니다.\n\n"
-                            f"**{not_found_str}**\n\n"
-                            f"💡 디스코드 서버 닉네임과 동일하게 입력해주세요."
-                        )
-                        if temp_message:
-                            await update_temp_message(temp_message, error_msg, discord.Color.red())
-                        else:
-                            await send_error_message(interaction, error_msg)
-                        return
+                        errors.append(f"❌ 디스코드 서버에서 확인되지 않는 닉네임: **{', '.join(not_found)}**")
 
-                # API 닉네임 검증 (게임 내 닉네임 확인)
+            # 로컬 검증 실패 시 즉시 반환 (네트워크 호출 생략)
+            if errors:
+                msg = '\n'.join(errors)
+                if temp_message:
+                    await update_temp_message(temp_message, msg, discord.Color.red())
+                else:
+                    await send_error_message(interaction, msg)
+                return
+
+            # ── 2단계: API 검증 (네트워크, 병렬) ──
+            team_processor = BotManager.get_instance().get_team_processor()
+            has_test_account = any(team_processor._is_test_account(m) for m in team_members)
+
+            if not has_test_account:
+                import asyncio as _aio
                 api_invalid_members = []
                 is_maintenance = False
                 api_error = False
                 try:
-                    async with BSERAPIClient() as client_instance:
-                        for member in team_members:
-                            if not await client_instance.get_user_uid(member):
+                    async with BSERAPIClient() as api:
+                        results = await _aio.gather(
+                            *[api.get_user_uid(m) for m in team_members],
+                            return_exceptions=True,
+                        )
+                        for member, result in zip(team_members, results):
+                            if isinstance(result, Exception) or not result:
                                 api_invalid_members.append(member)
 
-                        # 과반수 이상 조회 실패 시 서버 점검 확인
                         if api_invalid_members and len(api_invalid_members) >= len(team_members) / 2:
                             try:
-                                is_maintenance = await client_instance.check_server_maintenance()
-                            except Exception as e:
-                                logger.warning(f"[뷰] 서버 점검 확인 실패: {e}")
+                                is_maintenance = await api.check_server_maintenance()
+                            except Exception:
+                                pass
                 except Exception as e:
                     logger.error(f"[뷰] API 닉네임 검증 실패: {e}", exc_info=True)
                     api_error = True
-                    # 예외 발생 시에도 점검 여부 확인 시도
                     try:
-                        async with BSERAPIClient() as check_client:
-                            is_maintenance = await check_client.check_server_maintenance()
+                        async with BSERAPIClient() as check:
+                            is_maintenance = await check.check_server_maintenance()
                     except Exception:
                         pass
 
-                # 점검 중이면 점검 안내 우선 출력
                 if is_maintenance:
-                    error_msg = "🔧 현재 이터널 리턴 서버가 점검 중입니다.\n\n점검이 끝난 후 다시 신청해주세요."
+                    msg = "🔧 현재 이터널 리턴 서버가 점검 중입니다.\n점검이 끝난 후 다시 신청해주세요."
                     if temp_message:
-                        await update_temp_message(temp_message, error_msg, discord.Color.orange())
+                        await update_temp_message(temp_message, msg, discord.Color.orange())
                     else:
-                        await send_error_message(interaction, error_msg)
+                        await send_error_message(interaction, msg)
                     return
 
-                # API 예외로 검증 자체가 실패한 경우
                 if api_error:
+                    msg = "게임 서버 연결 실패. 잠시 후 다시 시도해주세요."
                     if temp_message:
-                        await update_temp_message(temp_message, "닉네임 확인 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.", discord.Color.red())
+                        await update_temp_message(temp_message, msg, discord.Color.red())
                     else:
-                        await send_error_message(interaction, "닉네임 확인 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.")
+                        await send_error_message(interaction, msg)
                     return
 
                 if api_invalid_members:
-                    error_msg = f"❌ 다음 닉네임들을 찾을 수 없습니다.\n**{', '.join(api_invalid_members) if api_invalid_members and isinstance(api_invalid_members, (list, tuple)) else str(api_invalid_members)}**\n\n💡 게임 내 닉네임을 정확히 입력했는지 확인해주세요."
+                    msg = f"❌ 게임 내에서 확인되지 않는 닉네임: **{', '.join(api_invalid_members)}**\n💡 게임 내 닉네임을 정확히 입력해주세요."
                     if temp_message:
-                        await update_temp_message(temp_message, error_msg, discord.Color.red())
+                        await update_temp_message(temp_message, msg, discord.Color.red())
                     else:
-                        await send_error_message(interaction, error_msg)
+                        await send_error_message(interaction, msg)
                     return
             
             # MMR 계산 (team_data dict에 mmr 필드가 설정됨)
