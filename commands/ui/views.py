@@ -69,10 +69,8 @@ class TeamInputView(LayoutView):
         title = f"🏆 {scrim_month}/{scrim_day} ({scrim_weekday}) 스크림"
         schedule = (
             "📋 **일정**\n"
-            "`~17:00` 팀 등록/수정 마감\n"
-            "`17:00` 자동 조편성\n"
-            "`20:00` 스크림 시작 (4라운드)\n"
-            "`22:00` 다음날 스크림 자동 전환"
+            "`17:00` 팀 등록 마감 · 조편성\n"
+            "`20:00` 스크림 시작 (4라운드)"
         )
 
         children = [
