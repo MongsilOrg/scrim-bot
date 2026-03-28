@@ -432,8 +432,32 @@ class TeamEditModal(Modal):
             )
             await team_data_manager.replace_team(self.original_team_name, team_data_obj, new_team_mmr)
             
-            # 로그 기록
-            team_data_manager.log_action("수정", interaction.user, new_team_name)
+            # 변경사항 diff 계산
+            if isinstance(self.original_team_data, dict):
+                old_players = set(self.original_team_data.get('players', []))
+                old_staff = set(self.original_team_data.get('staff', []))
+            else:
+                old_players = set(getattr(self.original_team_data, 'players', []))
+                old_staff = set(getattr(self.original_team_data, 'staff', []))
+            new_players = set(new_team_data['players'])
+            new_staff = set(new_team_data['staff'])
+
+            added = (new_players | new_staff) - (old_players | old_staff)
+            removed = (old_players | old_staff) - (new_players | new_staff)
+
+            has_change = (self.original_team_name != new_team_name) or added or removed
+            if has_change:
+                players_str = ', '.join(new_team_data['players'])
+                staff_str = ', '.join(new_team_data['staff']) if new_team_data['staff'] else '(없음)'
+                parts = []
+                if self.original_team_name != new_team_name:
+                    parts.append(f"{self.original_team_name} → {new_team_name}")
+                if removed:
+                    parts.append(f"{', '.join(sorted(removed))} → {', '.join(sorted(added))}" if added else f"-{', '.join(sorted(removed))}")
+                elif added:
+                    parts.append(f"+{', '.join(sorted(added))}")
+                detail = ' · '.join(parts) + f" · 선수: {players_str} · 스태프: {staff_str}"
+                team_data_manager.log_action("수정", interaction.user, new_team_name, detail=detail)
             
             # 변경된 팀 데이터 업데이트 (조 내 팀 수정 시에만)
             from commands.ui.views import GroupRosterView
