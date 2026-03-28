@@ -53,9 +53,10 @@ async def _transition_to_next_scrim(client: ScrimBot, channel: discord.TextChann
     old_tdm = bot_manager.get_team_data_manager()
     old_msg_id = old_tdm.dashboard_message_id
 
-    # 리셋 + 새 스크림 설정
+    # 리셋 + 새 스크림 설정 (dashboard_message_id 보존)
     team_data_manager = await bot_manager.reset_team_data_manager(client)
-    team_data_manager.dashboard_message_id = old_msg_id
+    if old_msg_id:
+        team_data_manager.dashboard_message_id = old_msg_id
     team_data_manager.scrim_channel_id = SCRIM_CHANNEL_ID
 
     date_info = get_next_scrim_date()
@@ -65,6 +66,10 @@ async def _transition_to_next_scrim(client: ScrimBot, channel: discord.TextChann
         scrim_channel_id=SCRIM_CHANNEL_ID,
     )
 
+    # 대시보드 갱신 (메시지 ID가 확정된 후 백업)
+    await _refresh_scrim_dashboard(channel)
+    team_data_manager._save_backup()
+
     # 태스크 시작
     team_data_manager.auto_assignment_task = asyncio.create_task(
         team_data_manager.check_and_auto_assign()
@@ -72,9 +77,6 @@ async def _transition_to_next_scrim(client: ScrimBot, channel: discord.TextChann
     team_data_manager.mmr_update_task = asyncio.create_task(
         team_data_manager.mmr_update_loop()
     )
-
-    # 대시보드 갱신
-    await _refresh_scrim_dashboard(channel)
 
     # MMR 메시지 생성
     try:
