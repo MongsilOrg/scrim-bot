@@ -984,55 +984,6 @@ class AdminView(LayoutView):
                 pass
 
 
-class ScrimResetConfirmView(LayoutView):
-    """
-    스크림 초기화 확인 뷰
-
-    진행 중인 스크림이 있을 때 /스크림 명령어 실행 시 확인을 받습니다.
-    """
-
-    def __init__(self, *, description: str = ""):
-        super().__init__(timeout=30)
-        self.confirmed: Optional[bool] = None
-        self.message: Optional[discord.Message] = None
-
-        # Container (안내 텍스트)
-        text = description if description else "초기화하시겠습니까?"
-        self.add_item(Container(
-            TextDisplay(content=f"## ⚠️ 진행 중인 스크림이 있습니다\n{text}"),
-            Separator(),
-            TextDisplay(content=FOOTER_TEXT),
-            accent_colour=Color.orange(),
-        ))
-
-        # ActionRow (확인/취소 버튼)
-        self.confirm_button = Button(label="초기화", style=ButtonStyle.danger, emoji="⚠️")
-        self.confirm_button.callback = self.confirm_callback
-        self.cancel_button = Button(label="취소", style=ButtonStyle.secondary, emoji="↩️")
-        self.cancel_button.callback = self.cancel_callback
-        self.add_item(ActionRow(self.confirm_button, self.cancel_button))
-
-    async def confirm_callback(self, interaction: discord.Interaction) -> None:
-        self.confirmed = True
-        self.confirm_button.disabled = True
-        self.cancel_button.disabled = True
-        await interaction.response.edit_message(view=self)
-        self.stop()
-
-    async def cancel_callback(self, interaction: discord.Interaction) -> None:
-        self.confirmed = False
-        self.confirm_button.disabled = True
-        self.cancel_button.disabled = True
-        await interaction.response.edit_message(view=info_view("스크림 초기화가 취소되었습니다."), embed=None, content=None)
-        self.stop()
-
-    async def on_timeout(self) -> None:
-        self.confirmed = None
-        if self.message:
-            try:
-                await self.message.edit(view=timeout_view(), embed=None, content=None)
-            except Exception:
-                pass
 
 
 # ---------------------------------------------------------------------------
