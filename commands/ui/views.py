@@ -1078,8 +1078,8 @@ class ScrimResetConfirmView(LayoutView):
 class ScheduleView(LayoutView):
     """주간 일정 관리 뷰
 
-    관리자들이 참가 가능한 요일을 선택하고 불참 사유를 입력할 수 있습니다.
-    현황 표시 + 등록/불참/편성 버튼을 포함합니다.
+    관리자들이 참가/불참을 등록하고 편성·투입을 관리합니다.
+    현황 표시 + 일정등록/응답삭제/편성/투입 버튼을 포함합니다.
     """
 
     def __init__(self, status_text: str, *, has_assignments: bool = False):
@@ -1097,18 +1097,18 @@ class ScheduleView(LayoutView):
 
         # 버튼 ActionRow
         self.register_button = Button(
-            label="참가",
+            label="일정 등록",
             style=ButtonStyle.primary,
             emoji="✏️",
         )
         self.register_button.callback = self.register_callback
 
-        self.absence_button = Button(
-            label="불참",
-            style=ButtonStyle.secondary,
-            emoji="🚫",
+        self.reset_button = Button(
+            label="응답 삭제",
+            style=ButtonStyle.danger,
+            emoji="🗑️",
         )
-        self.absence_button.callback = self.absence_callback
+        self.reset_button.callback = self.reset_callback
 
         self.assign_button = Button(
             label="편성",
@@ -1126,13 +1126,13 @@ class ScheduleView(LayoutView):
 
         self.add_item(ActionRow(
             self.register_button,
-            self.absence_button,
+            self.reset_button,
             self.assign_button,
             self.deploy_button,
         ))
 
     async def register_callback(self, interaction: discord.Interaction) -> None:
-        """요일 등록 버튼 — 체크박스 모달 표시"""
+        """일정 등록 버튼 — 참가/불참 통합 모달 표시"""
         if await _check_cooldown(interaction):
             return
         if not is_admin(interaction.user):
@@ -1144,17 +1144,18 @@ class ScheduleView(LayoutView):
             await send_response(interaction, error_view("주간 일정이 초기화되지 않았습니다."))
             return
         if schedule_mgr.assignments:
-            await send_response(interaction, error_view("편성이 완료된 상태에서는 참가를 수정할 수 없습니다.\n편성 취소 후 다시 시도해주세요."))
+            await send_response(interaction, error_view("편성이 완료된 상태에서는 일정을 수정할 수 없습니다.\n편성 취소 후 다시 시도해주세요."))
             return
 
         user_id = str(interaction.user.id)
         current_days = schedule_mgr.availability.get(user_id, set())
+        current_reasons = schedule_mgr.absence_reasons.get(user_id, {})
 
-        from .modals import AvailabilityModal
-        await interaction.response.send_modal(AvailabilityModal(current_days))
+        from .modals import ScheduleModal
+        await interaction.response.send_modal(ScheduleModal(current_days, current_reasons))
 
-    async def absence_callback(self, interaction: discord.Interaction) -> None:
-        """불참 등록 버튼 — 불참 사유 모달 표시"""
+    async def reset_callback(self, interaction: discord.Interaction) -> None:
+        """응답 삭제 버튼 — 본인 응답을 삭제합니다"""
         if await _check_cooldown(interaction):
             return
         if not is_admin(interaction.user):
@@ -1166,11 +1167,19 @@ class ScheduleView(LayoutView):
             await send_response(interaction, error_view("주간 일정이 초기화되지 않았습니다."))
             return
         if schedule_mgr.assignments:
-            await send_response(interaction, error_view("편성이 완료된 상태에서는 불참을 수정할 수 없습니다.\n편성 취소 후 다시 시도해주세요."))
+            await send_response(interaction, error_view("편성이 완료된 상태에서는 응답을 삭제할 수 없습니다.\n편성 취소 후 다시 시도해주세요."))
             return
 
-        from .modals import AbsenceReasonModal
-        await interaction.response.send_modal(AbsenceReasonModal())
+        user_id = str(interaction.user.id)
+        if not schedule_mgr.remove_response(user_id):
+            await send_response(interaction, info_view("삭제할 응답이 없습니다."))
+            return
+
+        await send_response(
+            interaction,
+            success_view("응답이 삭제되었습니다.", title="🗑️ 응답 삭제"),
+        )
+        await _refresh_schedule_status(interaction)
 
     async def assign_callback(self, interaction: discord.Interaction) -> None:
         """편성 버튼 — 상태에 따라 편성/재편성/편성취소 분기"""
@@ -1276,92 +1285,93 @@ class ScheduleView(LayoutView):
             await send_response(interaction, error_view("주간 일정이 편성되지 않았습니다.\n먼저 편성을 실행하세요."))
             return
 
-        from models.schedule_manager import WEEKDAYS, ACTIVE_DAYS
-
-        user_id = str(interaction.user.id)
-
-        # 요일별 버튼 생성
-        day_buttons = []
-        for d in ACTIVE_DAYS:
-            deployed = schedule_mgr.actual_deployments.get(d, [])
-            is_self_deployed = user_id in deployed
-
-            if is_self_deployed:
-                style = ButtonStyle.success
-                label = f"{WEEKDAYS[d]} ✓"
-            else:
-                style = ButtonStyle.primary
-                label = WEEKDAYS[d]
-
-            btn = Button(label=label, style=style)
-
-            def make_day_callback(day_index: int):
-                async def day_btn_callback(day_interaction: discord.Interaction):
-                    uid = str(day_interaction.user.id)
-                    schedule_mgr.toggle_self_deployment(day_index, uid)
-
-                    # 투입 뷰 자체를 갱신된 상태로 다시 표시
-                    updated_buttons = []
-                    for dd in ACTIVE_DAYS:
-                        dep = schedule_mgr.actual_deployments.get(dd, [])
-                        is_dep = uid in dep
-                        if is_dep:
-                            st = ButtonStyle.success
-                            lb = f"{WEEKDAYS[dd]} ✓"
-                        else:
-                            st = ButtonStyle.primary
-                            lb = WEEKDAYS[dd]
-                        b = Button(label=lb, style=st)
-                        b.callback = make_day_callback(dd)
-                        updated_buttons.append(b)
-
-                    my = [WEEKDAYS[dd] for dd in ACTIVE_DAYS if uid in schedule_mgr.actual_deployments.get(dd, [])]
-                    ms = ', '.join(my) if my else "없음"
-
-                    updated_view = LayoutView()
-                    updated_view.add_item(Container(
-                        TextDisplay(
-                            content=f"## ✅ 투입 기록\n"
-                            f"내 투입: **{ms}**\n\n"
-                            f"투입한 요일을 선택하세요. (다시 누르면 해제)"
-                        ),
-                        Separator(),
-                        TextDisplay(content=FOOTER_TEXT),
-                        accent_colour=Color.blue(),
-                    ))
-                    updated_view.add_item(ActionRow(*updated_buttons[:5]))
-                    updated_view.add_item(ActionRow(*updated_buttons[5:]))
-
-                    await day_interaction.response.edit_message(view=updated_view)
-                    await _refresh_schedule_status(day_interaction)
-
-                return day_btn_callback
-
-            btn.callback = make_day_callback(d)
-            day_buttons.append(btn)
-
-        # 현재 본인 투입 현황
-        my_days = [
-            WEEKDAYS[d] for d in ACTIVE_DAYS
-            if user_id in schedule_mgr.actual_deployments.get(d, [])
-        ]
-        my_status = ', '.join(my_days) if my_days else "없음"
-
-        deploy_view = LayoutView()
-        deploy_view.add_item(Container(
-            TextDisplay(
-                content=f"## ✅ 투입 기록\n"
-                f"내 투입: **{my_status}**\n\n"
-                f"투입한 요일을 선택하세요. (다시 누르면 해제)"
-            ),
-            Separator(),
-            TextDisplay(content=FOOTER_TEXT),
-            accent_colour=Color.blue(),
-        ))
-        deploy_view.add_item(ActionRow(*day_buttons[:5]))
-        deploy_view.add_item(ActionRow(*day_buttons[5:]))
+        deploy_view = _build_deploy_view(schedule_mgr, str(interaction.user.id))
         await send_response(interaction, deploy_view)
 
+
+
+def _build_deploy_view(schedule_mgr, user_id: str) -> LayoutView:
+    """투입 기록 뷰를 생성합니다.
+
+    배정된 요일은 눈에 띄게, 미배정 요일은 구분하여 표시합니다.
+    """
+    from models.schedule_manager import WEEKDAYS, ACTIVE_DAYS
+
+    # 본인 배정 요일 파악
+    assigned_days = {
+        d for d in ACTIVE_DAYS
+        if user_id in schedule_mgr.assignments.get(d, [])
+    }
+
+    def _make_day_callback(day_index: int):
+        async def _day_btn_callback(day_interaction: discord.Interaction):
+            uid = str(day_interaction.user.id)
+            schedule_mgr.toggle_self_deployment(day_index, uid)
+            updated_view = _build_deploy_view(schedule_mgr, uid)
+            await day_interaction.response.edit_message(view=updated_view)
+            await _refresh_schedule_status(day_interaction)
+        return _day_btn_callback
+
+    # 배정 요일을 앞에, 미배정 요일을 뒤에 배치
+    assigned_buttons = []
+    extra_buttons = []
+
+    for d in ACTIVE_DAYS:
+        deployed = schedule_mgr.actual_deployments.get(d, [])
+        is_self_deployed = user_id in deployed
+        is_assigned = d in assigned_days
+
+        if is_self_deployed:
+            style = ButtonStyle.success
+            label = f"{WEEKDAYS[d]} ✓"
+        elif is_assigned:
+            style = ButtonStyle.primary
+            label = WEEKDAYS[d]
+        else:
+            style = ButtonStyle.secondary
+            label = WEEKDAYS[d]
+
+        btn = Button(label=label, style=style)
+        btn.callback = _make_day_callback(d)
+
+        if is_assigned:
+            assigned_buttons.append(btn)
+        else:
+            extra_buttons.append(btn)
+
+    # 현재 본인 투입 현황
+    my_days = [
+        WEEKDAYS[d] for d in ACTIVE_DAYS
+        if user_id in schedule_mgr.actual_deployments.get(d, [])
+    ]
+    my_status = ', '.join(my_days) if my_days else "없음"
+
+    # 배정 요일 안내
+    if assigned_days:
+        assigned_str = ', '.join(WEEKDAYS[d] for d in sorted(assigned_days))
+        info_line = f"내 배정: **{assigned_str}** · 내 투입: **{my_status}**"
+    else:
+        info_line = f"배정된 요일이 없습니다. · 내 투입: **{my_status}**"
+
+    deploy_view = LayoutView()
+    deploy_view.add_item(Container(
+        TextDisplay(
+            content=f"## ✅ 투입 기록\n"
+            f"{info_line}\n\n"
+            f"투입한 요일을 선택하세요. (다시 누르면 해제)"
+        ),
+        Separator(),
+        TextDisplay(content=FOOTER_TEXT),
+        accent_colour=Color.blue(),
+    ))
+
+    # ActionRow 당 최대 5개 제한 — 배정 요일 우선 배치 후 분할
+    all_buttons = assigned_buttons + extra_buttons
+    deploy_view.add_item(ActionRow(*all_buttons[:5]))
+    if len(all_buttons) > 5:
+        deploy_view.add_item(ActionRow(*all_buttons[5:]))
+
+    return deploy_view
 
 
 async def _refresh_schedule_status(interaction: discord.Interaction) -> None:
