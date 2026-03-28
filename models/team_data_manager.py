@@ -49,7 +49,7 @@ class TeamDataManager:
         self.auto_assignment_task: Optional[asyncio.Task] = None
         self.mmr_update_task: Optional[asyncio.Task] = None
         self.last_auto_assignment: Optional[datetime] = None
-        self.logs: Dict[str, List] = {"신청": [], "취소": [], "수정": []}
+        self.LOG_CHANNEL_ID: int = 1487384132035022961
         self.is_team_assignment_started: bool = False
         self.mmr_message: Optional[discord.Message] = None
         self.additional_mmr_messages: List[discord.Message] = []
@@ -68,16 +68,6 @@ class TeamDataManager:
             # BotManager에서 밴/날씨 데이터 가져오기
             from bot.manager import BotManager
             bot_manager = BotManager.get_instance()
-
-            # 로그 직렬화 (timestamp → isoformat)
-            serialized_logs = {}
-            for action_type, entries in self.logs.items():
-                serialized_logs[action_type] = []
-                for entry in entries:
-                    serialized_entry = dict(entry)
-                    if 'timestamp' in serialized_entry and hasattr(serialized_entry['timestamp'], 'isoformat'):
-                        serialized_entry['timestamp'] = serialized_entry['timestamp'].isoformat()
-                    serialized_logs[action_type].append(serialized_entry)
 
             # groups 직렬화
             serialized_groups = None
@@ -101,7 +91,6 @@ class TeamDataManager:
                     name: team.to_dict()
                     for name, team in self.teams.items()
                 },
-                'logs': serialized_logs,
                 'groups': serialized_groups,
                 'group_message_ids': self.group_message_ids,
                 'group_message_texts': self.group_message_texts,
@@ -150,16 +139,6 @@ class TeamDataManager:
                 for member in team.all_members:
                     key = self._normalize_member_key(member)
                     self.user_teams[key] = name
-            # 로그 복구 (timestamp를 datetime으로 복원)
-            saved_logs = data.get('logs')
-            if saved_logs:
-                for action_type, entries in saved_logs.items():
-                    if action_type in self.logs:
-                        for entry in entries:
-                            if 'timestamp' in entry and isinstance(entry['timestamp'], str):
-                                entry['timestamp'] = datetime.fromisoformat(entry['timestamp'])
-                        self.logs[action_type] = entries
-
             # groups 복구
             saved_groups = data.get('groups')
             if saved_groups is not None:
@@ -295,7 +274,6 @@ class TeamDataManager:
             self.auto_assignment_task = None
             self.mmr_update_task = None
 
-            self.logs = {"신청": [], "취소": [], "수정": []}
             self.mmr_message = None
             self.additional_mmr_messages = []
             self.is_team_assignment_started = False
@@ -521,22 +499,45 @@ class TeamDataManager:
         except Exception as exc:
             logger.warning(f"[팀데이터] 상태 스냅샷 로깅 실패: {exc}")
 
-    def log_action(self, action_type: str, user: discord.Member, team_name: str) -> None:
-        """액션 로그를 기록합니다."""
+    def log_action(self, action_type: str, user: discord.Member, team_name: str,
+                   *, detail: str = '') -> None:
+        """액션 로그를 Discord 채널로 전송합니다."""
         try:
             current_time = get_current_kst_time()
-            log_entry = {
-                "user": user.display_name,
-                "user_id": user.id,
-                "team": team_name,
-                "time": current_time.strftime('%H:%M'),
-                "timestamp": current_time
-            }
-            
-            self.logs[action_type].append(log_entry)
-            self._save_backup()
+            task = asyncio.create_task(
+                self._send_log_to_channel(action_type, user, team_name, current_time, detail)
+            )
+            self._pending_tasks.add(task)
+            task.add_done_callback(self._pending_tasks.discard)
         except Exception as e:
-            logger.error(f"[팀데이터] 로그 기록 실패: {e}", exc_info=True)
+            logger.error(f"[팀데이터] 로그 전송 실패: {e}", exc_info=True)
+
+    async def _send_log_to_channel(
+        self,
+        action_type: str,
+        user: discord.Member,
+        team_name: str,
+        timestamp: datetime,
+        detail: str = '',
+    ) -> None:
+        """로그 메시지를 지정 채널로 전송합니다."""
+        try:
+            if not self.client:
+                return
+            channel = self.client.get_channel(self.LOG_CHANNEL_ID)
+            if not channel:
+                return
+
+            emoji = {"신청": "📝", "취소": "❌", "수정": "✏️"}.get(action_type, "📌")
+            unix_ts = int(timestamp.timestamp())
+
+            msg = f"{emoji} <t:{unix_ts}:T> **{team_name}** — {user.mention}"
+            if detail:
+                msg += f" · {detail}"
+
+            await channel.send(msg)
+        except Exception as e:
+            logger.error(f"[팀데이터] 로그 채널 전송 실패: {e}", exc_info=True)
 
     async def add_team(
         self,
@@ -660,9 +661,6 @@ class TeamDataManager:
                 # MMR 인덱스 업데이트
                 self._update_mmr_index(team_name, old_mmr, mmr)
 
-    def get_logs(self) -> Dict[str, List]:
-        """로그를 가져옵니다."""
-        return self.logs.copy()
 
     async def replace_team(self, old_team_name: str, new_team: TeamData, new_mmr: float) -> None:
         """기존 팀을 새 팀으로 교체하며 인덱스·MMR 정보를 일관되게 갱신합니다."""

@@ -276,30 +276,18 @@ class TeamInputView(LayoutView):
             await send_error_message(interaction, "팀 수정 모달 표시 중 오류가 발생했습니다.")
     
     async def admin_log_callback(self, interaction: discord.Interaction) -> None:
-        """관리자 로그 버튼 콜백"""
+        """관리자 관리 버튼 콜백"""
         try:
-            # 관리자 권한 확인
             if not is_admin(interaction.user):
                 await send_response(interaction, permission_error_view())
                 return
 
-            # 로그 필드 생성 및 길이 확인
-            log_fields = self._create_log_fields()
+            admin_view = AdminView(self)
+            await send_response(interaction, admin_view)
 
-            # 필드 값이 1024자를 초과하는지 확인
-            use_file = any(len(value) > 1024 for _, value in log_fields)
-
-            # 로그가 너무 길면 텍스트 파일로 전송
-            if use_file:
-                await self._send_log_as_file(interaction)
-            else:
-                # 로그가 짧으면 LayoutView로 전송 (AdminView에 텍스트 + 버튼 포함)
-                admin_view = AdminView(self, log_fields=log_fields)
-                await send_response(interaction, admin_view)
-            
         except Exception as e:
-            logger.error(f"[뷰] 관리자 로그 콜백 처리 실패: {e}", exc_info=True)
-            await send_error_message(interaction, "로그 조회 중 오류가 발생했습니다.")
+            logger.error(f"[뷰] 관리자 콜백 처리 실패: {e}", exc_info=True)
+            await send_error_message(interaction, "관리 메뉴 표시 중 오류가 발생했습니다.")
     
     async def _process_team_registration(self, interaction: discord.Interaction, team_name: str, team_data: dict, temp_message: discord.Message = None) -> None:
         """팀 등록 처리"""
@@ -443,8 +431,6 @@ class TeamInputView(LayoutView):
                     await send_error_message(interaction, error_message)
                 return
             
-            team_data_manager.log_action("신청", interaction.user, team_name)
-            
             # 팀원과 스태프 목록 추출
             if isinstance(team_data, dict):
                 players = team_data.get('players', [])
@@ -452,10 +438,13 @@ class TeamInputView(LayoutView):
             else:
                 players = getattr(team_data, 'players', [])
                 staff = getattr(team_data, 'staff', [])
-            
-            # 성공 메시지 처리
+
             players_str = ', '.join(players) if players else '(없음)'
             staff_str = ', '.join(staff) if staff else '(없음)'
+            team_data_manager.log_action(
+                "신청", interaction.user, team_name,
+                detail=f"선수: {players_str} · 스태프: {staff_str}",
+            )
             logger.info(f"[팀신청] {team_name} | MMR: {team_mmr:.2f} | 선수: [{players_str}] | 스태프: [{staff_str}]")
 
             success_msg = (
@@ -571,10 +560,12 @@ class TeamInputView(LayoutView):
                 await send_response(interaction, error_view(error_message))
                 return
 
-            team_data_manager.log_action("취소", interaction.user, team_name)
-
             players_str = ', '.join(players) if players else '(없음)'
             staff_str = ', '.join(staff) if staff else '(없음)'
+            team_data_manager.log_action(
+                "취소", interaction.user, team_name,
+                detail=f"선수: {players_str} · 스태프: {staff_str}",
+            )
             logger.info(f"[팀취소] {team_name} | 선수: [{players_str}] | 스태프: [{staff_str}]")
 
             # 성공 메시지 전송
@@ -590,100 +581,6 @@ class TeamInputView(LayoutView):
             logger.error(f"[뷰] 팀 취소 실행 실패: {e}", exc_info=True)
             await send_response(interaction, error_view("팀 취소 중 오류가 발생했습니다."))
     
-    def _create_log_fields(self) -> list[tuple[str, str]]:
-        """로그 필드 목록을 생성합니다. [(필드명, 필드값), ...] 형태로 반환합니다."""
-        team_data_manager = BotManager.get_instance().get_team_data_manager()
-        logs = team_data_manager.get_logs()
-
-        fields: list[tuple[str, str]] = []
-
-        for action, emoji in [("신청", "📝"), ("취소", "❌"), ("수정", "✏️")]:
-            if logs[action]:
-                log_lines = []
-                for log in logs[action]:
-                    user_mention = f"<@{log['user_id']}>"
-                    log_lines.append(f"**{log['team']}** {user_mention} `{log['time']}`")
-                log_text = "\n".join(log_lines)
-                if len(log_text) > 1024:
-                    log_text = log_text[:1021] + "..."
-                fields.append((f"{emoji} {action}", log_text))
-
-        return fields
-    
-    async def _send_log_as_file(self, interaction: discord.Interaction) -> None:
-        """로그를 텍스트 파일로 전송합니다."""
-        import tempfile
-        import os
-        from datetime import datetime
-        
-        try:
-            team_data_manager = BotManager.get_instance().get_team_data_manager()
-            logs = team_data_manager.get_logs()
-            
-            # 임시 파일 생성
-            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.txt', delete=False) as f:
-                f.write("=" * 60 + "\n")
-                f.write("스크림 로그\n")
-                f.write("=" * 60 + "\n\n")
-
-                # 신청 로그
-                f.write("📝 신청\n")
-                f.write("-" * 60 + "\n")
-                if logs["신청"]:
-                    for log in logs["신청"]:
-                        f.write(f"[{log['time']}] {log['user']} ({log['user_id']}) - {log['team']}\n")
-                else:
-                    f.write("없음\n")
-                f.write("\n")
-
-                # 취소 로그
-                f.write("❌ 취소\n")
-                f.write("-" * 60 + "\n")
-                if logs["취소"]:
-                    for log in logs["취소"]:
-                        f.write(f"[{log['time']}] {log['user']} ({log['user_id']}) - {log['team']}\n")
-                else:
-                    f.write("없음\n")
-                f.write("\n")
-
-                # 수정 로그
-                f.write("✏️ 수정\n")
-                f.write("-" * 60 + "\n")
-                if logs["수정"]:
-                    for log in logs["수정"]:
-                        f.write(f"[{log['time']}] {log['user']} ({log['user_id']}) - {log['team']}\n")
-                else:
-                    f.write("없음\n")
-
-                temp_file_path = f.name
-            
-            # 파일 크기 확인 (Discord 최대 25MB)
-            file_size = os.path.getsize(temp_file_path)
-            if file_size > 25 * 1024 * 1024:  # 25MB
-                os.unlink(temp_file_path)
-                await send_response(interaction, error_view("로그 파일이 너무 큽니다. (25MB 초과)"))
-                return
-
-            # 파일명 생성
-            current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"scrim_log_{current_time}.txt"
-
-            # 파일 전송 (AdminView에 안내 텍스트 + 버튼 포함)
-            admin_view = AdminView(self, description="로그가 너무 길어 텍스트 파일로 전송합니다.")
-
-            with open(temp_file_path, 'rb') as f:
-                file = discord.File(f, filename=filename)
-                await send_response(interaction, admin_view, files=[file])
-            
-            # 임시 파일 삭제
-            try:
-                os.unlink(temp_file_path)
-            except Exception:
-                pass  # 임시 파일 삭제 실패 (치명적이지 않음)
-                
-        except Exception as e:
-            logger.error(f"[뷰] 로그 파일 전송 실패: {e}", exc_info=True)
-            await send_response(interaction, error_view("로그 파일 생성 중 오류가 발생했습니다."))
 
 
 class GroupRosterView(LayoutView):
@@ -921,25 +818,12 @@ class AdminView(LayoutView):
     로그 텍스트와 CSV 관련 버튼을 함께 포함합니다.
     """
 
-    def __init__(
-        self,
-        original_view: TeamInputView,
-        *,
-        log_fields: list[tuple[str, str]] | None = None,
-        description: str = "",
-    ):
+    def __init__(self, original_view: TeamInputView):
         super().__init__(timeout=None)
         self.original_view = original_view
 
-        # Container (로그 텍스트)
-        if description:
-            children: list = [TextDisplay(content=f"## 📋 스크림 로그\n{description}")]
-        elif log_fields:
-            children: list = [TextDisplay(content="## 📋 스크림 로그")]
-            for name, value in log_fields:
-                children.append(TextDisplay(content=f"**{name}**\n{value}"))
-        else:
-            children: list = [TextDisplay(content="## 📋 스크림 로그\n로그가 없습니다.")]
+        # Container
+        children: list = [TextDisplay(content="## ⚙️ 관리")]
         children.append(Separator())
         children.append(TextDisplay(content=FOOTER_TEXT))
         self.add_item(Container(*children, accent_colour=Color.blue()))
