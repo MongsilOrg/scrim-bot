@@ -16,19 +16,19 @@ def validate_team_name(team_name: str) -> Tuple[bool, str]:
     """팀명 유효성 검사 (글자수 + 허용 문자 체크)
 
     - 한글, 영어, 공백만 허용 (숫자, 특수문자 불가)
-    - 3~8글자
+    - 3~12글자
     """
     if not team_name or not team_name.strip():
         return False, "❌ 팀명을 입력해주세요."
 
     team_name = team_name.strip()
 
-    # 길이 검사 (3~8글자)
+    # 길이 검사 (3~12글자)
     if len(team_name) < 3:
-        return False, "❌ 팀명은 3~8글자여야 합니다.\n\n💡 현재 입력: {0}글자".format(len(team_name))
+        return False, "❌ 팀명은 3~12글자여야 합니다.\n\n💡 현재 입력: {0}글자".format(len(team_name))
 
-    if len(team_name) > 8:
-        return False, "❌ 팀명은 3~8글자여야 합니다.\n\n💡 현재 입력: {0}글자".format(len(team_name))
+    if len(team_name) > 12:
+        return False, "❌ 팀명은 3~12글자여야 합니다.\n\n💡 현재 입력: {0}글자".format(len(team_name))
 
     # 허용 문자 검사 (한글(자음/모음 포함), 영어, 공백만 허용)
     if not re.match(r'^[가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z\s]+$', team_name):

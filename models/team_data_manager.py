@@ -532,7 +532,7 @@ class TeamDataManager:
             emoji = {"신청": "📝", "취소": "❌", "수정": "✏️"}.get(action_type, "📌")
             unix_ts = int(timestamp.timestamp())
 
-            msg = f"{emoji} <t:{unix_ts}:T> **{team_name}** — {user.mention}"
+            msg = f"{emoji} <t:{unix_ts}:t> **{team_name}** — {user.mention}"
             if detail:
                 msg += f" · {detail}"
 

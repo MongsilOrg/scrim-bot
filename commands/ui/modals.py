@@ -46,10 +46,10 @@ class TeamModal(Modal):
 
         # 팀명 입력
         self.team_name_input = TextInput(
-            label="팀명 (3~8글자, 한글/영어)",
+            label="팀명 (3~12글자, 한글/영어)",
             placeholder="예: Team ER",
             min_length=3,
-            max_length=8,
+            max_length=12,
             required=True
         )
         self.add_item(self.team_name_input)
@@ -160,10 +160,10 @@ class TeamEditModal(Modal):
 
         # 팀명 입력
         self.team_name_input = TextInput(
-            label="팀명 (3~8글자, 한글/영어)",
+            label="팀명 (3~12글자, 한글/영어)",
             placeholder="예: Team ER",
             min_length=3,
-            max_length=8,
+            max_length=12,
             required=True,
             default=self.original_team_name
         )
