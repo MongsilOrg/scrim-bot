@@ -1011,11 +1011,11 @@ class TeamDataManager:
                     # 현재 시간 확인
                     current_time = get_current_kst_time()
                     
-                    # 17시 이후에는 MMR 업데이트 중단
-                    if current_time.hour >= 17:
+                    # 17시 이후 또는 조편성 시작 후에는 MMR 업데이트 중단
+                    if current_time.hour >= 17 or team_data_manager.is_team_assignment_started:
                         team_data_manager.mmr_update_task = None
                         return
-                    
+
                     # 팀이 있는 경우 MMR 갱신
                     if team_data_manager.teams:
                         success, fail = await team_data_manager._update_all_team_mmr()
@@ -1092,6 +1092,9 @@ class TeamDataManager:
 
         except Exception as e:
             logger.error(f"[MMR갱신] 전체 팀 MMR 갱신 실패: {e}", exc_info=True)
+
+        if success_count > 0:
+            self._save_backup()
 
         return success_count, fail_count
     def check_duplicate_with_bot_teams(self, team_name: str, team_members: List[str], exclude_team: str = None) -> Tuple[bool, str]:
