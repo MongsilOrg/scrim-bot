@@ -498,8 +498,10 @@ class ScheduleManager:
                 'status_message_id': self.status_message_id,
                 'status_channel_id': self.status_channel_id,
             }
-            with open(BACKUP_PATH, 'w', encoding='utf-8') as f:
+            tmp_path = BACKUP_PATH + '.tmp'
+            with open(tmp_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, BACKUP_PATH)
         except Exception as e:
             logger.error(f"[일정] 백업 저장 실패: {e}", exc_info=True)
 
