@@ -196,19 +196,9 @@ class TeamInputView(LayoutView):
                 await send_error_message(interaction, "조 편성이 이미 시작되어 팀 등록이 불가능합니다.")
                 return
             
-            # 기존 등록된 팀이 있는지 확인 (취소 버튼과 동일한 로직)
-            user_id = str(interaction.user.id)
-            user_team = None
-            
-            for team_name, team_data in team_data_manager.get_all_teams().items():
-                if hasattr(team_data, 'user_id') and team_data.user_id == user_id:
-                    user_team = team_name
-                    break
-            
-            # ID로 찾지 못한 경우 닉네임으로 검색
-            if not user_team:
-                user_nickname = interaction.user.display_name
-                user_team = self._find_team_by_nickname(team_data_manager, user_nickname)
+            user_team = team_data_manager.find_user_team(
+                str(interaction.user.id), interaction.user.display_name
+            )
             
             if user_team:
                 # 기존 팀이 있는 경우 - 팀 수정 모달 표시
@@ -233,19 +223,9 @@ class TeamInputView(LayoutView):
             # 전역 team_data_manager 인스턴스 사용 (순환 참조 방지)
             team_data_manager = BotManager.get_instance().get_team_data_manager()
             
-            # 신청자가 등록한 팀이 있는지 확인 (ID 기반)
-            user_id = str(interaction.user.id)
-            user_team = None
-            
-            for team_name, team_data in team_data_manager.get_all_teams().items():
-                if hasattr(team_data, 'user_id') and team_data.user_id == user_id:
-                    user_team = team_name
-                    break
-            
-            # ID로 찾지 못한 경우 닉네임으로 검색
-            if not user_team:
-                user_nickname = interaction.user.display_name
-                user_team = self._find_team_by_nickname(team_data_manager, user_nickname)
+            user_team = team_data_manager.find_user_team(
+                str(interaction.user.id), interaction.user.display_name
+            )
             
             if not user_team:
                 await send_error_message(interaction, "등록한 팀이 없습니다.")
@@ -286,39 +266,6 @@ class TeamInputView(LayoutView):
             logger.error(f"[뷰] 팀 취소 콜백 처리 실패: {e}", exc_info=True)
             await send_error_message(interaction, "팀 취소 중 오류가 발생했습니다.")
     
-    def _find_team_by_nickname(self, team_data_manager, nickname: str) -> str:
-        """닉네임으로 팀을 찾는 헬퍼 메서드 (대소문자 구별 없이)"""
-        from utils.validators import normalize_nickname_for_comparison
-        
-        all_teams = team_data_manager.get_all_teams()
-        normalized_nickname = normalize_nickname_for_comparison(nickname)
-        
-        for team_name, team_data in all_teams.items():
-            if hasattr(team_data, 'all_members'):
-                # TeamData 객체인 경우
-                all_members = team_data.all_members
-                
-                # 대소문자 구별 없이 비교
-                for member in all_members:
-                    if normalize_nickname_for_comparison(member) == normalized_nickname:
-                        return team_name
-            elif isinstance(team_data, dict):
-                # 딕셔너리 형식인 경우 (레거시 지원)
-                players = team_data.get('players', [])
-                staff = team_data.get('staff', [])
-                all_members = players + staff
-                
-                # 대소문자 구별 없이 비교
-                for member in all_members:
-                    if normalize_nickname_for_comparison(member) == normalized_nickname:
-                        return team_name
-            else:
-                # 기존 형식 (리스트)
-                for member in team_data:
-                    if normalize_nickname_for_comparison(member) == normalized_nickname:
-                        return team_name
-        
-        return None
     
     async def _show_team_edit_modal(self, interaction: discord.Interaction, team_name: str, team_data_manager) -> None:
         """기존 팀 수정 모달을 표시합니다."""

@@ -49,7 +49,7 @@ class TeamDataManager:
         self.auto_assignment_task: Optional[asyncio.Task] = None
         self.mmr_update_task: Optional[asyncio.Task] = None
         self.last_auto_assignment: Optional[datetime] = None
-        self.LOG_CHANNEL_ID: int = 1487384132035022961
+        self.LOG_CHANNEL_ID: int = settings.LOG_CHANNEL_ID
         self.is_team_assignment_started: bool = False
         self.mmr_message: Optional[discord.Message] = None
         self.additional_mmr_messages: List[discord.Message] = []
@@ -641,6 +641,15 @@ class TeamDataManager:
         except Exception as e:
             logger.error(f"[팀데이터] 팀 제거 실패: {e}", exc_info=True)
             return False, f"팀 제거 중 오류가 발생했습니다: {str(e)}"
+
+    def find_user_team(self, user_id: str, user_nickname: str = '') -> Optional[str]:
+        """사용자 ID 또는 닉네임으로 등록한 팀명을 찾습니다."""
+        for team_name, team_data in self.teams.items():
+            if hasattr(team_data, 'user_id') and team_data.user_id == user_id:
+                return team_name
+        if user_nickname:
+            return self.get_team_by_member(user_nickname)
+        return None
 
     def get_team_data(self, team_name: str) -> Optional[TeamData]:
         """팀 데이터를 가져옵니다."""

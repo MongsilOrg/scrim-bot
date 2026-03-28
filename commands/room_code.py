@@ -23,12 +23,7 @@ MAIN_WEATHERS = {1: "흐림", 2: "쾌청", 3: "비", 4: "모래바람"}
 SUB_WEATHERS = ["무풍", "강풍", "벼락", "자색 안개"]
 
 
-def get_group_letter(channel_id: int) -> str | None:
-    """채널 ID로 조 letter를 반환합니다."""
-    for letter, ch_id in settings.GROUP_CHANNEL_IDS.items():
-        if ch_id == channel_id:
-            return letter
-    return None
+from utils.helpers import get_group_letter
 
 
 def clean_room_code(room_code: str) -> str:

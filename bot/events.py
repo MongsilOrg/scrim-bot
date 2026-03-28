@@ -54,12 +54,7 @@ def _get_start_of_day_utc(now_kst: datetime) -> datetime:
     return start_of_day_kst.astimezone(pytz.utc)
 
 
-def _get_group_letter(channel_id: int) -> Optional[str]:
-    """채널 ID로 조 문자를 반환합니다."""
-    for letter, mapped_channel_id in settings.GROUP_CHANNEL_IDS.items():
-        if mapped_channel_id == channel_id:
-            return letter
-    return None
+from utils.helpers import get_group_letter as _get_group_letter
 
 
 async def _process_csv_attachments(message: discord.Message) -> None:

@@ -47,6 +47,14 @@ def get_current_kst_time() -> datetime:
     return datetime.now(kst)
 
 
+def get_group_letter(channel_id: int) -> str | None:
+    """채널 ID로 조 문자를 반환합니다."""
+    for letter, ch_id in settings.GROUP_CHANNEL_IDS.items():
+        if ch_id == channel_id:
+            return letter
+    return None
+
+
 def get_next_scrim_date(current_time: datetime = None) -> dict:
     """다음 스크림 날짜를 자동으로 계산합니다"""
     if current_time is None:

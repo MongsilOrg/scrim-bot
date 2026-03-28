@@ -16,7 +16,7 @@ from utils.helpers import get_current_kst_time, get_next_scrim_date, is_admin
 
 logger = get_logger('scrim')
 
-SCRIM_CHANNEL_ID = 1444006965331234896
+SCRIM_CHANNEL_ID = settings.SCRIM_CHANNEL_ID
 
 
 async def _refresh_scrim_dashboard(channel: discord.TextChannel) -> None:

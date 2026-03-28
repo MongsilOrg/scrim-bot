@@ -36,13 +36,6 @@ class ScrimBot(commands.Bot):
         except Exception as e:
             logger.error(f'[봇클라이언트] 명령어 동기화 실패: {e}', exc_info=True)
     
-    async def on_ready(self):
-        """봇 준비 완료 이벤트 (로그는 main.py에서 처리)"""
-        try:
-            pass
-        except Exception as e:
-            logger.error(f'[봇클라이언트] 봇 준비 실패: {e}', exc_info=True)
-    
     async def on_command_error(self, ctx, error):
         """명령어 오류 처리"""
         logger.error(f'[봇클라이언트] 명령어 오류: {error}', exc_info=True)
