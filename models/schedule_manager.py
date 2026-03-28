@@ -91,6 +91,31 @@ class ScheduleManager:
     # 관리자 응답 등록
     # ------------------------------------------------------------------
 
+    def register_schedule(
+        self,
+        user_id: str,
+        display_name: str,
+        available_days: Set[int],
+        absence_reason: Optional[str] = None,
+    ) -> None:
+        """참가 요일과 불참 사유를 한 번에 등록합니다.
+
+        available_days가 비어 있으면 전체 불참으로 처리합니다.
+        available_days가 있으면 참가 등록합니다 (불참 사유 제거).
+        """
+        self.admin_names[user_id] = display_name
+
+        if not available_days:
+            # 전체 불참
+            self.availability[user_id] = set()
+            self.absence_reasons[user_id] = {-1: absence_reason or '사유 없음'}
+        else:
+            # 참가 등록
+            self.availability[user_id] = available_days
+            self.absence_reasons.pop(user_id, None)
+
+        self._save_backup()
+
     def register_availability(
         self,
         user_id: str,
@@ -185,7 +210,7 @@ class ScheduleManager:
         if not responded:
             lines.append('> 아직 응답한 관리자가 없습니다.')
         else:
-            for uid in sorted(responded):
+            for uid in sorted(responded, key=lambda u: self.admin_names.get(u, '')):
                 name = self.admin_names.get(uid, '알 수 없음')
                 avail = self.availability.get(uid, set())
                 reasons = self.absence_reasons.get(uid, {})
@@ -194,6 +219,7 @@ class ScheduleManager:
                     lines.append(f'> ❌ {name} — 불참 ({reasons[-1]})')
                 elif avail:
                     day_labels = ', '.join(WEEKDAYS[d] for d in sorted(avail))
+                    # 아래 로직은 레거시 백업 호환용 (현재 UI에서는 부분 불참 미지원)
                     absence_parts = []
                     for d in ACTIVE_DAYS:
                         if d not in avail and d in reasons:
@@ -203,7 +229,7 @@ class ScheduleManager:
                         suffix = f' | 불참: {", ".join(absence_parts)}'
                     lines.append(f'> ✅ {name} — {day_labels}{suffix}')
                 elif reasons:
-                    # 부분 불참만 등록 (가용일 미설정 — 방어 코드)
+                    # 레거시 백업 호환: 부분 불참만 등록된 경우 (현재 UI에서 발생하지 않음)
                     absence_parts = [
                         f"{WEEKDAYS[d]}({reasons[d]})"
                         for d in sorted(reasons) if d >= 0
@@ -230,8 +256,9 @@ class ScheduleManager:
 
         # 주간 편성
         if self.assignments:
+            total_assigned = sum(len(v) for v in self.assignments.values())
             lines.append('')
-            lines.append('**📊 주간 편성**')
+            lines.append(f'**📊 주간 편성** (총 {total_assigned}건)')
             for day_idx in ACTIVE_DAYS:
                 members = self.assignments.get(day_idx, [])
                 deployed = self.actual_deployments.get(day_idx, [])
@@ -251,13 +278,14 @@ class ScheduleManager:
                     name = self.admin_names.get(uid, '?')
                     name_parts.append(f'**{name}** ✅')
 
+                total_for_day = len(all_uids) + len(extra_deployed)
                 if name_parts:
                     lines.append(
-                        f'> **{WEEKDAYS[day_idx]}** — '
+                        f'> **{WEEKDAYS[day_idx]}** ({total_for_day}명) — '
                         f'{", ".join(name_parts)}'
                     )
                 else:
-                    lines.append(f'> **{WEEKDAYS[day_idx]}** — (배정 없음)')
+                    lines.append(f'> **{WEEKDAYS[day_idx]}** (0명) — (배정 없음)')
 
         return '\n'.join(lines)
 
@@ -362,7 +390,7 @@ class ScheduleManager:
         # 재조정 전 편성 상태 저장
         remaining_before = {
             d: list(members) for d, members in self.assignments.items()
-            if d > day_index and d not in self.actual_deployments
+            if d > day_index and not self.actual_deployments.get(d)
         }
         self._readjust_remaining(day_index)
         # 재조정된 요일 파악
@@ -378,17 +406,24 @@ class ScheduleManager:
         self._readjust_remaining(-1)
 
     def _readjust_remaining(self, completed_day: int) -> None:
-        """completed_day 이후 투입 미완료 요일의 편성을 투입 횟수 기반으로 재조정합니다."""
+        """completed_day 이후 투입 미완료 요일의 편성을 재조정합니다.
+
+        정렬 기준 (오름차순):
+          1. 투입 횟수 — 실제 투입이 많을수록 후순위
+          2. 배정 횟수 — 나머지 요일 배정이 많을수록 후순위
+          3. 가용일 수 — 가용일이 적을수록 우선 (선택지가 적으니 먼저 배정)
+          4. user_id  — 안정 정렬
+        """
         # 실투입 횟수 계산
         deploy_count: Dict[str, int] = defaultdict(int)
         for day_idx, deployed in self.actual_deployments.items():
             for uid in deployed:
                 deploy_count[uid] += 1
 
-        # 투입 기록이 없는 요일만 재조정
+        # 실제 투입자가 없는 요일만 재조정 (빈 리스트는 미투입 취급)
         remaining_days = sorted(
             d for d in self.assignments if d > completed_day
-            and d not in self.actual_deployments
+            and not self.actual_deployments.get(d)
         )
 
         if not remaining_days:
@@ -411,8 +446,8 @@ class ScheduleManager:
             key=lambda d: len(day_candidates.get(d, [])),
         )
 
-        # 기존 편성 횟수(재조정 대상만) 초기화 후 실투입 기반으로 시작
-        assign_count: Dict[str, int] = dict(deploy_count)
+        # 배정 횟수는 투입 횟수와 별도로 추적
+        assign_count: Dict[str, int] = defaultdict(int)
 
         for day in sorted_remaining:
             candidates = day_candidates.get(day, [])
@@ -423,6 +458,7 @@ class ScheduleManager:
             ranked = sorted(
                 candidates,
                 key=lambda uid: (
+                    deploy_count.get(uid, 0),
                     assign_count.get(uid, 0),
                     avail_count.get(uid, 0),
                     uid,
@@ -432,7 +468,7 @@ class ScheduleManager:
             self.assignments[day] = selected
 
             for uid in selected:
-                assign_count[uid] = assign_count.get(uid, 0) + 1
+                assign_count[uid] += 1
 
     # ------------------------------------------------------------------
     # 백업 / 복구
@@ -498,6 +534,7 @@ class ScheduleManager:
             self.actual_deployments = {
                 int(k): v
                 for k, v in data.get('actual_deployments', {}).items()
+                if v  # 빈 리스트 제거
             }
             self.status_message_id = data.get('status_message_id')
             self.status_channel_id = data.get('status_channel_id')
