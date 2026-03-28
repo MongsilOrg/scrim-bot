@@ -82,13 +82,13 @@ class BotManager:
             try:
                 self._team_processor.group_image_cache.clear()
                 self._team_processor.current_cache_size = 0
-                logger.info("[봇관리] TeamProcessor 이미지 캐시 클리어 완료")
+                logger.debug("[봇관리] TeamProcessor 이미지 캐시 클리어 완료")
             except Exception as exc:
                 logger.warning(f"[봇관리] 이미지 캐시 클리어 중 예외 무시: {exc}")
         
         self._ban_lists.clear()
         self._selected_weathers.clear()
-        logger.info("[봇관리] 밴 리스트 및 날씨 상태 초기화 완료")
+        logger.debug("[봇관리] 밴 리스트 및 날씨 상태 초기화 완료")
 
         self._team_data_manager = TeamDataManager(client or self._client)
         return self._team_data_manager
@@ -108,9 +108,15 @@ class BotManager:
             self._warning_manager = WarningManager()
         return self._warning_manager
 
+    def _trigger_backup(self) -> None:
+        """팀 데이터 매니저의 백업을 트리거합니다."""
+        if self._team_data_manager:
+            self._team_data_manager._save_backup()
+
     def set_ban_list(self, group_letter: str, ban_list: List[str]) -> None:
         """조별 밴 리스트 저장"""
         self._ban_lists[group_letter] = ban_list
+        self._trigger_backup()
 
     def get_ban_list(self, group_letter: str) -> List[str]:
         """조별 밴 리스트 반환"""
@@ -121,6 +127,7 @@ class BotManager:
         if group_letter not in self._selected_weathers:
             self._selected_weathers[group_letter] = []
         self._selected_weathers[group_letter].append(weather)
+        self._trigger_backup()
 
     def get_selected_weathers(self, group_letter: str) -> List[str]:
         """조별 선택된 서브 날씨 리스트 반환"""

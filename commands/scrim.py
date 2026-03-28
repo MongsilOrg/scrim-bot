@@ -34,12 +34,22 @@ async def 스크림(interaction: discord.Interaction) -> None:
         existing_tdm = bot_manager.get_team_data_manager()
         if existing_tdm and existing_tdm.teams:
             if not _is_scrim_expired(existing_tdm, current_time):
-                confirm_view = ScrimResetConfirmView(
-                    description=(
+                if existing_tdm.is_team_assignment_started:
+                    description = (
+                        f"⚠️ **조편성이 이미 완료된 상태입니다!**\n"
+                        f"현재 **{len(existing_tdm.teams)}개 팀**이 등록되어 있고, "
+                        f"조별 채널에 공지가 전송된 상태입니다.\n\n"
+                        f"초기화하면 모든 팀 데이터, 조편성 결과, 밴/날씨 정보가 삭제됩니다.\n\n"
+                        f"정말 초기화하시겠습니까?"
+                    )
+                else:
+                    description = (
                         f"현재 **{len(existing_tdm.teams)}개 팀**이 등록되어 있습니다.\n"
                         f"초기화하면 모든 팀 데이터가 삭제됩니다.\n\n"
                         f"초기화하시겠습니까?"
                     )
+                confirm_view = ScrimResetConfirmView(
+                    description=description
                 )
                 await interaction.response.send_message(view=confirm_view, ephemeral=True)
                 confirm_view.message = await interaction.original_response()

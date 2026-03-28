@@ -55,6 +55,9 @@ class TeamDataManager:
         self.additional_mmr_messages: List[discord.Message] = []
         self.scrim_channel_id: Optional[int] = None  # 스크림 명령어가 실행된 채널 ID
         self._pending_tasks: set = set()  # fire-and-forget 태스크 추적
+        self.groups: Optional[List[List[Tuple[str, TeamData, float]]]] = None
+        self.group_message_ids: Dict[str, int] = {}  # "A" → message_id
+        self.group_message_texts: Dict[str, str] = {}  # "A" → message_text
     
     def _save_backup(self) -> None:
         """팀 데이터를 JSON 파일로 백업합니다 (날짜 메타데이터 포함)."""
@@ -62,6 +65,30 @@ class TeamDataManager:
             backup_dir = os.path.dirname(self.BACKUP_FILE)
             if backup_dir:
                 os.makedirs(backup_dir, exist_ok=True)
+            # BotManager에서 밴/날씨 데이터 가져오기
+            from bot.manager import BotManager
+            bot_manager = BotManager.get_instance()
+
+            # 로그 직렬화 (timestamp → isoformat)
+            serialized_logs = {}
+            for action_type, entries in self.logs.items():
+                serialized_logs[action_type] = []
+                for entry in entries:
+                    serialized_entry = dict(entry)
+                    if 'timestamp' in serialized_entry and hasattr(serialized_entry['timestamp'], 'isoformat'):
+                        serialized_entry['timestamp'] = serialized_entry['timestamp'].isoformat()
+                    serialized_logs[action_type].append(serialized_entry)
+
+            # groups 직렬화
+            serialized_groups = None
+            if self.groups is not None:
+                serialized_groups = []
+                for group in self.groups:
+                    serialized_group = []
+                    for team_name, team_data, mmr in group:
+                        serialized_group.append([team_name, team_data.to_dict(), mmr])
+                    serialized_groups.append(serialized_group)
+
             data = {
                 '_meta': {
                     'scrim_day': self.scrim_day,
@@ -73,7 +100,13 @@ class TeamDataManager:
                 'teams': {
                     name: team.to_dict()
                     for name, team in self.teams.items()
-                }
+                },
+                'logs': serialized_logs,
+                'groups': serialized_groups,
+                'group_message_ids': self.group_message_ids,
+                'group_message_texts': self.group_message_texts,
+                'ban_lists': bot_manager._ban_lists,
+                'selected_weathers': bot_manager._selected_weathers,
             }
             tmp_path = self.BACKUP_FILE + '.tmp'
             with open(tmp_path, 'w', encoding='utf-8') as f:
@@ -117,6 +150,44 @@ class TeamDataManager:
                 for member in team.all_members:
                     key = self._normalize_member_key(member)
                     self.user_teams[key] = name
+            # 로그 복구 (timestamp를 datetime으로 복원)
+            saved_logs = data.get('logs')
+            if saved_logs:
+                for action_type, entries in saved_logs.items():
+                    if action_type in self.logs:
+                        for entry in entries:
+                            if 'timestamp' in entry and isinstance(entry['timestamp'], str):
+                                entry['timestamp'] = datetime.fromisoformat(entry['timestamp'])
+                        self.logs[action_type] = entries
+
+            # groups 복구
+            saved_groups = data.get('groups')
+            if saved_groups is not None:
+                self.groups = []
+                for group in saved_groups:
+                    restored_group = []
+                    for team_name, team_dict, mmr in group:
+                        restored_group.append((team_name, TeamData.from_dict(team_name, team_dict), mmr))
+                    self.groups.append(restored_group)
+
+            # group_message_ids / texts 복구
+            saved_msg_ids = data.get('group_message_ids')
+            if saved_msg_ids:
+                self.group_message_ids = saved_msg_ids
+            saved_msg_texts = data.get('group_message_texts')
+            if saved_msg_texts:
+                self.group_message_texts = saved_msg_texts
+
+            # BotManager에 밴/날씨 데이터 주입
+            from bot.manager import BotManager
+            bot_manager = BotManager.get_instance()
+            saved_bans = data.get('ban_lists')
+            if saved_bans:
+                bot_manager._ban_lists = saved_bans
+            saved_weathers = data.get('selected_weathers')
+            if saved_weathers:
+                bot_manager._selected_weathers = saved_weathers
+
             logger.info(
                 f"[팀데이터] 백업에서 {len(teams_data)}개 팀 복구 완료 "
                 f"(스크림 날짜: {self.scrim_month}/{self.scrim_day})"
@@ -127,10 +198,10 @@ class TeamDataManager:
             return False
 
     def should_restore_backup(self) -> bool:
-        """백업 파일이 유효한지 (날짜 만료되지 않았는지) 확인합니다.
+        """백업 파일이 유효한지 확인합니다.
 
-        스크림 날짜 당일까지 유효합니다.
-        예: scrim_day=17이면 17일 23:59까지 유효, 18일 00:00부터 만료.
+        백업 파일이 존재하고 메타데이터가 있으면 항상 유효합니다.
+        초기화는 오직 /스크림 명령어(reset_team_data())로만 수행됩니다.
         """
         try:
             if not os.path.exists(self.BACKUP_FILE):
@@ -139,22 +210,8 @@ class TeamDataManager:
                 data = json.load(f)
             meta = data.get('_meta')
             if not meta:
-                # 레거시 백업: 날짜 정보가 없으므로 복구하지 않음
                 return False
-            scrim_day = meta.get('scrim_day')
-            scrim_month = meta.get('scrim_month')
-            if not scrim_day or not scrim_month:
-                return False
-            current_time = get_current_kst_time()
-            # 스크림 날짜 당일까지 유효
-            if current_time.month == scrim_month and current_time.day == scrim_day:
-                return True
-            # 만료됨
-            logger.info(
-                f"[팀데이터] 백업 만료 - 스크림 날짜: {scrim_month}/{scrim_day}, "
-                f"현재: {current_time.month}/{current_time.day}"
-            )
-            return False
+            return True
         except Exception as e:
             logger.error(f"[팀데이터] 백업 유효성 검사 실패: {e}", exc_info=True)
             return False
@@ -217,7 +274,7 @@ class TeamDataManager:
         비동기 태스크를 완전히 종료할 때까지 대기한 후 데이터를 초기화합니다.
         """
         try:
-            logger.info("[팀데이터] 초기화 시작")
+            logger.debug("[팀데이터] 초기화 시작")
             
             # 비동기 태스크를 완전히 종료할 때까지 대기
             await self._cancel_task_and_wait(self.auto_assignment_task, "auto_assignment_task")
@@ -245,6 +302,9 @@ class TeamDataManager:
             self.scrim_channel_id = None
             self.scrim_day = None
             self.scrim_month = None
+            self.groups = None
+            self.group_message_ids = {}
+            self.group_message_texts = {}
 
             self.clear_backup()
             self.log_state_snapshot(prefix="reset")
@@ -454,7 +514,7 @@ class TeamDataManager:
         try:
             auto_alive = bool(self.auto_assignment_task and not self.auto_assignment_task.done())
             mmr_alive = bool(self.mmr_update_task and not self.mmr_update_task.done())
-            logger.info(
+            logger.debug(
                 f"[{prefix}] teams={len(self.teams)}, scrim_date={self.scrim_month}/{self.scrim_day}, "
                 f"scrim_channel={self.scrim_channel_id}, auto_task_alive={auto_alive}, mmr_task_alive={mmr_alive}"
             )
@@ -474,6 +534,7 @@ class TeamDataManager:
             }
             
             self.logs[action_type].append(log_entry)
+            self._save_backup()
         except Exception as e:
             logger.error(f"[팀데이터] 로그 기록 실패: {e}", exc_info=True)
 
@@ -725,7 +786,11 @@ class TeamDataManager:
             
             # 조편성 실행 (Discord 작업 제외) - 최신 인스턴스의 팀 데이터 사용
             groups, unmatched_teams = await team_processor.process_teams_background(team_data_manager.teams, None)
-            
+
+            # groups 저장 및 백업
+            team_data_manager.groups = groups
+            team_data_manager._save_backup()
+
             logger.info(f"[조편성] 조편성 실행 완료 - 조 수: {len(groups)}개, 매칭되지 않은 팀: {len(unmatched_teams)}개")
 
             if not groups:
@@ -736,9 +801,9 @@ class TeamDataManager:
             if client:
                 await team_data_manager._execute_discord_services(client, groups, unmatched_teams)
             else:
-                logger.warning("클라이언트가 없어 Discord 서비스를 건너뜁니다.")
+                logger.warning("[조편성] 클라이언트가 없어 Discord 서비스를 건너뜁니다.")
         except Exception as e:
-            error_msg = f"자동 조편성 실행 중 오류 발생: {e}"
+            error_msg = f"[조편성] 자동 조편성 실행 중 오류 발생: {e}"
             logger.error(error_msg)
             # 오류 발생 시 조편성 플래그 해제 (최신 인스턴스에서)
             from bot.manager import BotManager
@@ -783,7 +848,61 @@ class TeamDataManager:
             
         except Exception as e:
             logger.error(f"[Discord] 서비스 실행 실패: {e}", exc_info=True)
-    
+
+    async def restore_group_roster_views(self, client) -> None:
+        """조편성 후 재시작 시 GroupRosterView를 복구합니다."""
+        if not self.groups or not self.group_message_ids:
+            logger.info("[복구] groups 또는 group_message_ids가 없어 복구 건너뜀")
+            return
+
+        from commands.ui.views import GroupRosterView
+
+        guild = client.get_guild(settings.GUILD_ID)
+        if not guild:
+            logger.warning(f"[복구] 서버를 찾을 수 없음 - 서버 ID: {settings.GUILD_ID}")
+            return
+
+        restored = 0
+        for group_letter, message_id in self.group_message_ids.items():
+            try:
+                channel_id = settings.GROUP_CHANNEL_IDS.get(group_letter)
+                if not channel_id:
+                    continue
+
+                channel = guild.get_channel(channel_id)
+                if not channel:
+                    logger.warning(f"[복구] {group_letter}조 채널을 찾을 수 없음")
+                    continue
+
+                # 메시지 fetch
+                try:
+                    message = await channel.fetch_message(message_id)
+                except discord.NotFound:
+                    logger.warning(f"[복구] {group_letter}조 메시지를 찾을 수 없음 (id={message_id})")
+                    continue
+
+                # groups에서 해당 조의 데이터 복원
+                group_index = ord(group_letter) - ord('A')
+                if group_index < 0 or group_index >= len(self.groups):
+                    continue
+
+                group_teams = self.groups[group_index]
+
+                # 새 GroupRosterView 생성 및 재등록
+                saved_text = self.group_message_texts.get(group_letter, "")
+                roster_view = GroupRosterView(
+                    group_letter, group_teams,
+                    message_text=saved_text, has_image=True,
+                )
+                await message.edit(view=roster_view)
+                restored += 1
+                logger.info(f"[복구] {group_letter}조 GroupRosterView 재등록 완료")
+
+            except Exception as e:
+                logger.error(f"[복구] {group_letter}조 복구 실패: {e}", exc_info=True)
+
+        logger.info(f"[복구] GroupRosterView 복구 완료 - {restored}개 조")
+
     async def update_mmr_message(self, channel: discord.TextChannel, mmr_fail_count: int = 0) -> None:
         """MMR 메시지를 이미지로 업데이트합니다."""
         info = get_server_info()

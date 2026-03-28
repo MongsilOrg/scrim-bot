@@ -89,14 +89,14 @@ class WarningManager:
                 self.spreadsheet = self.client.open_by_key(
                     settings.GOOGLE_SHEETS_MAIN_SPREADSHEET_ID
                 )
-                logger.info(f"[경고관리] 스프레드시트 연결 성공 - ID: {settings.GOOGLE_SHEETS_MAIN_SPREADSHEET_ID}")
+                logger.debug(f"[경고관리] 스프레드시트 연결 성공 - ID: {settings.GOOGLE_SHEETS_MAIN_SPREADSHEET_ID}")
 
                 # 패널티 시트 열기 (없으면 생성)
                 try:
                     self.worksheet = self.spreadsheet.worksheet(
                         settings.GOOGLE_SHEETS_WARNING_WORKSHEET_NAME
                     )
-                    logger.info(f"[경고관리] 패널티 시트 연결 성공 - 이름: {settings.GOOGLE_SHEETS_WARNING_WORKSHEET_NAME}")
+                    logger.debug(f"[경고관리] 패널티 시트 연결 성공 - 이름: {settings.GOOGLE_SHEETS_WARNING_WORKSHEET_NAME}")
                 except gspread.WorksheetNotFound:
                     # 시트가 없으면 생성
                     self.worksheet = self.spreadsheet.add_worksheet(
@@ -111,7 +111,7 @@ class WarningManager:
                     self.warning_log_worksheet = self.spreadsheet.worksheet(
                         settings.GOOGLE_SHEETS_WARNING_LOG_WORKSHEET_NAME
                     )
-                    logger.info(f"[경고관리] 패널티로그 시트 연결 성공 - 이름: {settings.GOOGLE_SHEETS_WARNING_LOG_WORKSHEET_NAME}")
+                    logger.debug(f"[경고관리] 패널티로그 시트 연결 성공 - 이름: {settings.GOOGLE_SHEETS_WARNING_LOG_WORKSHEET_NAME}")
                 except gspread.WorksheetNotFound:
                     # 시트가 없으면 생성
                     self.warning_log_worksheet = self.spreadsheet.add_worksheet(
@@ -184,7 +184,7 @@ class WarningManager:
 
             row = [target, date, restricted_until, reason, warning_type]
             self.warning_log_worksheet.append_row(row)
-            logger.info(f"[경고관리] 외부 로그 기록 - 대상: {target}, 유형: {warning_type}")
+            logger.debug(f"[경고관리] 외부 로그 기록 - 대상: {target}, 유형: {warning_type}")
         except Exception as e:
             logger.error(f"[경고관리] 경고로그 추가 실패 - 대상: {target}: {e}")
 
