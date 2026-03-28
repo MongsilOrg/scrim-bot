@@ -383,7 +383,7 @@ class TeamDataManager:
         """팀 등록이 가능한지 확인합니다."""
         # 조편성 시작 이후인지 확인 (관리자 오버라이드 시 건너뜀)
         if self.is_team_assignment_started and not allow_admin_override:
-            return False, "❌ 조편성이 이미 시작되어 팀 등록이 불가능합니다."
+            return False, "❌ 17시 조편성이 완료되어 팀 등록이 불가능합니다. 다음 스크림에 신청해주세요."
 
         # 경고 제한 확인
         from bot.manager import BotManager
@@ -448,7 +448,7 @@ class TeamDataManager:
         """팀 수정이 가능한지 확인합니다."""
         # 조편성 시작/완료 이후인지 확인 (가장 우선)
         if self.is_team_assignment_started:
-            return False, "❌ 조편성이 이미 시작되어 팀 수정이 불가능합니다."
+            return False, "❌ 17시 조편성이 완료되어 팀 수정이 불가능합니다."
         
         # 스크림 날짜가 다른 경우 수정 가능
         if self.scrim_day != current_time.day:
@@ -995,13 +995,10 @@ class TeamDataManager:
     async def mmr_update_loop(self) -> None:
         """MMR 정보를 주기적으로 업데이트합니다."""
         try:
-            # 첫 번째 실행 시 즉시 체크
-            first_run = True
-            
+            # 첫 실행은 대기 후 시작 (setup_scrim_dashboard와 충돌 방지)
+            await asyncio.sleep(10)
+
             while True:
-                if not first_run:
-                    await asyncio.sleep(300)  # 5분마다 업데이트
-                first_run = False
                 
                 try:
                     # ✅ 최신 TeamDataManager 인스턴스를 동적으로 가져오기
@@ -1035,7 +1032,8 @@ class TeamDataManager:
                     team_data_manager.mmr_message = None
                 except Exception as e:
                     logger.error(f"[MMR갱신] 업데이트 루프 실패: {e}", exc_info=True)
-                    await asyncio.sleep(60)  # 오류 발생 시 1분 대기 후 재시도
+
+                await asyncio.sleep(300)  # 5분마다 업데이트
         except asyncio.CancelledError:
             # 최신 인스턴스에서 태스크 참조 제거
             from bot.manager import BotManager

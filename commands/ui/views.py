@@ -37,7 +37,7 @@ async def _check_cooldown(interaction: discord.Interaction, cooldown_seconds: fl
     last_click = _button_cooldowns.get(user_id, 0)
     if now - last_click < cooldown_seconds:
         remaining = cooldown_seconds - (now - last_click)
-        await send_response(interaction, info_view(f"잠시 후 다시 시도해주세요. ({remaining:.0f}초)", title="⏳ 대기"))
+        await send_response(interaction, info_view("요청 처리 중입니다. 잠시 기다려주세요.", title="⏳ 대기"))
         return True
     _button_cooldowns[user_id] = now
     # 만료된 쿨다운 항목 주기적 정리
@@ -113,7 +113,7 @@ class TeamInputView(LayoutView):
             
             # 조편성 시작 이후인지 확인
             if team_data_manager.is_team_assignment_started:
-                await send_error_message(interaction, "조 편성이 이미 시작되어 팀 등록이 불가능합니다.")
+                await send_error_message(interaction, "17시 조편성이 완료되어 팀 등록이 불가능합니다. 다음 스크림에 신청해주세요.")
                 return
             
             user_team = team_data_manager.find_user_team(
@@ -229,9 +229,9 @@ class TeamInputView(LayoutView):
             # 조편성 시작 이후인지 확인
             if team_data_manager.is_team_assignment_started:
                 if temp_message:
-                    await update_temp_message(temp_message, "조 편성이 이미 시작되어 팀 등록이 불가능합니다.", discord.Color.red())
+                    await update_temp_message(temp_message, "17시 조편성이 완료되어 팀 등록이 불가능합니다. 다음 스크림에 신청해주세요.", discord.Color.red())
                 else:
-                    await send_error_message(interaction, "조 편성이 이미 시작되어 팀 등록이 불가능합니다.")
+                    await send_error_message(interaction, "17시 조편성이 완료되어 팀 등록이 불가능합니다. 다음 스크림에 신청해주세요.")
                 return
             
             # 팀 등록 가능 여부 확인
@@ -440,7 +440,7 @@ class TeamInputView(LayoutView):
             
             # 조편성 시작 이후인지 확인
             if team_data_manager.is_team_assignment_started:
-                await send_error_message(interaction, "조 편성이 이미 시작되어 팀 취소가 불가능합니다.")
+                await send_error_message(interaction, "17시 조편성이 완료되어 팀 취소가 불가능합니다. 관리자에게 문의하세요.")
                 return
             
             # 팀 취소 가능 여부 확인
@@ -684,7 +684,7 @@ class CancelConfirmView(LayoutView):
         cancel_text: str = "",
         fields: list[tuple[str, str]] | None = None,
     ):
-        super().__init__(timeout=30)
+        super().__init__(timeout=60)
         self.parent_view = parent_view
         self.team_name = team_name
         self.message: Optional[discord.Message] = None
@@ -772,7 +772,7 @@ class ScheduleView(LayoutView):
         self.register_button.callback = self.register_callback
 
         self.reset_button = Button(
-            label="응답 삭제",
+            label="내 응답 삭제",
             style=ButtonStyle.danger,
             emoji="🗑️",
         )

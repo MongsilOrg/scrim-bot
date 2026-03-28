@@ -78,11 +78,12 @@ async def _transition_to_next_scrim(client: ScrimBot, channel: discord.TextChann
         team_data_manager.mmr_update_loop()
     )
 
-    # MMR 메시지 생성
-    try:
-        await team_data_manager.update_mmr_message(channel)
-    except Exception as e:
-        logger.error(f"[스크림] MMR 메시지 생성 실패: {e}", exc_info=True)
+    # MMR 메시지 생성 (팀이 있을 때만)
+    if team_data_manager.teams:
+        try:
+            await team_data_manager.update_mmr_message(channel)
+        except Exception as e:
+            logger.error(f"[스크림] MMR 메시지 생성 실패: {e}", exc_info=True)
 
     logger.info(f"[스크림] 다음 스크림 전환 완료 — {date_info['month']}/{date_info['day']} ({date_info['weekday_name']})")
 

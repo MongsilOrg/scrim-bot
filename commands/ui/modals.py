@@ -305,7 +305,7 @@ class TeamEditModal(Modal):
             if team_data_manager.is_team_assignment_started:
                 # 조편성 이후에는 개별 팀 수정 불가 (관리자 로스터 변경만 가능)
                 if not is_roster_change:
-                    await update_temp_message(temp_message, "조 편성이 이미 시작되어 팀 수정이 불가능합니다.", discord.Color.red())
+                    await update_temp_message(temp_message, "17시 조편성이 완료되어 팀 수정이 불가능합니다.", discord.Color.red())
                     return
             
             # 조별 공지 로스터 변경(admin) 시 모든 검증을 건너뜀
