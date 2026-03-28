@@ -94,15 +94,19 @@ class EventsLogicTest(unittest.TestCase):
         self.assertEqual(ban_list, ["Aya"])
         self.assertEqual(events._extract_ban_list(None), [])
 
-    def test_build_gameid_embed(self):
+    def test_build_gameid_view(self):
         rows = [
             (111, pd.DataFrame({"gameId": [111]}), "r1.csv"),
             (222, pd.DataFrame({"gameId": [222]}), "r2.csv"),
         ]
-        embed = events._build_gameid_embed(rows, "A조", "02월 16일")
-        self.assertIn("GameId 정보", embed.title)
-        self.assertIn("**1R**: `111`", embed.description)
-        self.assertIn("**2R**: `222`", embed.description)
+        view = events._build_gameid_view(rows, "A조", "02월 16일")
+        # LayoutView의 Container 내 TextDisplay에서 내용 확인
+        container = view.children[0]
+        texts = [c.content for c in container.children if hasattr(c, 'content')]
+        combined = "\n".join(texts)
+        self.assertIn("GameId 정보", combined)
+        self.assertIn("**1R**: `111`", combined)
+        self.assertIn("**2R**: `222`", combined)
 
 
     def test_aggregate_team_scores_case_insensitive(self):
