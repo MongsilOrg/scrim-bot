@@ -1,0 +1,29 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: mongsil.dev
+          port: 1557
+          username: blackout
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            echo ${{ secrets.SUDO_PASSWORD }} | /usr/bin/sudo -S /usr/local/bin/docker exec python bash -c '
+              cp /docker/.ssh/id_ed25519* ~/.ssh/ 2>/dev/null
+              chmod 600 ~/.ssh/id_ed25519
+              ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+              cd /docker/scrimbot
+              git config --global --add safe.directory /docker/scrimbot
+              git fetch origin main
+              git reset --hard origin/main
+              pip install -r requirements.txt -q 2>/dev/null
+              pm2 restart scrimbot
+            '
