@@ -52,7 +52,7 @@ class TeamDataManager:
         self.LOG_CHANNEL_ID: int = settings.LOG_CHANNEL_ID
         self.is_team_assignment_started: bool = False
         self.mmr_message: Optional[discord.Message] = None
-        self.additional_mmr_messages: List[discord.Message] = []
+        self.mmr_message_id: Optional[int] = None  # 백업용 MMR 메시지 ID
         self.scrim_channel_id: Optional[int] = None  # 스크림 명령어가 실행된 채널 ID
         self._pending_tasks: set = set()  # fire-and-forget 태스크 추적
         self.groups: Optional[List[List[Tuple[str, TeamData, float]]]] = None
@@ -96,6 +96,7 @@ class TeamDataManager:
                 'group_message_ids': self.group_message_ids,
                 'group_message_texts': self.group_message_texts,
                 'dashboard_message_id': self.dashboard_message_id,
+                'mmr_message_id': self.mmr_message_id,
                 'ban_lists': bot_manager._ban_lists,
                 'selected_weathers': bot_manager._selected_weathers,
             }
@@ -160,6 +161,7 @@ class TeamDataManager:
                 self.group_message_texts = saved_msg_texts
 
             self.dashboard_message_id = data.get('dashboard_message_id')
+            self.mmr_message_id = data.get('mmr_message_id')
 
             # BotManager에 밴/날씨 데이터 주입
             from bot.manager import BotManager
@@ -279,7 +281,7 @@ class TeamDataManager:
             self.mmr_update_task = None
 
             self.mmr_message = None
-            self.additional_mmr_messages = []
+            self.mmr_message_id = None
             self.is_team_assignment_started = False
             self.scrim_channel_id = None
             self.scrim_day = None
@@ -954,10 +956,16 @@ class TeamDataManager:
             accent = discord.Color.from_str('#FB9206') if info['is_tournament'] else discord.Color.blue()
             mmr_view.add_item(Container(*children, accent_colour=accent))
 
-            # 기존 메시지가 있는지 확인하고 업데이트 시도
+            # 기존 메시지 편집 시도 (메모리 참조 또는 백업 ID)
+            if not self.mmr_message and self.mmr_message_id:
+                try:
+                    self.mmr_message = await channel.fetch_message(self.mmr_message_id)
+                except (discord.NotFound, discord.HTTPException):
+                    self.mmr_message = None
+                    self.mmr_message_id = None
+
             if self.mmr_message:
                 try:
-                    # 기존 메시지 편집 시도
                     await self.mmr_message.edit(
                         view=mmr_view,
                         embed=None,
@@ -966,27 +974,21 @@ class TeamDataManager:
                     )
                     return
                 except discord.NotFound:
-                    # 메시지가 삭제된 경우 새로 생성
-                    logger.warning("[MMR메시지] 기존 메시지를 찾을 수 없음 - 새로 생성")
                     self.mmr_message = None
+                    self.mmr_message_id = None
                 except discord.HTTPException as e:
-                    # HTTP 오류 (클라이언트 재생성 등으로 인한 무효화)
-                    logger.warning(f"[MMR메시지] 기존 메시지 편집 중 HTTP 오류 - 새로 생성: {e}")
+                    logger.warning(f"[MMR메시지] 편집 실패 - 새로 생성: {e}")
                     self.mmr_message = None
-                except Exception as e:
-                    logger.error(f"[MMR메시지] 기존 메시지 편집 실패: {e}", exc_info=True)
-                    # 편집 실패 시 새로 생성
-                    self.mmr_message = None
+                    self.mmr_message_id = None
 
-            # 기존 메시지가 없거나 편집에 실패한 경우 새로 생성
+            # 새로 생성
             new_message = await channel.send(
                 view=mmr_view,
                 file=discord.File(img_io, filename='mmr_table.png')
             )
-            
-            # 메시지 참조 업데이트
             self.mmr_message = new_message
-            self.additional_mmr_messages = []
+            self.mmr_message_id = new_message.id
+            self._save_backup()
 
         except Exception as e:
             logger.error(f"[MMR메시지] 업데이트 실패: {e}", exc_info=True)
