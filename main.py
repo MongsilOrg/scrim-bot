@@ -21,7 +21,6 @@ from bot.manager import BotManager
 from commands.room_code import 방코드
 from commands.schedule import setup_schedule_dashboard
 from commands.scrim import setup_scrim_dashboard
-from commands.scrim_csv_assign import 조편성_csv
 from commands.warning import 제재부여
 from commands.ui.layout_helpers import error_view, send_response
 from config.logging_config import ScrimbotLogger
@@ -144,14 +143,6 @@ def _register_app_commands(client: ScrimBot) -> None:
     )
     async def room_code_command(interaction: discord.Interaction, room_code: str):
         await 방코드(interaction, room_code)
-
-    @client.tree.context_menu(
-        name="조편성", guild=discord.Object(id=settings.GUILD_ID)
-    )
-    async def assign_csv_context(
-        interaction: discord.Interaction, message: discord.Message
-    ):
-        await 조편성_csv(interaction, message)
 
     @client.tree.context_menu(
         name="제재 부여", guild=discord.Object(id=settings.GUILD_ID)

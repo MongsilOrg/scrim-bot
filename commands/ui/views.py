@@ -3,9 +3,6 @@ Discord View 컴포넌트들
 """
 import time
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
-import io
-import csv
-
 import discord
 from discord import ButtonStyle, Color, SelectOption
 from discord.ui import ActionRow, Button, Container, LayoutView, MediaGallery, Select, Separator, TextDisplay
@@ -171,7 +168,7 @@ class TeamInputView(LayoutView):
 
         self.add_item(Container(*children, accent_colour=Color.green()))
 
-        # ActionRow (신청/취소/관리 버튼)
+        # ActionRow (신청/취소 버튼)
         self.add_team_button = Button(
             label="신청/수정",
             style=ButtonStyle.primary,
@@ -184,13 +181,7 @@ class TeamInputView(LayoutView):
             emoji="🚫"
         )
         self.cancel_team_button.callback = self.cancel_team_callback
-        self.admin_log_button = Button(
-            label="관리",
-            style=ButtonStyle.danger,
-            emoji="⚙️"
-        )
-        self.admin_log_button.callback = self.admin_log_callback
-        self.add_item(ActionRow(self.add_team_button, self.cancel_team_button, self.admin_log_button))
+        self.add_item(ActionRow(self.add_team_button, self.cancel_team_button))
     
     async def add_team_callback(self, interaction: discord.Interaction) -> None:
         """팀 추가 버튼 콜백 (기존 팀이 있으면 수정 모달 표시)"""
@@ -354,20 +345,6 @@ class TeamInputView(LayoutView):
         except Exception as e:
             logger.error(f"[뷰] 팀 수정 모달 표시 실패: {e}", exc_info=True)
             await send_error_message(interaction, "팀 수정 모달 표시 중 오류가 발생했습니다.")
-    
-    async def admin_log_callback(self, interaction: discord.Interaction) -> None:
-        """관리자 관리 버튼 콜백"""
-        try:
-            if not is_admin(interaction.user):
-                await send_response(interaction, permission_error_view())
-                return
-
-            admin_view = AdminView(self)
-            await send_response(interaction, admin_view)
-
-        except Exception as e:
-            logger.error(f"[뷰] 관리자 콜백 처리 실패: {e}", exc_info=True)
-            await send_error_message(interaction, "관리 메뉴 표시 중 오류가 발생했습니다.")
     
     async def _process_team_registration(self, interaction: discord.Interaction, team_name: str, team_data: dict, temp_message: discord.Message = None) -> None:
         """팀 등록 처리"""
@@ -888,101 +865,6 @@ class CancelConfirmView(LayoutView):
                 await self.message.edit(view=timeout_view(), embed=None, content=None)
             except Exception:
                 pass
-
-
-class AdminView(LayoutView):
-    """
-    관리자 전용 뷰
-
-    관리자 권한이 있는 사용자만 접근 가능합니다.
-    로그 텍스트와 CSV 관련 버튼을 함께 포함합니다.
-    """
-
-    def __init__(self, original_view: TeamInputView):
-        super().__init__(timeout=None)
-        self.original_view = original_view
-
-        # Container
-        children: list = [TextDisplay(content="## ⚙️ 관리")]
-        children.append(Separator())
-        children.append(TextDisplay(content=FOOTER_TEXT))
-        self.add_item(Container(*children, accent_colour=Color.blue()))
-
-        # ActionRow (CSV 버튼)
-        self.export_csv_button = Button(
-            label="CSV 내보내기",
-            style=ButtonStyle.secondary,
-            emoji="📄"
-        )
-        self.export_csv_button.callback = self.export_csv_callback
-        self.import_csv_button = Button(
-            label="CSV 불러오기",
-            style=ButtonStyle.secondary,
-            emoji="📥"
-        )
-        self.import_csv_button.callback = self.import_csv_callback
-        self.add_item(ActionRow(self.export_csv_button, self.import_csv_button))
-    
-    async def export_csv_callback(self, interaction: discord.Interaction) -> None:
-        """현재 등록된 팀 목록을 CSV로 내보냅니다."""
-        try:
-            if not is_admin(interaction.user):
-                await send_response(interaction, permission_error_view())
-                return
-
-            team_data_manager = BotManager.get_instance().get_team_data_manager()
-            teams = team_data_manager.get_all_teams()
-
-            output = io.StringIO()
-            writer = csv.writer(output)
-            writer.writerow(["team_name", "players", "staff"])
-
-            for team_name in sorted(teams.keys()):
-                team = teams[team_name]
-                players = team.players if hasattr(team, "players") else team.get("players", [])
-                staff = team.staff if hasattr(team, "staff") else team.get("staff", [])
-                writer.writerow([
-                    team_name,
-                    ", ".join(players),
-                    ", ".join(staff)
-                ])
-
-            csv_bytes = output.getvalue().encode("utf-8-sig")
-            file = discord.File(io.BytesIO(csv_bytes), filename="teams.csv")
-
-            if not interaction.response.is_done():
-                await interaction.response.send_message(file=file, ephemeral=True)
-            else:
-                await interaction.followup.send(file=file, ephemeral=True)
-
-        except Exception as e:
-            logger.error(f"[뷰] 팀 CSV 내보내기 실패: {e}", exc_info=True)
-            try:
-                await send_response(interaction, error_view("CSV 내보내기 중 오류가 발생했습니다."))
-            except Exception:
-                pass
-
-    async def import_csv_callback(self, interaction: discord.Interaction) -> None:
-        """CSV 형식으로 팀을 일괄 등록합니다."""
-        try:
-            if not is_admin(interaction.user):
-                await send_response(interaction, permission_error_view())
-                return
-
-            # CSV 입력 모달 표시
-            from .modals import CSVImportModal
-            if not interaction.response.is_done():
-                await interaction.response.send_modal(CSVImportModal(self))
-            else:
-                await interaction.followup.send("모달을 표시할 수 없습니다. 다시 시도해주세요.", ephemeral=True)
-
-        except Exception as e:
-            logger.error(f"[뷰] CSV 입력 콜백 처리 실패: {e}", exc_info=True)
-            try:
-                await send_response(interaction, error_view("CSV 입력 중 오류가 발생했습니다."))
-            except Exception:
-                pass
-
 
 
 
