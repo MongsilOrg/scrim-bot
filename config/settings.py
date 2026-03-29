@@ -58,7 +58,7 @@ class Settings:
     # 채널 ID 설정
     NOTICE_CHANNEL_ID: int = _parse_int(os.getenv('NOTICE_CHANNEL_ID', ''))
     BACKUP_ANALYSIS_CHANNEL_ID: int = _parse_int(os.getenv('BACKUP_ANALYSIS_CHANNEL_ID', ''))
-    SCRIM_CHANNEL_ID: int = _parse_int(os.getenv('SCRIM_CHANNEL_ID', '1444006965331234896'))
+    SCRIM_CHANNEL_ID: int = _parse_int(os.getenv('SCRIM_CHANNEL_ID', '1212383364258992128'))
     LOG_CHANNEL_ID: int = _parse_int(os.getenv('LOG_CHANNEL_ID', '1487384132035022961'))
 
     # 조별 채널 ID
