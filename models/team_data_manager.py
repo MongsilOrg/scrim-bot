@@ -131,9 +131,6 @@ class TeamDataManager:
                 # 레거시 형식: 메타데이터 없이 팀 데이터만 저장
                 teams_data = data
 
-            if not teams_data:
-                return False
-
             for name, team_dict in teams_data.items():
                 team = TeamData.from_dict(name, team_dict)
                 self.teams[name] = team
