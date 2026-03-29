@@ -744,43 +744,25 @@ class ScheduleView(LayoutView):
         self.add_item(Container(*children, accent_colour=accent))
 
         # 버튼 ActionRow
-        self.register_button = Button(
-            label="일정 등록",
-            style=ButtonStyle.primary,
-            emoji="✏️",
-        )
+        self.register_button = Button(label="참가", style=ButtonStyle.primary, emoji="✏️")
         self.register_button.callback = self.register_callback
 
-        self.reset_button = Button(
-            label="내 응답 삭제",
-            style=ButtonStyle.danger,
-            emoji="🗑️",
-        )
-        self.reset_button.callback = self.reset_callback
+        self.absence_button = Button(label="불참", style=ButtonStyle.secondary, emoji="🚫")
+        self.absence_button.callback = self.absence_callback
 
-        self.assign_button = Button(
-            label="편성",
-            style=ButtonStyle.success,
-            emoji="📋",
-        )
+        self.assign_button = Button(label="편성", style=ButtonStyle.success, emoji="📋")
         self.assign_button.callback = self.assign_callback
 
-        self.deploy_button = Button(
-            label="투입",
-            style=ButtonStyle.secondary,
-            emoji="✅",
-        )
+        self.deploy_button = Button(label="투입", style=ButtonStyle.secondary, emoji="✅")
         self.deploy_button.callback = self.deploy_callback
 
         self.add_item(ActionRow(
-            self.register_button,
-            self.reset_button,
-            self.assign_button,
-            self.deploy_button,
+            self.register_button, self.absence_button,
+            self.assign_button, self.deploy_button,
         ))
 
     async def register_callback(self, interaction: discord.Interaction) -> None:
-        """일정 등록 버튼 — 참가/불참 통합 모달 표시"""
+        """참가 버튼 — 요일 선택 모달"""
         if await _check_cooldown(interaction):
             return
         if not is_admin(interaction.user):
@@ -797,13 +779,12 @@ class ScheduleView(LayoutView):
 
         user_id = str(interaction.user.id)
         current_days = schedule_mgr.availability.get(user_id, set())
-        current_reasons = schedule_mgr.absence_reasons.get(user_id, {})
 
-        from .modals import ScheduleModal
-        await interaction.response.send_modal(ScheduleModal(current_days, current_reasons))
+        from .modals import AvailabilityModal
+        await interaction.response.send_modal(AvailabilityModal(current_days))
 
-    async def reset_callback(self, interaction: discord.Interaction) -> None:
-        """응답 삭제 버튼 — 본인 응답을 삭제합니다"""
+    async def absence_callback(self, interaction: discord.Interaction) -> None:
+        """불참 버튼 — 사유 입력 모달"""
         if await _check_cooldown(interaction):
             return
         if not is_admin(interaction.user):
@@ -815,19 +796,15 @@ class ScheduleView(LayoutView):
             await send_response(interaction, error_view("주간 일정이 초기화되지 않았습니다."))
             return
         if schedule_mgr.assignments:
-            await send_response(interaction, error_view("편성이 완료된 상태에서는 응답을 삭제할 수 없습니다.\n편성 취소 후 다시 시도해주세요."))
+            await send_response(interaction, error_view("편성이 완료된 상태에서는 불참을 수정할 수 없습니다.\n편성 취소 후 다시 시도해주세요."))
             return
 
         user_id = str(interaction.user.id)
-        if not schedule_mgr.remove_response(user_id):
-            await send_response(interaction, info_view("삭제할 응답이 없습니다."))
-            return
+        reasons = schedule_mgr.absence_reasons.get(user_id, {})
+        current_reason = reasons.get(-1, '') if reasons else ''
 
-        await send_response(
-            interaction,
-            success_view("응답이 삭제되었습니다.", title="🗑️ 응답 삭제"),
-        )
-        await _refresh_schedule_status(interaction)
+        from .modals import AbsenceReasonModal
+        await interaction.response.send_modal(AbsenceReasonModal(current_reason))
 
     async def assign_callback(self, interaction: discord.Interaction) -> None:
         """편성 버튼 — 상태에 따라 편성/재편성/편성취소 분기"""

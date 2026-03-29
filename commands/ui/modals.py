@@ -1077,17 +1077,11 @@ class WarningReasonModal(Modal):
             logger.error(f"[모달] DM 발송 실패 - 대상: {target_user.display_name}, 오류: {e}", exc_info=True)
 
 
-class ScheduleModal(Modal):
-    """일정 등록 모달 (참가 + 불참 통합)
+class AvailabilityModal(Modal):
+    """참가 요일 선택 모달"""
 
-    참가 가능한 요일을 체크하고, 전체 불참 시 사유를 입력합니다.
-    - 1개 이상 체크 → 참가 등록 (사유 무시)
-    - 모두 미체크 + 사유 → 전체 불참
-    - 모두 미체크 + 사유 없음 → 에러
-    """
-
-    def __init__(self, current_days: set, current_absence_reasons: dict):
-        super().__init__(title="일정 등록")
+    def __init__(self, current_days: set):
+        super().__init__(title="참가 등록")
         from models.schedule_manager import WEEKDAYS, ACTIVE_DAYS
 
         options = [
@@ -1100,73 +1094,59 @@ class ScheduleModal(Modal):
         ]
         self.days_checkbox = CheckboxGroup(
             options=options,
-            min_values=0,
+            min_values=1,
             max_values=len(ACTIVE_DAYS),
         )
-        self.add_item(Label(
-            text="참가 가능한 요일 (전체 불참 시 선택하지 마세요)",
-            component=self.days_checkbox,
-        ))
-
-        # 기존 전체 불참 사유 복원
-        default_reason = ''
-        if current_absence_reasons and -1 in current_absence_reasons:
-            default_reason = current_absence_reasons[-1]
-
-        self.reason_input = TextInput(
-            label="전체 불참 사유 (요일 미선택 시에만 적용)",
-            placeholder="예: 개인 일정, 출장 등",
-            default=default_reason,
-            required=False,
-            max_length=100,
-        )
-        self.add_item(self.reason_input)
+        self.add_item(Label(text="참가 가능한 요일", component=self.days_checkbox))
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         from models.schedule_manager import WEEKDAYS
         try:
             selected_days = {int(v) for v in self.days_checkbox.values}
-            reason = self.reason_input.value.strip()
-
             schedule_mgr = BotManager.get_instance().get_schedule_manager()
-            user_id = str(interaction.user.id)
-            display_name = interaction.user.display_name
-
-            if not selected_days:
-                # 전체 불참
-                if not reason:
-                    await send_response(interaction, error_view(
-                        "전체 불참 시 사유를 입력해주세요.\n"
-                        "참가 가능한 요일이 있다면 체크박스를 선택하세요."
-                    ))
-                    return
-
-                schedule_mgr.register_schedule(user_id, display_name, set(), reason)
-                await send_response(
-                    interaction,
-                    success_view(
-                        f"전체 불참으로 등록되었습니다.\n사유: {reason}",
-                        title="🚫 불참 등록",
-                    ),
-                )
-            else:
-                # 참가 등록
-                schedule_mgr.register_schedule(user_id, display_name, selected_days)
-                day_str = ', '.join(WEEKDAYS[d] for d in sorted(selected_days))
-                await send_response(
-                    interaction,
-                    success_view(
-                        f"{day_str} ({len(selected_days)}일) 참가 등록되었습니다.",
-                        title="✅ 일정 등록",
-                    ),
-                )
-
-            from .views import _refresh_schedule_status
-            await _refresh_schedule_status(interaction)
-
-        except Exception as e:
-            logger.error(f"[모달] 일정 등록 실패: {e}", exc_info=True)
+            schedule_mgr.register_schedule(
+                str(interaction.user.id), interaction.user.display_name, selected_days,
+            )
+            day_str = ', '.join(WEEKDAYS[d] for d in sorted(selected_days))
             await send_response(
                 interaction,
-                error_view("일정 등록 중 오류가 발생했습니다."),
+                success_view(f"{day_str} ({len(selected_days)}일) 참가 등록되었습니다.", title="✅ 참가 등록"),
             )
+            from .views import _refresh_schedule_status
+            await _refresh_schedule_status(interaction)
+        except Exception as e:
+            logger.error(f"[모달] 참가 등록 실패: {e}", exc_info=True)
+            await send_response(interaction, error_view("참가 등록 중 오류가 발생했습니다."))
+
+
+class AbsenceReasonModal(Modal):
+    """전체 불참 사유 입력 모달"""
+
+    def __init__(self, current_reason: str = ''):
+        super().__init__(title="불참 등록")
+        self.reason_input = TextInput(
+            label="불참 사유",
+            placeholder="예: 개인 일정, 출장 등",
+            default=current_reason,
+            min_length=1,
+            max_length=100,
+            required=True,
+        )
+        self.add_item(self.reason_input)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            reason = self.reason_input.value.strip()
+            schedule_mgr = BotManager.get_instance().get_schedule_manager()
+            schedule_mgr.register_schedule(
+                str(interaction.user.id), interaction.user.display_name, set(), reason,
+            )
+            await send_response(
+                interaction,
+                success_view(f"전체 불참으로 등록되었습니다.\n사유: {reason}", title="🚫 불참 등록"),
+            )
+            from .views import _refresh_schedule_status
+            await _refresh_schedule_status(interaction)
+        except Exception as e:
+            logger.error(f"[모달] 불참 등록 실패: {e}", exc_info=True)
+            await send_response(interaction, error_view("불참 등록 중 오류가 발생했습니다."))
