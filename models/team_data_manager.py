@@ -1010,10 +1010,13 @@ class TeamDataManager:
                     # 현재 시간 확인
                     current_time = get_current_kst_time()
                     
-                    # 17시 이후 또는 조편성 시작 후에는 MMR 업데이트 중단
-                    if current_time.hour >= 17 or team_data_manager.is_team_assignment_started:
+                    # 조편성 시작 후에는 즉시 중단
+                    if team_data_manager.is_team_assignment_started:
                         team_data_manager.mmr_update_task = None
                         return
+
+                    # 17시 이후면 마지막 갱신 1회 후 종료
+                    final_run = current_time.hour >= 17
 
                     # 팀이 있는 경우 MMR 갱신
                     if team_data_manager.teams:
@@ -1034,6 +1037,11 @@ class TeamDataManager:
                     team_data_manager.mmr_message = None
                 except Exception as e:
                     logger.error(f"[MMR갱신] 업데이트 루프 실패: {e}", exc_info=True)
+
+                if final_run:
+                    logger.info("[MMR갱신] 17시 최종 갱신 완료, 루프 종료")
+                    team_data_manager.mmr_update_task = None
+                    return
 
                 await asyncio.sleep(300)  # 5분마다 업데이트
         except asyncio.CancelledError:
