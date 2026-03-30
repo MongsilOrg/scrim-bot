@@ -48,27 +48,22 @@ async def _bootstrap_on_ready(client: ScrimBot, logger) -> None:
                     current_time.day == team_data_manager.scrim_day
                     and current_time.month == team_data_manager.scrim_month
                 )
-                if is_scrim_day:
-                    if current_time.hour >= 17:
-                        # 스크림 당일 17시 이후 재시작 — 조편성 미완료 → 즉시 실행 (비동기)
-                        logger.info("[시작] 17시 이후 재시작 - 조편성 미완료, 즉시 실행")
-                        total_teams, _, spare_teams = team_data_manager.get_team_counts()
-                        asyncio.create_task(
-                            team_data_manager._start_team_assignment(total_teams, spare_teams)
-                        )
-                    else:
-                        # 스크림 당일 17시 이전 — 태스크 재시작
-                        team_data_manager.auto_assignment_task = asyncio.create_task(
-                            team_data_manager.check_and_auto_assign()
-                        )
-                        logger.info("[시작] 자동 조편성 태스크 재시작")
-                        team_data_manager.mmr_update_task = asyncio.create_task(
-                            team_data_manager.mmr_update_loop()
-                        )
-                        logger.info("[시작] MMR 갱신 태스크 재시작")
+                if is_scrim_day and current_time.hour >= 17:
+                    # 스크림 당일 17시 이후 재시작 — 조편성 미완료 → 즉시 실행
+                    logger.info("[시작] 17시 이후 재시작 - 조편성 미완료, 즉시 실행")
+                    total_teams, _, spare_teams = team_data_manager.get_team_counts()
+                    asyncio.create_task(
+                        team_data_manager._start_team_assignment(total_teams, spare_teams)
+                    )
                 else:
-                    # 다른 날 — 데이터만 유지, 태스크 불필요
-                    logger.info("[시작] 스크림 당일이 아님 - 데이터 유지, 태스크 건너뜀")
+                    # 태스크 재시작 (당일 17시 전 또는 전날 밤)
+                    team_data_manager.auto_assignment_task = asyncio.create_task(
+                        team_data_manager.check_and_auto_assign()
+                    )
+                    team_data_manager.mmr_update_task = asyncio.create_task(
+                        team_data_manager.mmr_update_loop()
+                    )
+                    logger.info("[시작] 조편성/MMR 태스크 재시작")
             else:
                 # 조편성 후 복구 — GroupRosterView 재등록
                 await team_data_manager.restore_group_roster_views(client)
