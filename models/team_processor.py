@@ -540,34 +540,34 @@ class TeamProcessor:
             
             # 2. 8배수 제한 적용 시 우선순위에 따른 제외
             max_teams = (len(all_teams) // 8) * 8  # 8의 배수로 제한
-            
+            excluded_teams = []
+
             if len(all_teams) > max_teams:
                 # 초과하는 팀 수 계산
                 excess = len(all_teams) - max_teams
-                
+
                 # 우선순위별로 팀 분류
                 priority_1_teams = [team for team in all_teams if team_priorities.get(team[0], 2) == 1]  # 시드팀
                 priority_2_teams = [team for team in all_teams if team_priorities.get(team[0], 2) == 2]  # 비시드팀
-                
+
                 # 각 우선순위 그룹 내에서 MMR 순으로 정렬
                 priority_1_teams.sort(key=lambda x: x[2], reverse=True)
                 priority_2_teams.sort(key=lambda x: x[2], reverse=True)
-                
+
                 final_teams = []
-                excluded_teams = []
                 priority_2_selected = []
-                
+
                 # 시드팀부터 처리
                 if len(priority_1_teams) <= max_teams:
                     # 시드팀이 8배수 이하면 모두 포함
                     final_teams.extend(priority_1_teams)
                     remaining_slots = max_teams - len(priority_1_teams)
-                    
+
                     # 비시드팀 처리
                     if remaining_slots > 0 and priority_2_teams:
                         priority_2_selected = priority_2_teams[:remaining_slots]
                         final_teams.extend(priority_2_selected)
-                    
+
                     # 제외된 팀들
                     excluded_teams.extend(priority_2_teams[len(priority_2_selected):])
                 else:
@@ -575,23 +575,26 @@ class TeamProcessor:
                     final_teams = priority_1_teams[:max_teams]
                     excluded_teams.extend(priority_1_teams[max_teams:])  # 제외된 시드팀들
                     excluded_teams.extend(priority_2_teams)  # 모든 비시드팀 제외
-                
+
                 # MMR 순으로 다시 정렬 (조편성을 위해)
                 final_teams.sort(key=lambda x: x[2], reverse=True)
-                
+
                 if excluded_teams:
                     excluded_team_names = [team[0] for team in excluded_teams]
-                    logger.warning(f"[조편성] 팀 제외됨 - 제외된 팀 수: {len(excluded_team_names)}개, 팀명: {', '.join(excluded_team_names[:10])}{'...' if len(excluded_team_names) > 10 else ''}")
+                    logger.warning(f"[조편성] 예비팀 - {len(excluded_team_names)}개: {', '.join(excluded_team_names[:10])}{'...' if len(excluded_team_names) > 10 else ''}")
             else:
                 final_teams = all_teams
-            
+
             # 팀을 그룹으로 분배
             groups, unmatched_teams = self._distribute_teams_to_groups(final_teams, team_priorities)
-            
+
+            # 제외된 팀(예비팀)을 unmatched_teams에 합침
+            unmatched_teams.extend(excluded_teams)
+
             # 스네이크 드래프트 적용
             if len(groups) >= 2:
                 groups = self._apply_snake_draft(groups)
-            
+
             return groups, unmatched_teams
         except Exception as e:
             logger.error(f"[조편성] 팀 그룹 처리 실패: {e}", exc_info=True)
@@ -711,6 +714,26 @@ class TeamProcessor:
                     logger.warning(f"[Discord] 전체 공지 이미지 생성 실패 - {group_letter}조")
 
                 view.add_item(Container(*children, accent_colour=discord.Color.blue()))
+
+            # 예비팀 표시 (1~7팀, 이미지 테이블)
+            if unmatched_teams:
+                spare_teams_dict = {}
+                spare_mmr_dict = {}
+                for team_name, team_data, team_mmr in unmatched_teams:
+                    spare_teams_dict[team_name] = team_data
+                    spare_mmr_dict[team_name] = team_mmr
+
+                img_io = self._generate_group_image("예비", spare_teams_dict, spare_mmr_dict)
+                filename = "예비팀_mmr_table.png"
+
+                children = [TextDisplay(content="### 예비팀")]
+                if img_io:
+                    children.append(MediaGallery(discord.MediaGalleryItem(media=f"attachment://{filename}")))
+                    files.append(discord.File(img_io, filename=filename))
+                else:
+                    logger.warning("[Discord] 전체 공지 예비팀 이미지 생성 실패")
+
+                view.add_item(Container(*children, accent_colour=discord.Color.orange()))
 
             # 푸터
             view.add_item(Container(
