@@ -945,12 +945,11 @@ class TeamDataManager:
             from discord.ui import Container, MediaGallery, Separator, TextDisplay
             from commands.ui.layout_helpers import FOOTER_TEXT
 
+            update_time = self._last_success_time or get_current_kst_time().strftime('%H:%M')
             if self._is_maintenance:
-                update_time = self._last_success_time or get_current_kst_time().strftime('%H:%M')
                 desc = f"🔧 서버 점검 중 · 마지막 갱신: `{update_time}`"
             else:
-                self._last_success_time = get_current_kst_time().strftime('%H:%M')
-                desc = f"총 **{len(self.teams)}**팀 · 마지막 갱신: `{self._last_success_time}`"
+                desc = f"총 **{len(self.teams)}**팀 · 마지막 갱신: `{update_time}`"
                 if mmr_fail_count > 0:
                     desc += f"\n⚠️ {mmr_fail_count}개 팀 MMR 갱신 실패"
 
@@ -1047,6 +1046,9 @@ class TeamDataManager:
                             logger.info(f"[MMR갱신] 서버 점검 감지 — 실패: {fail}팀, 갱신 주기 10분")
                         else:
                             team_data_manager._is_maintenance = False
+                            # 실제 갱신 성공 시에만 마지막 갱신 시각 업데이트
+                            if success > 0:
+                                team_data_manager._last_success_time = current_time.strftime('%H:%M')
 
                         # 정상 상태에서 잔여 미검증 팀 재검증 (점검 해제, 봇 재시작, 이전 검증 실패 등)
                         if not team_data_manager._is_maintenance and team_data_manager.unverified_teams:
