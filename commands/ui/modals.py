@@ -296,7 +296,8 @@ class TeamEditModal(Modal):
             from services.bser_api import BSERAPIClient
             from config.settings import settings
             team_data_manager = BotManager.get_instance().get_team_data_manager()
-            
+            is_maintenance = False
+
             # 조편성 시작 여부 확인
             # GroupRosterView인지 확인하여 로스터 변경인지 판단
             from commands.ui.views import GroupRosterView
@@ -352,6 +353,7 @@ class TeamEditModal(Modal):
                 
                 has_test_account = any(team_processor._is_test_account(member) for member in all_members)
 
+                is_maintenance = False
                 # 닉네임 검증 (테스트 계정이 없는 경우에만)
                 if not has_test_account:
                     # 디스코드 서버 멤버 검증 (로컬, API 호출 전에 먼저 수행)
@@ -397,17 +399,14 @@ class TeamEditModal(Modal):
                         except Exception:
                             pass
 
-                    # 점검 중이면 점검 안내 우선 출력
                     if is_maintenance:
-                        await update_temp_message(temp_message, "🔧 현재 이터널 리턴 서버가 점검 중입니다.\n\n점검이 끝난 후 다시 시도해주세요.", discord.Color.orange())
-                        return
-
-                    # API 예외로 검증 자체가 실패한 경우
-                    if api_error:
+                        # 점검 중: API 검증 스킵, 수정은 진행
+                        pass
+                    elif api_error:
+                        # API 예외로 검증 자체가 실패한 경우
                         await update_temp_message(temp_message, "⚠️ 닉네임 확인 중 문제가 발생했습니다.\n\n💡 잠시 후 다시 시도해주세요.", discord.Color.red())
                         return
-
-                    if api_invalid_members:
+                    elif api_invalid_members:
                         await update_temp_message(
                             temp_message,
                             f"❌ 다음 닉네임들을 찾을 수 없습니다.\n**{', '.join(api_invalid_members) if api_invalid_members and isinstance(api_invalid_members, (list, tuple)) else str(api_invalid_members)}**\n\n💡 게임 내 닉네임을 정확히 입력했는지 확인해주세요.",
@@ -434,7 +433,28 @@ class TeamEditModal(Modal):
                 created_at=interaction.created_at
             )
             await team_data_manager.replace_team(self.original_team_name, team_data_obj, new_team_mmr)
-            
+
+            # 점검 중 수정 시 unverified 처리
+            if is_maintenance:
+                # 닉네임이 변경된 경우에만 unverified 추가
+                if isinstance(self.original_team_data, dict):
+                    _orig_players = self.original_team_data.get('players', [])
+                else:
+                    _orig_players = getattr(self.original_team_data, 'players', [])
+                old_players_norm = set(normalize_nickname_for_comparison(p) for p in _orig_players)
+                new_players_norm = set(normalize_nickname_for_comparison(p) for p in new_team_data['players'])
+                if old_players_norm != new_players_norm:
+                    team_data_manager.unverified_teams.add(new_team_name)
+                # 팀명 변경 시 기존 팀명 제거
+                if new_team_name != self.original_team_name:
+                    team_data_manager.unverified_teams.discard(self.original_team_name)
+                team_data_manager._save_backup()
+            else:
+                # 정상 수정으로 검증 통과 → unverified 제거
+                team_data_manager.unverified_teams.discard(new_team_name)
+                if new_team_name != self.original_team_name:
+                    team_data_manager.unverified_teams.discard(self.original_team_name)
+
             # 변경사항 diff 계산
             if isinstance(self.original_team_data, dict):
                 old_players = set(self.original_team_data.get('players', []))
@@ -472,11 +492,21 @@ class TeamEditModal(Modal):
             # 로스터 변경 시에는 조별 공지만 업데이트
             
             # 성공 메시지로 임시 메시지 업데이트
-            await update_temp_message(
-                temp_message,
-                f"**{self.original_team_name}** → **{new_team_name}**\n팀 평균 MMR: **{new_team_mmr:.2f}**",
-                discord.Color.green()
-            )
+            if is_maintenance:
+                await update_temp_message(
+                    temp_message,
+                    f"**{self.original_team_name}** → **{new_team_name}**\n\n"
+                    f"🔧 서버 점검으로 닉네임 확인을 건너뛰었습니다.\n"
+                    f"점검 종료 후 자동으로 확인되며, 결과는 DM으로 안내드립니다.\n"
+                    f"💡 닉네임 오타가 없는지 다시 한번 확인해주세요.",
+                    discord.Color.green()
+                )
+            else:
+                await update_temp_message(
+                    temp_message,
+                    f"**{self.original_team_name}** → **{new_team_name}**\n팀 평균 MMR: **{new_team_mmr:.2f}**",
+                    discord.Color.green()
+                )
             # 변경 전후 정보 로깅
             if isinstance(self.original_team_data, dict):
                 original_players = self.original_team_data.get('players', [])

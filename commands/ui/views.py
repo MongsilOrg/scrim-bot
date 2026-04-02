@@ -264,6 +264,7 @@ class TeamInputView(LayoutView):
             team_processor = BotManager.get_instance().get_team_processor()
             has_test_account = any(team_processor._is_test_account(m) for m in team_members)
 
+            is_maintenance = False
             if not has_test_account:
                 import asyncio as _aio
                 api_invalid_members = []
@@ -294,22 +295,16 @@ class TeamInputView(LayoutView):
                         pass
 
                 if is_maintenance:
-                    msg = "🔧 현재 이터널 리턴 서버가 점검 중입니다.\n점검이 끝난 후 다시 신청해주세요."
-                    if temp_message:
-                        await update_temp_message(temp_message, msg, discord.Color.orange())
-                    else:
-                        await send_error_message(interaction, msg)
-                    return
-
-                if api_error:
+                    # 점검 중: API 검증 스킵, 등록은 진행
+                    pass
+                elif api_error:
                     msg = "게임 서버 연결 실패. 잠시 후 다시 시도해주세요."
                     if temp_message:
                         await update_temp_message(temp_message, msg, discord.Color.red())
                     else:
                         await send_error_message(interaction, msg)
                     return
-
-                if api_invalid_members:
+                elif api_invalid_members:
                     msg = f"❌ 게임 내에서 확인되지 않는 닉네임: **{', '.join(api_invalid_members)}**\n💡 게임 내 닉네임을 정확히 입력해주세요."
                     if temp_message:
                         await update_temp_message(temp_message, msg, discord.Color.red())
@@ -355,12 +350,24 @@ class TeamInputView(LayoutView):
             )
             logger.info(f"[팀신청] {team_name} | MMR: {team_mmr:.2f} | 선수: [{players_str}] | 스태프: [{staff_str}]")
 
-            success_msg = (
-                f"**{team_name}** 팀이 성공적으로 등록되었습니다!\n\n"
-                f"🎮 선수: {players_str}\n"
-                f"🛠️ 스태프: {staff_str}\n"
-                f"📊 팀 평균 MMR: **{team_mmr:.2f}**"
-            )
+            if is_maintenance:
+                team_data_manager.unverified_teams.add(team_name)
+                team_data_manager._save_backup()
+                success_msg = (
+                    f"**{team_name}** 팀이 등록되었습니다.\n\n"
+                    f"🎮 선수: {players_str}\n"
+                    f"🛠️ 스태프: {staff_str}\n\n"
+                    f"🔧 서버 점검으로 닉네임 확인을 건너뛰었습니다.\n"
+                    f"점검 종료 후 자동으로 확인되며, 결과는 DM으로 안내드립니다.\n"
+                    f"💡 닉네임 오타가 없는지 다시 한번 확인해주세요."
+                )
+            else:
+                success_msg = (
+                    f"**{team_name}** 팀이 성공적으로 등록되었습니다!\n\n"
+                    f"🎮 선수: {players_str}\n"
+                    f"🛠️ 스태프: {staff_str}\n"
+                    f"📊 팀 평균 MMR: **{team_mmr:.2f}**"
+                )
 
             if temp_message:
                 # 임시 메시지를 성공 메시지로 업데이트

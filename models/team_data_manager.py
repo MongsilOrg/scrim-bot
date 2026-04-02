@@ -59,6 +59,9 @@ class TeamDataManager:
         self.group_message_ids: Dict[str, int] = {}  # "A" → message_id
         self.group_message_texts: Dict[str, str] = {}  # "A" → message_text
         self.dashboard_message_id: Optional[int] = None  # 스크림 대시보드 메시지 ID
+        self.unverified_teams: set = set()  # 점검 중 신청/수정된 팀 (BSER 닉네임 미검증)
+        self._is_maintenance: bool = False  # 현재 점검 상태
+        self._last_success_time: str = ""  # 마지막 성공 갱신 시각 (HH:MM)
     
     def _save_backup(self) -> None:
         """팀 데이터를 JSON 파일로 백업합니다 (날짜 메타데이터 포함)."""
@@ -99,6 +102,7 @@ class TeamDataManager:
                 'mmr_message_id': self.mmr_message_id,
                 'ban_lists': bot_manager._ban_lists,
                 'selected_weathers': bot_manager._selected_weathers,
+                'unverified_teams': list(self.unverified_teams),
             }
             tmp_path = self.BACKUP_FILE + '.tmp'
             with open(tmp_path, 'w', encoding='utf-8') as f:
@@ -159,6 +163,7 @@ class TeamDataManager:
 
             self.dashboard_message_id = data.get('dashboard_message_id')
             self.mmr_message_id = data.get('mmr_message_id')
+            self.unverified_teams = set(data.get('unverified_teams', []))
 
             # BotManager에 밴/날씨 데이터 주입
             from bot.manager import BotManager
@@ -286,6 +291,9 @@ class TeamDataManager:
             self.groups = None
             self.group_message_ids = {}
             self.group_message_texts = {}
+            self.unverified_teams.clear()
+            self._is_maintenance = False
+            self._last_success_time = ""
 
             self.clear_backup()
             self.log_state_snapshot(prefix="reset")
@@ -632,6 +640,7 @@ class TeamDataManager:
 
                 # 팀 데이터 제거
                 del self.teams[team_name]
+                self.unverified_teams.discard(team_name)
 
             self._save_backup()
             return True, ""
@@ -926,7 +935,7 @@ class TeamDataManager:
 
             # 이미지 생성
             from services.image_generator import ImageGenerator
-            img_io = ImageGenerator.generate_mmr_image(self.teams)
+            img_io = ImageGenerator.generate_mmr_image(self.teams, unverified_teams=self.unverified_teams)
 
             if not img_io:
                 logger.error("[MMR메시지] 이미지 생성 실패", exc_info=True)
@@ -936,9 +945,14 @@ class TeamDataManager:
             from discord.ui import Container, MediaGallery, Separator, TextDisplay
             from commands.ui.layout_helpers import FOOTER_TEXT
 
-            desc = f"총 **{len(self.teams)}**팀 · 마지막 갱신: `{get_current_kst_time().strftime('%H:%M')}`"
-            if mmr_fail_count > 0:
-                desc += f"\n⚠️ {mmr_fail_count}개 팀 MMR 갱신 실패"
+            if self._is_maintenance:
+                update_time = self._last_success_time or get_current_kst_time().strftime('%H:%M')
+                desc = f"🔧 서버 점검 중 · 마지막 갱신: `{update_time}`"
+            else:
+                self._last_success_time = get_current_kst_time().strftime('%H:%M')
+                desc = f"총 **{len(self.teams)}**팀 · 마지막 갱신: `{self._last_success_time}`"
+                if mmr_fail_count > 0:
+                    desc += f"\n⚠️ {mmr_fail_count}개 팀 MMR 갱신 실패"
 
             children = [
                 TextDisplay(content=f"## 📊 팀 MMR 정보\n{desc}"),
@@ -998,15 +1012,16 @@ class TeamDataManager:
             await asyncio.sleep(10)
 
             while True:
-                
+                sleep_interval = 300  # 기본 5분
+
                 try:
                     # ✅ 최신 TeamDataManager 인스턴스를 동적으로 가져오기
                     from bot.manager import BotManager
                     team_data_manager = BotManager.get_instance().get_team_data_manager()
-                    
+
                     # 현재 시간 확인
                     current_time = get_current_kst_time()
-                    
+
                     # 조편성 시작 후에는 즉시 중단
                     if team_data_manager.is_team_assignment_started:
                         team_data_manager.mmr_update_task = None
@@ -1018,7 +1033,29 @@ class TeamDataManager:
                     # 팀이 있는 경우 MMR 갱신
                     if team_data_manager.teams:
                         success, fail = await team_data_manager._update_all_team_mmr()
-                        # mmr_message가 있으면 해당 채널, 없으면 scrim_channel_id 사용
+
+                        # 점검 감지: 전체 실패 시 check_server_maintenance
+                        was_maintenance = team_data_manager._is_maintenance
+                        if fail > 0 and success == 0:
+                            try:
+                                from services.bser_api import BSERAPIClient
+                                async with BSERAPIClient() as api:
+                                    team_data_manager._is_maintenance = await api.check_server_maintenance()
+                            except Exception:
+                                team_data_manager._is_maintenance = True
+                            if team_data_manager._is_maintenance:
+                                sleep_interval = 600  # 점검 중 10분
+                                logger.info("[MMR갱신] 서버 점검 감지 — 갱신 주기 10분")
+                        else:
+                            team_data_manager._is_maintenance = False
+
+                        # 정상 상태에서 잔여 미검증 팀 재검증 (점검 해제, 봇 재시작, 이전 검증 실패 등)
+                        if not team_data_manager._is_maintenance and team_data_manager.unverified_teams:
+                            if was_maintenance:
+                                logger.info("[MMR갱신] 서버 점검 해제 감지")
+                            await team_data_manager._verify_unverified_teams()
+
+                        # 채널 찾기 및 메시지 업데이트
                         if team_data_manager.mmr_message and team_data_manager.mmr_message.channel:
                             channel = team_data_manager.mmr_message.channel
                         elif team_data_manager.scrim_channel_id and team_data_manager.client:
@@ -1040,7 +1077,7 @@ class TeamDataManager:
                     team_data_manager.mmr_update_task = None
                     return
 
-                await asyncio.sleep(300)  # 5분마다 업데이트
+                await asyncio.sleep(sleep_interval)
         except asyncio.CancelledError:
             # 최신 인스턴스에서 태스크 참조 제거
             from bot.manager import BotManager
@@ -1102,6 +1139,118 @@ class TeamDataManager:
             self._save_backup()
 
         return success_count, fail_count
+
+    async def _verify_unverified_teams(self) -> None:
+        """점검 해제 후 미검증 팀의 닉네임을 재검증하고 DM을 발송합니다."""
+        if not self.unverified_teams:
+            return
+
+        from services.bser_api import BSERAPIClient
+        from bot.manager import BotManager
+
+        team_processor = BotManager.get_instance().get_team_processor()
+        teams_to_check = list(self.unverified_teams)
+        logger.info(f"[점검해제] 미검증 팀 {len(teams_to_check)}개 재검증 시작")
+
+        for team_name in teams_to_check:
+            if team_name not in self.teams:
+                self.unverified_teams.discard(team_name)
+                continue
+
+            team_data = self.teams[team_name]
+            players = list(team_data.players)
+            invalid_members = []
+
+            try:
+                async with BSERAPIClient() as api:
+                    for player in players:
+                        if team_processor._is_test_account(player):
+                            continue
+                        uid = await api.get_user_uid(player)
+                        if not uid:
+                            invalid_members.append(player)
+
+                # MMR 갱신 시도
+                if not invalid_members:
+                    _, _, team_mmr = await team_processor.fetch_team_mmr(team_name, team_data)
+                    await self.set_team_mmr(team_name, team_mmr)
+
+                # DM 발송
+                await self._send_verification_dm(team_name, team_data, invalid_members)
+
+                # 검증 완료 (성공/실패 모두 unverified에서 제거)
+                self.unverified_teams.discard(team_name)
+
+            except Exception as e:
+                logger.error(f"[점검해제] 팀 재검증 실패 - {team_name}: {e}", exc_info=True)
+
+        self._save_backup()
+        logger.info(f"[점검해제] 미검증 팀 재검증 완료 — 잔여: {len(self.unverified_teams)}개")
+
+    async def _send_verification_dm(self, team_name: str, team_data, invalid_members: list) -> None:
+        """점검 해제 후 닉네임 검증 결과를 DM으로 발송합니다."""
+        try:
+            if not self.client:
+                return
+
+            user_id = team_data.user_id if hasattr(team_data, 'user_id') else None
+            if not user_id:
+                return
+
+            user = self.client.get_user(int(user_id))
+            if not user:
+                try:
+                    user = await self.client.fetch_user(int(user_id))
+                except Exception:
+                    return
+
+            from discord.ui import Container, LayoutView, Separator, TextDisplay
+            from commands.ui.layout_helpers import FOOTER_TEXT
+
+            players_str = ', '.join(team_data.players)
+            view = LayoutView()
+
+            if not invalid_members:
+                # 성공 DM
+                mmr_val = f"{team_data.mmr:.0f}" if hasattr(team_data, 'mmr') and team_data.mmr else "0"
+                content = (
+                    f"## ✅ 닉네임 확인 완료\n"
+                    f"**{team_name}** 팀의 닉네임이 정상 확인되었습니다.\n\n"
+                    f"🎮 선수: {players_str}\n"
+                    f"📊 MMR: **{mmr_val}**\n\n"
+                    f"💡 MMR이 반영되었습니다."
+                )
+                view.add_item(Container(
+                    TextDisplay(content=content),
+                    Separator(),
+                    TextDisplay(content=FOOTER_TEXT),
+                    accent_colour=discord.Color.green(),
+                ))
+            else:
+                # 실패 DM
+                invalid_str = ', '.join(invalid_members)
+                content = (
+                    f"## ⚠️ 닉네임 확인 실패\n"
+                    f"**{team_name}** 팀의 닉네임 확인에 실패했습니다.\n\n"
+                    f"❌ 확인 실패: **{invalid_str}**\n\n"
+                    f"💡 해당 닉네임을 게임 내에서 확인 후\n"
+                    f"대시보드의 수정 버튼으로 수정해주세요."
+                )
+                view.add_item(Container(
+                    TextDisplay(content=content),
+                    Separator(),
+                    TextDisplay(content=FOOTER_TEXT),
+                    accent_colour=discord.Color.red(),
+                ))
+
+            await user.send(view=view)
+            logger.info(f"[점검해제] DM 발송 — {team_name} ({'성공' if not invalid_members else '실패'})")
+
+        except discord.Forbidden:
+            logger.warning(f"[점검해제] DM 발송 실패 (DM 차단) — {team_name}")
+        except Exception as e:
+            logger.error(f"[점검해제] DM 발송 실패 — {team_name}: {e}", exc_info=True)
+
     def check_duplicate_with_bot_teams(self, team_name: str, team_members: List[str], exclude_team: str = None) -> Tuple[bool, str]:
         """봇 신청 팀이 이미 봇으로 등록된 팀들과 중복되는지 검사합니다. (대소문자 구별 없이)"""
         try:
