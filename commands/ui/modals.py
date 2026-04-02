@@ -420,15 +420,18 @@ class TeamEditModal(Modal):
                         )
                         return
             
-            # MMR 계산
-            new_team_mmr = 0.0
+            # MMR 계산 (실패 시 기존 MMR 유지)
+            original_mmr = self.original_team_data.mmr if hasattr(self.original_team_data, 'mmr') else (self.original_team_data.get('mmr', 0.0) if isinstance(self.original_team_data, dict) else 0.0)
+            new_team_mmr = original_mmr
             try:
                 team_processor = BotManager.get_instance().get_team_processor()
-                _, _, new_team_mmr = await team_processor.fetch_team_mmr(new_team_name, new_team_data)
+                _, _, fetched_mmr = await team_processor.fetch_team_mmr(new_team_name, new_team_data)
+                if fetched_mmr > 0:
+                    new_team_mmr = fetched_mmr
             except Exception as e:
                 logger.error(f"[모달] 팀 MMR 계산 실패 - 팀명: {new_team_name}: {e}", exc_info=True)
-                # MMR 계산 실패해도 팀 수정은 진행
-            
+                # MMR 계산 실패해도 팀 수정은 진행 (기존 MMR 유지)
+
             # 팀 데이터 업데이트 (인덱스/캐시 일관성 유지)
             from models.team_data import TeamData
             team_data_obj = TeamData(

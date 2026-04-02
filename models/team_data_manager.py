@@ -1168,10 +1168,11 @@ class TeamDataManager:
                         if not uid:
                             invalid_members.append(player)
 
-                # MMR 갱신 시도
+                # MMR 갱신 시도 (0 반환 시 기존 MMR 유지)
                 if not invalid_members:
                     _, _, team_mmr = await team_processor.fetch_team_mmr(team_name, team_data)
-                    await self.set_team_mmr(team_name, team_mmr)
+                    if team_mmr > 0:
+                        await self.set_team_mmr(team_name, team_mmr)
 
                 # DM 발송
                 await self._send_verification_dm(team_name, team_data, invalid_members)
