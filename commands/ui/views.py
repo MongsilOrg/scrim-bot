@@ -281,18 +281,25 @@ class TeamInputView(LayoutView):
                                 api_invalid_members.append(member)
 
                         if api_invalid_members and len(api_invalid_members) >= len(team_members) / 2:
-                            try:
-                                is_maintenance = await api.check_server_maintenance()
-                            except Exception:
-                                pass
+                            # MMR 갱신 루프에서 감지한 점검 상태 우선 참조
+                            if team_data_manager._is_maintenance:
+                                is_maintenance = True
+                            else:
+                                try:
+                                    is_maintenance = await api.check_server_maintenance()
+                                except Exception:
+                                    is_maintenance = True
                 except Exception as e:
                     logger.error(f"[뷰] API 닉네임 검증 실패: {e}", exc_info=True)
                     api_error = True
-                    try:
-                        async with BSERAPIClient() as check:
-                            is_maintenance = await check.check_server_maintenance()
-                    except Exception:
-                        pass
+                    if team_data_manager._is_maintenance:
+                        is_maintenance = True
+                    else:
+                        try:
+                            async with BSERAPIClient() as check:
+                                is_maintenance = await check.check_server_maintenance()
+                        except Exception:
+                            is_maintenance = True
 
                 if is_maintenance:
                     # 점검 중: API 검증 스킵, 등록은 진행

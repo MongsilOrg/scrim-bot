@@ -385,19 +385,25 @@ class TeamEditModal(Modal):
 
                             # 과반수 이상 조회 실패 시 서버 점검 확인
                             if api_invalid_members and len(api_invalid_members) >= len(all_members) / 2:
-                                try:
-                                    is_maintenance = await client_instance.check_server_maintenance()
-                                except Exception as e:
-                                    logger.warning(f"[모달] 서버 점검 확인 실패: {e}")
+                                if team_data_manager._is_maintenance:
+                                    is_maintenance = True
+                                else:
+                                    try:
+                                        is_maintenance = await client_instance.check_server_maintenance()
+                                    except Exception as e:
+                                        logger.warning(f"[모달] 서버 점검 확인 실패: {e}")
+                                        is_maintenance = True
                     except Exception as e:
                         logger.error(f"[모달] API 닉네임 검증 실패: {e}", exc_info=True)
                         api_error = True
-                        # 예외 발생 시에도 점검 여부 확인 시도
-                        try:
-                            async with BSERAPIClient() as check_client:
-                                is_maintenance = await check_client.check_server_maintenance()
-                        except Exception:
-                            pass
+                        if team_data_manager._is_maintenance:
+                            is_maintenance = True
+                        else:
+                            try:
+                                async with BSERAPIClient() as check_client:
+                                    is_maintenance = await check_client.check_server_maintenance()
+                            except Exception:
+                                is_maintenance = True
 
                     if is_maintenance:
                         # 점검 중: API 검증 스킵, 수정은 진행
