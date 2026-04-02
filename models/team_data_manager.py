@@ -988,7 +988,12 @@ class TeamDataManager:
                     self.mmr_message = None
                     self.mmr_message_id = None
                 except discord.HTTPException as e:
-                    logger.warning(f"[MMR메시지] 편집 실패 - 새로 생성: {e}")
+                    logger.warning(f"[MMR메시지] 편집 실패 - 재시도: {e}")
+                    # 편집 실패 시 기존 메시지 삭제 후 새로 생성
+                    try:
+                        await self.mmr_message.delete()
+                    except Exception:
+                        pass
                     self.mmr_message = None
                     self.mmr_message_id = None
 
