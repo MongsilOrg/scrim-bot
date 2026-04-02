@@ -1012,8 +1012,8 @@ class TeamDataManager:
                         team_data_manager.mmr_update_task = None
                         return
 
-                    # 17시 이후면 마지막 갱신 1회 후 종료
-                    final_run = current_time.hour >= 17
+                    # 스크림 당일 17시 이후면 마지막 갱신 1회 후 종료
+                    final_run = team_data_manager._is_scrim_date_today() and current_time.hour >= 17
 
                     # 팀이 있는 경우 MMR 갱신
                     if team_data_manager.teams:
