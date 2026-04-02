@@ -1121,8 +1121,12 @@ class TeamDataManager:
 
                     # MMR 계산
                     _, _, team_mmr = await team_processor.fetch_team_mmr(team_name, team_data)
-                    await self.set_team_mmr(team_name, team_mmr)
-                    success_count += 1
+                    if team_mmr > 0:
+                        await self.set_team_mmr(team_name, team_mmr)
+                        success_count += 1
+                    else:
+                        # API 실패로 MMR 0 반환 → 실패로 처리 (mmr_updated_at 미갱신)
+                        fail_count += 1
 
                 except Exception as e:
                     logger.error(f"[MMR갱신] 팀 MMR 갱신 실패 - 팀명: {team_name}: {e}", exc_info=True)
