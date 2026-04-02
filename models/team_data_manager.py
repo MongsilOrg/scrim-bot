@@ -1034,18 +1034,12 @@ class TeamDataManager:
                     if team_data_manager.teams:
                         success, fail = await team_data_manager._update_all_team_mmr()
 
-                        # 점검 감지: 전체 실패 시 check_server_maintenance
+                        # 점검 감지: 전체 실패 시 점검으로 판정
                         was_maintenance = team_data_manager._is_maintenance
                         if fail > 0 and success == 0:
-                            try:
-                                from services.bser_api import BSERAPIClient
-                                async with BSERAPIClient() as api:
-                                    team_data_manager._is_maintenance = await api.check_server_maintenance()
-                            except Exception:
-                                team_data_manager._is_maintenance = True
-                            if team_data_manager._is_maintenance:
-                                sleep_interval = 600  # 점검 중 10분
-                                logger.info("[MMR갱신] 서버 점검 감지 — 갱신 주기 10분")
+                            team_data_manager._is_maintenance = True
+                            sleep_interval = 600  # 점검 중 10분
+                            logger.info(f"[MMR갱신] 서버 점검 감지 — 실패: {fail}팀, 갱신 주기 10분")
                         else:
                             team_data_manager._is_maintenance = False
 
