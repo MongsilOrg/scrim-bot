@@ -450,9 +450,10 @@ class TeamProcessor:
                         avg_mmr = sum(top_3_mmr) / len(top_3_mmr)
                     else:
                         logger.warning(f"[MMR조회] 팀의 모든 플레이어 MMR 조회 실패 - 팀명: {team_name}, 플레이어: {players}")
-                        avg_mmr = 0.0
+                        # 실패 시 기존 MMR 유지, 0 반환으로 호출처에 실패 알림
+                        return team_name, team_data, 0.0
 
-                    # TeamData 객체에 MMR 저장 (dict인 경우 처리)
+                    # TeamData 객체에 MMR 저장 (성공 시에만)
                     if isinstance(team_data, dict):
                         team_data['mmr'] = avg_mmr
                     else:
@@ -461,18 +462,10 @@ class TeamProcessor:
                     return team_name, team_data, avg_mmr
             except Exception as e:
                 logger.error(f"[MMR조회] API 클라이언트 사용 실패: {e}", exc_info=True)
-                if isinstance(team_data, dict):
-                    team_data['mmr'] = 0.0
-                else:
-                    team_data.mmr = 0.0
                 return team_name, team_data, 0.0
-                
+
         except Exception as e:
             logger.error(f"[MMR조회] 팀 MMR 조회 실패: {e}", exc_info=True)
-            if isinstance(team_data, dict):
-                team_data['mmr'] = 0.0
-            else:
-                team_data.mmr = 0.0
             return team_name, team_data, 0.0
     
     async def process_teams_background(self, teams: Dict[str, TeamData], 
