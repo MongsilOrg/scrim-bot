@@ -53,6 +53,19 @@ async def _transition_to_next_scrim(client: ScrimBot, channel: discord.TextChann
     old_tdm = bot_manager.get_team_data_manager()
     old_msg_id = old_tdm.dashboard_message_id
 
+    # 기존 MMR 메시지 삭제 (새 날에는 새 MMR 메시지 생성)
+    if old_tdm.mmr_message:
+        try:
+            await old_tdm.mmr_message.delete()
+        except Exception:
+            pass
+    elif old_tdm.mmr_message_id:
+        try:
+            old_mmr_msg = await channel.fetch_message(old_tdm.mmr_message_id)
+            await old_mmr_msg.delete()
+        except Exception:
+            pass
+
     # 리셋 + 새 스크림 설정 (dashboard_message_id 보존)
     team_data_manager = await bot_manager.reset_team_data_manager(client)
     if old_msg_id:
