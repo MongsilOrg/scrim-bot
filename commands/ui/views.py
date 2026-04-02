@@ -408,17 +408,11 @@ class TeamInputView(LayoutView):
             except Exception as e:
                 logger.error(f"[뷰] 팀 MMR 갱신 실패: {e}", exc_info=True)
             
-            # MMR 메시지 업데이트
+            # MMR 메시지 업데이트 (실패 시 다음 갱신 루프에서 재시도)
             try:
                 await team_data_manager.update_mmr_message(channel)
             except Exception as e:
                 logger.error(f"[뷰] MMR 메시지 업데이트 실패: {e}", exc_info=True)
-                # 실패 시 재시도
-                try:
-                    team_data_manager.mmr_message = None
-                    await team_data_manager.update_mmr_message(channel)
-                except Exception as e2:
-                    logger.error(f"[뷰] MMR 메시지 재생성 실패: {e2}", exc_info=True)
                     
         except Exception as e:
             logger.error(f"[뷰] 백그라운드 MMR 갱신 실패: {e}", exc_info=True)
