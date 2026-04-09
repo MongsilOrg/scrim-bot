@@ -5,17 +5,15 @@
 주의 2회 → 경고 1회 자동 환산 및 제한 날짜 계산을 수행합니다.
 """
 import asyncio
-import json
-import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
 import gspread
 import pytz
-from google.oauth2.service_account import Credentials
 
 from config.logging_config import get_logger
 from config.settings import settings
+from utils.gsheet_client import create_gspread_client
 from utils.helpers import get_current_kst_time
 
 logger = get_logger('warning_manager')
@@ -61,79 +59,48 @@ class WarningManager:
     
     def _initialize_client(self) -> None:
         """구글 시트 클라이언트 초기화"""
+        self.client, self.spreadsheet = create_gspread_client(caller='경고관리')
+
+        if not self.spreadsheet:
+            return
+
         try:
-            credentials_path = settings.GOOGLE_SHEETS_CREDENTIALS_PATH
-            
-            if not credentials_path:
-                logger.warning("[경고관리] 인증 정보 경로가 설정되지 않음")
-                return
-            
-            # 파일 존재 확인
-            if not os.path.exists(credentials_path):
-                logger.warning(f"[경고관리] 인증 정보 파일을 찾을 수 없음 - 경로: {credentials_path}")
-                return
-            
-            # 서비스 계정 인증
-            scope = [
-                'https://spreadsheets.google.com/feeds',
-                'https://www.googleapis.com/auth/drive'
-            ]
-            creds = Credentials.from_service_account_file(
-                credentials_path,
-                scopes=scope
-            )
-            self.client = gspread.authorize(creds)
-            
-            # 스프레드시트 열기
-            if settings.GOOGLE_SHEETS_MAIN_SPREADSHEET_ID:
-                self.spreadsheet = self.client.open_by_key(
-                    settings.GOOGLE_SHEETS_MAIN_SPREADSHEET_ID
+            # 패널티 시트 열기 (없으면 생성)
+            try:
+                self.worksheet = self.spreadsheet.worksheet(
+                    settings.GOOGLE_SHEETS_WARNING_WORKSHEET_NAME
                 )
-                logger.debug(f"[경고관리] 스프레드시트 연결 성공 - ID: {settings.GOOGLE_SHEETS_MAIN_SPREADSHEET_ID}")
+                logger.debug(f"[경고관리] 패널티 시트 연결 성공 - 이름: {settings.GOOGLE_SHEETS_WARNING_WORKSHEET_NAME}")
+            except gspread.WorksheetNotFound:
+                # 시트가 없으면 생성
+                self.worksheet = self.spreadsheet.add_worksheet(
+                    title=settings.GOOGLE_SHEETS_WARNING_WORKSHEET_NAME,
+                    rows=100,
+                    cols=10
+                )
+                logger.info(f"[경고관리] 패널티 시트 생성됨 - 이름: {settings.GOOGLE_SHEETS_WARNING_WORKSHEET_NAME}")
 
-                # 패널티 시트 열기 (없으면 생성)
-                try:
-                    self.worksheet = self.spreadsheet.worksheet(
-                        settings.GOOGLE_SHEETS_WARNING_WORKSHEET_NAME
-                    )
-                    logger.debug(f"[경고관리] 패널티 시트 연결 성공 - 이름: {settings.GOOGLE_SHEETS_WARNING_WORKSHEET_NAME}")
-                except gspread.WorksheetNotFound:
-                    # 시트가 없으면 생성
-                    self.worksheet = self.spreadsheet.add_worksheet(
-                        title=settings.GOOGLE_SHEETS_WARNING_WORKSHEET_NAME,
-                        rows=100,
-                        cols=10
-                    )
-                    logger.info(f"[경고관리] 패널티 시트 생성됨 - 이름: {settings.GOOGLE_SHEETS_WARNING_WORKSHEET_NAME}")
+            # 경고로그 시트 열기 (외부용 - 영구 보관, 없으면 생성)
+            try:
+                self.warning_log_worksheet = self.spreadsheet.worksheet(
+                    settings.GOOGLE_SHEETS_WARNING_LOG_WORKSHEET_NAME
+                )
+                logger.debug(f"[경고관리] 패널티로그 시트 연결 성공 - 이름: {settings.GOOGLE_SHEETS_WARNING_LOG_WORKSHEET_NAME}")
+            except gspread.WorksheetNotFound:
+                # 시트가 없으면 생성
+                self.warning_log_worksheet = self.spreadsheet.add_worksheet(
+                    title=settings.GOOGLE_SHEETS_WARNING_LOG_WORKSHEET_NAME,
+                    rows=100,
+                    cols=10
+                )
+                logger.info(f"[경고관리] 패널티로그 시트 생성됨 - 이름: {settings.GOOGLE_SHEETS_WARNING_LOG_WORKSHEET_NAME}")
 
-                # 경고로그 시트 열기 (외부용 - 영구 보관, 없으면 생성)
-                try:
-                    self.warning_log_worksheet = self.spreadsheet.worksheet(
-                        settings.GOOGLE_SHEETS_WARNING_LOG_WORKSHEET_NAME
-                    )
-                    logger.debug(f"[경고관리] 패널티로그 시트 연결 성공 - 이름: {settings.GOOGLE_SHEETS_WARNING_LOG_WORKSHEET_NAME}")
-                except gspread.WorksheetNotFound:
-                    # 시트가 없으면 생성
-                    self.warning_log_worksheet = self.spreadsheet.add_worksheet(
-                        title=settings.GOOGLE_SHEETS_WARNING_LOG_WORKSHEET_NAME,
-                        rows=100,
-                        cols=10
-                    )
-                    logger.info(f"[경고관리] 패널티로그 시트 생성됨 - 이름: {settings.GOOGLE_SHEETS_WARNING_LOG_WORKSHEET_NAME}")
+            # 헤더 확인 및 생성
+            self._ensure_headers()
+            self._ensure_warning_log_headers()
 
-                # 헤더 확인 및 생성
-                self._ensure_headers()
-                self._ensure_warning_log_headers()
-
-            else:
-                logger.warning("[경고관리] 스프레드시트 ID가 설정되지 않음")
-                
-        except FileNotFoundError:
-            logger.error(f"[경고관리] 인증 정보 파일을 찾을 수 없음 - 경로: {credentials_path}")
-        except json.JSONDecodeError:
-            logger.error("[경고관리] 인증 정보 파일 형식이 올바르지 않음")
         except Exception as e:
-            logger.error(f"[경고관리] 클라이언트 초기화 실패: {e}")
+            logger.error(f"[경고관리] 워크시트 초기화 실패: {e}")
     
     def _ensure_headers(self) -> None:
         """패널티 시트에 헤더가 없으면 생성합니다."""
@@ -524,106 +491,97 @@ class WarningManager:
         self._warnings_cache = None
         self._cache_timestamp = None
     
+    def _find_latest_restriction(
+        self, warnings: List[Dict], target_id: str = None, target_name: str = None
+    ) -> Optional[Dict]:
+        """
+        경고 목록에서 대상의 최신 제한 기록을 찾습니다.
+
+        Args:
+            warnings: 경고 데이터 리스트
+            target_id: 대상 Discord ID (선택)
+            target_name: 대상 닉네임 (선택)
+
+        Returns:
+            {'restricted_until': date, 'target': str} 또는 None
+        """
+        for record in reversed(warnings):
+            # Discord ID로 확인 (우선)
+            if target_id:
+                record_target_id = str(record.get('대상ID', '')).strip()
+                if record_target_id == str(target_id):
+                    restricted_until_str = str(record.get('제한해제일', '')).strip()
+                    if restricted_until_str:
+                        try:
+                            restricted_until = datetime.strptime(restricted_until_str, '%Y-%m-%d').date()
+                            return {
+                                'restricted_until': restricted_until,
+                                'target': str(record.get('대상', '')).strip()
+                            }
+                        except ValueError:
+                            continue
+            # 닉네임으로 확인 (ID가 없을 때)
+            elif target_name:
+                record_target = str(record.get('대상', '')).strip()
+                if record_target.lower() == target_name.lower():
+                    restricted_until_str = str(record.get('제한해제일', '')).strip()
+                    if restricted_until_str:
+                        try:
+                            restricted_until = datetime.strptime(restricted_until_str, '%Y-%m-%d').date()
+                            return {
+                                'restricted_until': restricted_until,
+                                'target': record_target
+                            }
+                        except ValueError:
+                            continue
+        return None
+
     def is_restricted(self, target_id: str = None, target_name: str = None, check_date: Optional[datetime] = None) -> Tuple[bool, Optional[str]]:
         """
         대상이 현재 제한 상태인지 확인합니다.
-        
+
         Args:
             target_id: 대상 Discord ID (선택)
             target_name: 대상 닉네임 (선택, target_id가 없을 때 사용)
             check_date: 확인할 날짜 (None이면 현재 날짜)
-        
+
         Returns:
             (제한 여부, 제한 해제일)
         """
         if not self.worksheet:
             return False, None
-        
+
         if not target_id and not target_name:
             return False, None
-        
+
         try:
             if check_date is None:
                 check_date = get_current_kst_time()
-            
+
             # 캐시에서 경고 데이터 가져오기
             warnings = self._get_warnings_cache()
-            
-            # 최신 경고 기록 찾기
-            latest_warning = None
-            for record in reversed(warnings):
-                # Discord ID로 확인 (우선)
-                if target_id:
-                    # 대상ID를 문자열로 변환 (구글 시트에서 숫자는 int로 반환될 수 있음)
-                    record_target_id = str(record.get('대상ID', '')).strip()
-                    
-                    if record_target_id == str(target_id):
-                        restricted_until_str = str(record.get('제한해제일', '')).strip()
-                        if restricted_until_str:
-                            try:
-                                restricted_until = datetime.strptime(restricted_until_str, '%Y-%m-%d').date()
-                                latest_warning = {
-                                    'restricted_until': restricted_until,
-                                    'target': str(record.get('대상', '')).strip()
-                                }
-                                break
-                            except ValueError:
-                                continue
-                # 닉네임으로 확인 (ID가 없을 때)
-                elif target_name and not target_id:
-                    record_target = str(record.get('대상', '')).strip()
-                    # 대소문자 구분 없이 비교
-                    if record_target.lower() == target_name.lower():
-                        restricted_until_str = str(record.get('제한해제일', '')).strip()
-                        if restricted_until_str:
-                            try:
-                                restricted_until = datetime.strptime(restricted_until_str, '%Y-%m-%d').date()
-                                latest_warning = {
-                                    'restricted_until': restricted_until,
-                                    'target': record_target
-                                }
-                                break
-                            except ValueError:
-                                continue
-            
+            latest_warning = self._find_latest_restriction(warnings, target_id, target_name)
+
             if latest_warning:
                 restricted_until = latest_warning['restricted_until']
                 if check_date.date() <= restricted_until:
                     return True, restricted_until.strftime('%Y-%m-%d')
-            
+
             return False, None
-            
+
         except Exception as e:
             logger.error(f"[경고관리] 제한 상태 확인 실패: {e}")
             # 오류 발생 시 캐시된 데이터로 재시도
             if self._warnings_cache is not None:
                 logger.warning("[경고관리] API 오류 - 캐시 데이터로 재시도")
                 try:
-                    warnings = self._warnings_cache
-                    latest_warning = None
-                    for record in reversed(warnings):
-                        if target_id:
-                            record_target_id = str(record.get('대상ID', '')).strip()
-                            if record_target_id == str(target_id):
-                                restricted_until_str = str(record.get('제한해제일', '')).strip()
-                                if restricted_until_str:
-                                    try:
-                                        restricted_until = datetime.strptime(restricted_until_str, '%Y-%m-%d').date()
-                                        if check_date.date() <= restricted_until:
-                                            return True, restricted_until.strftime('%Y-%m-%d')
-                                    except ValueError:
-                                        continue
-                        elif target_name:
-                            record_target = str(record.get('대상', '')).strip()
-                            if record_target.lower() == target_name.lower():
-                                restricted_until_str = str(record.get('제한해제일', '')).strip()
-                                if restricted_until_str:
-                                    try:
-                                        restricted_until = datetime.strptime(restricted_until_str, '%Y-%m-%d').date()
-                                        if check_date.date() <= restricted_until:
-                                            return True, restricted_until.strftime('%Y-%m-%d')
-                                    except ValueError:
-                                        continue
+                    latest_warning = self._find_latest_restriction(
+                        self._warnings_cache, target_id, target_name
+                    )
+                    if latest_warning:
+                        restricted_until = latest_warning['restricted_until']
+                        if check_date.date() <= restricted_until:
+                            return True, restricted_until.strftime('%Y-%m-%d')
                 except Exception as e2:
                     logger.error(f"[경고관리] 캐시 데이터로 재시도 실패: {e2}")
             return False, None
