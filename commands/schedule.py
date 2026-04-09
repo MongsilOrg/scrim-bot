@@ -12,7 +12,7 @@ import discord
 
 from bot.client import ScrimBot
 from bot.manager import BotManager
-from commands.ui.views import ScheduleView
+from commands.ui.schedule_views import ScheduleView
 from config.logging_config import get_logger
 from utils.helpers import get_current_kst_time, is_admin
 
