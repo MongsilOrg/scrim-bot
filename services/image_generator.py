@@ -21,6 +21,15 @@ if platform.system() == 'Windows':
 else:
     WKHTML_PATH = '/usr/bin/wkhtmltoimage'
 
+# HTML 템플릿 디렉토리
+TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'assets', 'templates')
+
+def _load_template(name: str) -> str:
+    """assets/templates/ 에서 HTML 템플릿 파일을 읽어 반환한다."""
+    path = os.path.join(TEMPLATES_DIR, name)
+    with open(path, 'r', encoding='utf-8') as f:
+        return f.read()
+
 def _render_html_to_image(html_str: str, width: int = 800, height: int = None) -> Optional[BytesIO]:
     """HTML 문자열을 PNG 이미지로 변환하는 공통 유틸리티."""
     try:
@@ -67,58 +76,10 @@ class ImageGenerator:
         """결과 이미지용 HTML 템플릿 생성"""
         is_tournament = get_server_info()['is_tournament']
         table_html = df.to_html(index=False, escape=False, classes='table')
-
         header_color = '#FB9206' if is_tournament else '#4a9eff'
 
-        html_template = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                body {{
-                    font-family: 'Arial', sans-serif;
-                    margin: 20px;
-                    background-color: #f5f5f5;
-                }}
-                .header {{
-                    text-align: center;
-                    margin-bottom: 20px;
-                }}
-                .header h1 {{
-                    color: #333;
-                    margin: 0;
-                }}
-                .table {{
-                    width: 100%;
-                    border-collapse: collapse;
-                    background-color: white;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                }}
-                .table th, .table td {{
-                    padding: 12px;
-                    text-align: left;
-                    border-bottom: 1px solid #ddd;
-                }}
-                .table th {{
-                    background-color: {header_color};
-                    color: white;
-                    font-weight: bold;
-                }}
-                .table tr:nth-child(even) {{
-                    background-color: #f9f9f9;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <h1>스크림 결과</h1>
-            </div>
-            {table_html}
-        </body>
-        </html>
-        """
-        return html_template
+        template = _load_template('result_table.html')
+        return template.format(header_color=header_color, table_html=table_html)
 
     @staticmethod
     def generate_mmr_image(teams_data: dict, *, sort_by_mmr: bool = True, unverified_teams: set = None) -> Optional[BytesIO]:
@@ -196,97 +157,13 @@ class ImageGenerator:
             </tr>
         """
 
-        html = f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<style>
-    * {{
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-    }}
-    body {{
-        font-family: 'NanumGothic', 'Nanum Gothic', 'Malgun Gothic', sans-serif;
-        background-color: #1a1a1a;
-        color: #ffffff;
-        padding: 12px;
-    }}
-    .mmr-table {{
-        width: 100%;
-        border-collapse: collapse;
-        table-layout: fixed;
-    }}
-    .mmr-table th, .mmr-table td {{
-        padding: 8px 6px;
-        text-align: center;
-        font-size: 14px;
-        line-height: 1.4;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }}
-    .header-row th {{
-        background-color: {accent_color};
-        color: #ffffff;
-        font-size: 16px;
-        font-weight: bold;
-        padding: 10px 6px;
-        border-bottom: 2px solid {border_color};
-    }}
-    .col-rank {{ width: 5%; }}
-    .col-team {{ width: 17%; }}
-    .col-mmr {{ width: 10%; }}
-    .col-members {{ width: 68%; }}
-    .separator {{
-        color: #555555;
-        margin: 0 4px;
-    }}
-    .staff-badge {{
-        display: inline-block;
-        background-color: #3a3a4a;
-        color: #b8a0e8;
-        font-size: 12px;
-        padding: 1px 6px;
-        border-radius: 3px;
-        margin-left: 2px;
-    }}
-    .row-even td {{
-        background-color: #2d2d2d;
-    }}
-    .row-odd td {{
-        background-color: #333333;
-    }}
-    .mmr-value {{
-        color: {accent_color};
-        font-weight: bold;
-    }}
-    .divider-bottom td {{
-        border-bottom: 2px solid #ff6b6b !important;
-    }}
-    .divider-top td {{
-        border-top: 2px solid #ff6b6b !important;
-    }}
-    .row-unverified td {{
-        background-color: #3a2020 !important;
-    }}
-    .mmr-unverified {{
-        color: #ff6b6b;
-        font-weight: bold;
-    }}
-    td {{
-        border-bottom: 1px solid #404040;
-    }}
-</style>
-</head>
-<body>
-<table class="mmr-table">
-    <thead>{header_row}</thead>
-    <tbody>{body_html}</tbody>
-</table>
-</body>
-</html>"""
-        return html
+        template = _load_template('mmr_table.html')
+        return template.format(
+            accent_color=accent_color,
+            border_color=border_color,
+            header_row=header_row,
+            body_html=body_html,
+        )
 
     @staticmethod
     def _build_team_row_html(rank: int, team_name: str, team_data, *, is_unverified: bool = False) -> str:
@@ -375,135 +252,11 @@ class ImageGenerator:
             </tr>
             """
 
-        html = f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<style>
-    * {{
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-    }}
-    body {{
-        font-family: 'NanumGothic', 'Nanum Gothic', 'Malgun Gothic', sans-serif;
-        background-color: #1a1a1a;
-        color: #ffffff;
-        padding: 15px;
-    }}
-    .card {{
-        background-color: #2d2d2d;
-        border-radius: 12px;
-        overflow: hidden;
-        border: 1px solid #404040;
-    }}
-    table {{
-        width: 100%;
-        border-collapse: collapse;
-    }}
-    th, td {{
-        padding: 18px 16px;
-        text-align: center;
-        font-size: 32px;
-        line-height: 1.3;
-    }}
-    thead th {{
-        background-color: #3a3a3a;
-        font-size: 36px;
-        font-weight: bold;
-        padding: 22px 16px;
-        border-bottom: 2px solid #404040;
-    }}
-    .row-even td {{
-        background-color: #2d2d2d;
-    }}
-    .row-odd td {{
-        background-color: #353535;
-    }}
-    td {{
-        border-bottom: 1px solid #404040;
-    }}
-    .col-rank {{
-        width: 15%;
-        font-weight: bold;
-    }}
-    .col-team {{
-        width: 50%;
-        text-align: left;
-        padding-left: 24px;
-    }}
-    .col-ks {{
-        width: 17.5%;
-        color: #b0b0b0;
-    }}
-    .col-ts {{
-        width: 17.5%;
-    }}
-    .accent {{
-        color: {accent_color};
-        font-weight: bold;
-    }}
-    .rank-gold {{
-        color: #ffd700;
-    }}
-    .rank-silver {{
-        color: #c0c0c0;
-    }}
-    .rank-bronze {{
-        color: #cd7f32;
-    }}
-    /* 세로 구분선 */
-    td, th {{
-        border-right: 1px solid #404040;
-    }}
-    td:last-child, th:last-child {{
-        border-right: none;
-    }}
-</style>
-</head>
-<body>
-<div class="card">
-    <table>
-        <thead>
-            <tr>
-                <th class="col-rank">Rank</th>
-                <th class="col-team">Team</th>
-                <th class="col-ks">KS</th>
-                <th class="col-ts">TS</th>
-            </tr>
-        </thead>
-        <tbody>
-            {rows_html}
-        </tbody>
-    </table>
-</div>
-</body>
-</html>"""
-        return html
+        template = _load_template('score_table.html')
+        return template.format(accent_color=accent_color, rows_html=rows_html)
 
     @staticmethod
     def _create_empty_score_image() -> Optional[BytesIO]:
         """빈 데이터용 이미지 생성"""
-        html = """<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<style>
-    body {
-        font-family: 'NanumGothic', 'Nanum Gothic', 'Malgun Gothic', sans-serif;
-        background-color: #1a1a1a;
-        color: #b0b0b0;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 280px;
-        margin: 0;
-    }
-    .msg { font-size: 24px; }
-</style>
-</head>
-<body>
-<div class="msg">점수 데이터가 없습니다</div>
-</body>
-</html>"""
+        html = _load_template('empty_score.html')
         return _render_html_to_image(html, width=900)

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+    * {{
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }}
+    body {{
+        font-family: 'NanumGothic', 'Nanum Gothic', 'Malgun Gothic', sans-serif;
+        background-color: #1a1a1a;
+        color: #ffffff;
+        padding: 12px;
+    }}
+    .mmr-table {{
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+    }}
+    .mmr-table th, .mmr-table td {{
+        padding: 8px 6px;
+        text-align: center;
+        font-size: 14px;
+        line-height: 1.4;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }}
+    .header-row th {{
+        background-color: {accent_color};
+        color: #ffffff;
+        font-size: 16px;
+        font-weight: bold;
+        padding: 10px 6px;
+        border-bottom: 2px solid {border_color};
+    }}
+    .col-rank {{ width: 5%; }}
+    .col-team {{ width: 17%; }}
+    .col-mmr {{ width: 10%; }}
+    .col-members {{ width: 68%; }}
+    .separator {{
+        color: #555555;
+        margin: 0 4px;
+    }}
+    .staff-badge {{
+        display: inline-block;
+        background-color: #3a3a4a;
+        color: #b8a0e8;
+        font-size: 12px;
+        padding: 1px 6px;
+        border-radius: 3px;
+        margin-left: 2px;
+    }}
+    .row-even td {{
+        background-color: #2d2d2d;
+    }}
+    .row-odd td {{
+        background-color: #333333;
+    }}
+    .mmr-value {{
+        color: {accent_color};
+        font-weight: bold;
+    }}
+    .divider-bottom td {{
+        border-bottom: 2px solid #ff6b6b !important;
+    }}
+    .divider-top td {{
+        border-top: 2px solid #ff6b6b !important;
+    }}
+    .row-unverified td {{
+        background-color: #3a2020 !important;
+    }}
+    .mmr-unverified {{
+        color: #ff6b6b;
+        font-weight: bold;
+    }}
+    td {{
+        border-bottom: 1px solid #404040;
+    }}
+</style>
+</head>
+<body>
+<table class="mmr-table">
+    <thead>{header_row}</thead>
+    <tbody>{body_html}</tbody>
+</table>
+</body>
+</html>

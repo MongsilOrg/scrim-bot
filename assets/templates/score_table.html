@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+    * {{
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }}
+    body {{
+        font-family: 'NanumGothic', 'Nanum Gothic', 'Malgun Gothic', sans-serif;
+        background-color: #1a1a1a;
+        color: #ffffff;
+        padding: 15px;
+    }}
+    .card {{
+        background-color: #2d2d2d;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid #404040;
+    }}
+    table {{
+        width: 100%;
+        border-collapse: collapse;
+    }}
+    th, td {{
+        padding: 18px 16px;
+        text-align: center;
+        font-size: 32px;
+        line-height: 1.3;
+    }}
+    thead th {{
+        background-color: #3a3a3a;
+        font-size: 36px;
+        font-weight: bold;
+        padding: 22px 16px;
+        border-bottom: 2px solid #404040;
+    }}
+    .row-even td {{
+        background-color: #2d2d2d;
+    }}
+    .row-odd td {{
+        background-color: #353535;
+    }}
+    td {{
+        border-bottom: 1px solid #404040;
+    }}
+    .col-rank {{
+        width: 15%;
+        font-weight: bold;
+    }}
+    .col-team {{
+        width: 50%;
+        text-align: left;
+        padding-left: 24px;
+    }}
+    .col-ks {{
+        width: 17.5%;
+        color: #b0b0b0;
+    }}
+    .col-ts {{
+        width: 17.5%;
+    }}
+    .accent {{
+        color: {accent_color};
+        font-weight: bold;
+    }}
+    .rank-gold {{
+        color: #ffd700;
+    }}
+    .rank-silver {{
+        color: #c0c0c0;
+    }}
+    .rank-bronze {{
+        color: #cd7f32;
+    }}
+    /* 세로 구분선 */
+    td, th {{
+        border-right: 1px solid #404040;
+    }}
+    td:last-child, th:last-child {{
+        border-right: none;
+    }}
+</style>
+</head>
+<body>
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th class="col-rank">Rank</th>
+                <th class="col-team">Team</th>
+                <th class="col-ks">KS</th>
+                <th class="col-ts">TS</th>
+            </tr>
+        </thead>
+        <tbody>
+            {rows_html}
+        </tbody>
+    </table>
+</div>
+</body>
+</html>
