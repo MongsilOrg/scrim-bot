@@ -286,12 +286,8 @@ class BSERAPIClient:
         
         try:
             url = f"{self.base_url}/user/stats/{uid}/rank"
-            headers = {
-                "X-API-Key": self.api_key,
-                "Content-Type": "application/json"
-            }
-            
-            async with self.session.get(url, headers=headers) as response:
+
+            async with self.session.get(url, headers=self._headers) as response:
                 if response.status == 200:
                     data = await response.json()
                     if data.get("code") == 200:
