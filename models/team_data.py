@@ -47,14 +47,18 @@ class TeamData:
         """총 멤버 수 반환"""
         return len(self.all_members)
     
-    def add_player(self, player: str) -> bool:
-        """플레이어 추가"""
-        if player and player.strip() and player not in self.players:
-            self.players.append(player.strip())
+    def _add_member(self, member: str, target_list: list) -> bool:
+        """멤버를 대상 리스트에 추가합니다."""
+        if member and member.strip() and member not in target_list:
+            target_list.append(member.strip())
             self.updated_at = get_current_kst_time()
             return True
         return False
-    
+
+    def add_player(self, player: str) -> bool:
+        """플레이어 추가"""
+        return self._add_member(player, self.players)
+
     def remove_player(self, player: str) -> bool:
         """플레이어 제거"""
         if player in self.players:
@@ -62,14 +66,10 @@ class TeamData:
             self.updated_at = get_current_kst_time()
             return True
         return False
-    
+
     def add_staff(self, staff: str) -> bool:
         """스태프 추가"""
-        if staff and staff.strip() and staff not in self.staff:
-            self.staff.append(staff.strip())
-            self.updated_at = get_current_kst_time()
-            return True
-        return False
+        return self._add_member(staff, self.staff)
     
     def remove_staff(self, staff: str) -> bool:
         """스태프 제거"""
