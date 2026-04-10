@@ -14,16 +14,13 @@ from config.logging_config import get_logger
 from config.settings import settings
 from commands.ui.layout_helpers import error_view, warning_view, send_response, FOOTER_TEXT
 from utils.error_handlers import ErrorContext, handle_errors
-from utils.helpers import get_current_kst_time, is_admin
+from utils.helpers import get_current_kst_time, is_admin, get_group_letter
 
 logger = get_logger('room_code')
 
 # 날씨 상수
 MAIN_WEATHERS = {1: "흐림", 2: "쾌청", 3: "비", 4: "모래바람"}
 SUB_WEATHERS = ["무풍", "강풍", "벼락", "자색 안개"]
-
-
-from utils.helpers import get_group_letter
 
 
 def clean_room_code(room_code: str) -> str:
@@ -274,7 +271,6 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
             # Interaction 응답 전송 (만료 처리 및 네트워크 오류 재시도)
             import aiohttp
             max_retries = 3
-            retry_delay = 1.0
 
             for attempt in range(max_retries):
                 try:
@@ -284,7 +280,6 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                         await interaction.response.send_message(**send_kwargs)
 
                     logger.debug(f"[명령어] Round {round_number} 방코드 공지 완료: {cleaned_room_code}")
-                    # 이전 라운드 미선택 경고
                     if weather_warning:
                         try:
                             if interaction.response.is_done():
@@ -303,30 +298,18 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                         logger.error(f"[명령어] 채널에 메시지 전송 실패: {e}", exc_info=True)
                     break
 
-                except (aiohttp.client_exceptions.ClientOSError, ConnectionResetError) as e:
+                except (aiohttp.client_exceptions.ClientOSError, ConnectionResetError, Exception) as e:
+                    is_network = isinstance(e, (aiohttp.client_exceptions.ClientOSError, ConnectionResetError))
                     if attempt < max_retries - 1:
-                        logger.warning(f"[명령어] 네트워크 오류 - 시도 {attempt + 1}/{max_retries}: {e}")
-                        await asyncio.sleep(retry_delay * (attempt + 1))
+                        logger.warning(f"[명령어] {'네트워크' if is_network else '응답 전송'} 오류 - 시도 {attempt + 1}/{max_retries}: {e}")
+                        await asyncio.sleep(1.0 * (attempt + 1))
                         continue
-                    else:
-                        logger.error(f"[명령어] 네트워크 연결 최종 실패: {e}", exc_info=True)
-                        try:
-                            await interaction.channel.send(**send_kwargs)
-                        except Exception as send_error:
-                            logger.error(f"[명령어] 메시지 전송 최종 실패: {send_error}", exc_info=True)
-                        break
-
-                except Exception as e:
-                    logger.error(f"[명령어] 응답 전송 실패: {e}", exc_info=True)
-                    if attempt < max_retries - 1:
-                        await asyncio.sleep(retry_delay * (attempt + 1))
-                        continue
-                    else:
-                        try:
-                            await interaction.channel.send(**send_kwargs)
-                        except Exception as send_error:
-                            logger.error(f"[명령어] 메시지 전송 최종 실패: {send_error}", exc_info=True)
-                        break
+                    logger.error(f"[명령어] {'네트워크 연결' if is_network else '메시지 전송'} 최종 실패: {e}", exc_info=True)
+                    try:
+                        await interaction.channel.send(**send_kwargs)
+                    except Exception as send_error:
+                        logger.error(f"[명령어] 메시지 전송 최종 실패: {send_error}", exc_info=True)
+                    break
 
         except Exception as e:
             logger.error(f"[명령어] 방코드 처리 중 예상치 못한 오류: {e}", exc_info=True)
