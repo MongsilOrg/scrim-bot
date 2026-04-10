@@ -11,6 +11,7 @@ import discord
 from commands.ui.layout_helpers import error_view, FOOTER_TEXT
 from config.logging_config import get_logger
 from config.settings import settings
+from utils.helpers import get_all_members
 
 if TYPE_CHECKING:
     from models.team_processor import TeamProcessor
@@ -274,10 +275,7 @@ class DiscordService:
                 group_letter = chr(65 + group_idx)
 
                 for team_name, team_data, _ in group:
-                    if isinstance(team_data, dict):
-                        members = team_data["players"] + team_data.get("staff", [])
-                    else:
-                        members = team_data.all_members
+                    members = get_all_members(team_data)
                     today_participants[group_letter].update(normalize_nickname_for_comparison(member) for member in members)
 
             # 3. 역할 변경이 필요한 멤버 목록 생성
@@ -339,10 +337,7 @@ class DiscordService:
             # 해당 조의 참여자 명단 생성
             participants = set()
             for team_name, team_data, _ in group_teams:
-                if isinstance(team_data, dict):
-                    members = team_data["players"] + team_data.get("staff", [])
-                else:
-                    members = team_data.all_members
+                members = get_all_members(team_data)
                 participants.update(normalize_nickname_for_comparison(member) for member in members)
 
             # 역할 변경이 필요한 멤버 목록 생성

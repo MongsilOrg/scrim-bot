@@ -18,6 +18,20 @@ def is_admin(user: discord.Member) -> bool:
     return any(role.id in settings.ADMIN_ROLE_IDS for role in user.roles)
 
 
+def get_team_members(team_data) -> tuple:
+    """팀 데이터에서 players, staff 리스트를 추출합니다."""
+    if isinstance(team_data, dict):
+        return team_data.get('players', []), team_data.get('staff', [])
+    return getattr(team_data, 'players', []), getattr(team_data, 'staff', [])
+
+
+def get_all_members(team_data) -> List[str]:
+    """팀 데이터에서 모든 멤버(players + staff)를 추출합니다."""
+    if isinstance(team_data, dict):
+        return team_data.get('players', []) + team_data.get('staff', [])
+    return getattr(team_data, 'all_members', [])
+
+
 def extract_players_only(team_data: Union[Dict, 'TeamData', List]) -> List[str]:
     """팀 데이터에서 플레이어만 추출"""
     if isinstance(team_data, dict):

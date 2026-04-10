@@ -344,9 +344,9 @@ class TeamEditModal(Modal):
                             return
                 
                 # TeamData 객체에서 안전하게 플레이어와 스태프 추출
-                players = new_team_data.get('players', []) if isinstance(new_team_data, dict) else getattr(new_team_data, 'players', [])
-                staff = new_team_data.get('staff', []) if isinstance(new_team_data, dict) else getattr(new_team_data, 'staff', [])
-                all_members = (players if isinstance(players, (list, tuple)) else []) + (staff if isinstance(staff, (list, tuple)) else [])
+                from utils.helpers import get_team_members, get_all_members
+                players, staff = get_team_members(new_team_data)
+                all_members = players + staff
                 
                 # 팀원 중 테스트 계정이 있는지 확인
                 team_processor = BotManager.get_instance().get_team_processor()
@@ -678,12 +678,9 @@ class TeamEditModal(Modal):
                     return False, f"'{new_team_name}' 팀명이 이미 같은 조에 존재합니다."
                 
                 # 팀원 중복 검사
-                if isinstance(team_data, dict):
-                    existing_players = team_data.get('players', [])
-                    existing_staff = team_data.get('staff', [])
-                elif hasattr(team_data, 'players'):
-                    existing_players = team_data.players
-                    existing_staff = team_data.staff
+                from utils.helpers import get_team_members
+                if hasattr(team_data, 'players') or isinstance(team_data, dict):
+                    existing_players, existing_staff = get_team_members(team_data)
                 else:
                     existing_players = list(team_data)
                     existing_staff = []

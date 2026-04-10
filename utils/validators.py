@@ -40,9 +40,9 @@ def validate_team_name(team_name: str) -> Tuple[bool, str]:
 def validate_team_data(team_data) -> Tuple[bool, str]:
     """팀 데이터 유효성 검사"""
     try:
-        if isinstance(team_data, dict):
-            players = team_data.get('players', [])
-            staff = team_data.get('staff', [])
+        if isinstance(team_data, dict) or hasattr(team_data, 'players'):
+            from utils.helpers import get_team_members
+            players, staff = get_team_members(team_data)
         else:
             players = team_data
             staff = []
@@ -78,13 +78,13 @@ def validate_team_data(team_data) -> Tuple[bool, str]:
 def validate_discord_user_in_team(team_data, user_name: str) -> bool:
     """디스코드 사용자가 팀에 포함되어 있는지 검사 (대소문자 구별 없이)"""
     try:
-        if isinstance(team_data, dict):
-            players = team_data.get('players', [])
-            staff = team_data.get('staff', [])
+        if isinstance(team_data, dict) or hasattr(team_data, 'players'):
+            from utils.helpers import get_team_members
+            players, staff = get_team_members(team_data)
         else:
             players = team_data
             staff = []
-        
+
         all_members = players + staff
         
         # 대소문자 구별 없이 비교

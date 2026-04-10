@@ -161,12 +161,8 @@ class TeamInputView(LayoutView):
             players = []
             staff = []
             if team_data:
-                if isinstance(team_data, dict):
-                    players = team_data.get('players', [])
-                    staff = team_data.get('staff', [])
-                else:
-                    players = getattr(team_data, 'players', [])
-                    staff = getattr(team_data, 'staff', [])
+                from utils.helpers import get_team_members
+                players, staff = get_team_members(team_data)
 
             # 확인 LayoutView 생성 (CancelConfirmView에 텍스트 + 버튼 포함)
             members_str = ', '.join(players) if players else '(없음)'
@@ -235,7 +231,8 @@ class TeamInputView(LayoutView):
                 if not is_allowed:
                     errors.append(err)
 
-            team_members = team_data.get('players', []) + team_data.get('staff', []) if isinstance(team_data, dict) else team_data
+            from utils.helpers import get_all_members
+            team_members = get_all_members(team_data) if isinstance(team_data, dict) or hasattr(team_data, 'players') else team_data
 
             if not errors:
                 is_bot_valid, bot_err = team_data_manager.check_duplicate_with_bot_teams(team_name, team_members)
@@ -342,12 +339,8 @@ class TeamInputView(LayoutView):
                 return
             
             # 팀원과 스태프 목록 추출
-            if isinstance(team_data, dict):
-                players = team_data.get('players', [])
-                staff = team_data.get('staff', [])
-            else:
-                players = getattr(team_data, 'players', [])
-                staff = getattr(team_data, 'staff', [])
+            from utils.helpers import get_team_members
+            players, staff = get_team_members(team_data)
 
             players_str = ', '.join(players) if players else '(없음)'
             staff_str = ', '.join(staff) if staff else '(없음)'
@@ -600,11 +593,12 @@ class TeamSelectionView(LayoutView):
             # 빈 팀 리스트일 때 placeholder 옵션 추가
             options = [SelectOption(label="등록된 팀이 없습니다", value="_empty", description="팀이 등록되면 선택 가능합니다")]
         else:
+            from utils.helpers import get_team_members as _get_tm
             options = [
                 SelectOption(
                     label=f"{i+1}. {team_name} (MMR: {mmr:.2f})",
                     value=team_name,
-                    description=f"팀원: {', '.join(team_data.players[:3]) if hasattr(team_data, 'players') and team_data.players and isinstance(team_data.players, (list, tuple)) else ', '.join(team_data.get('players', [])[:3]) if isinstance(team_data, dict) and team_data.get('players') and isinstance(team_data.get('players'), (list, tuple)) else '정보 없음'}"
+                    description=f"팀원: {', '.join(_get_tm(team_data)[0][:3]) or '정보 없음'}"
                 )
                 for i, (team_name, team_data, mmr) in enumerate(parent_view.group_teams)
             ]
@@ -617,10 +611,6 @@ class TeamSelectionView(LayoutView):
         )
         self.team_select.callback = self.team_select_callback
         self.add_item(ActionRow(self.team_select))
-
-    async def on_timeout(self) -> None:
-        """View timeout 시 호출되는 메서드 (timeout=None이므로 실제로는 호출되지 않음)"""
-        pass
 
     async def team_select_callback(self, interaction: discord.Interaction) -> None:
         """팀 선택 콜백"""
