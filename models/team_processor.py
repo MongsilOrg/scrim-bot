@@ -12,9 +12,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import discord
 import gspread
-import pandas as pd
 from discord.ext import commands
-from commands.ui.layout_helpers import error_view, FOOTER_TEXT
 from config.logging_config import get_logger
 from config.settings import settings
 from services.bser_api import BSERAPIClient
@@ -239,10 +237,6 @@ class TeamProcessor:
             # 오류 발생 시 빈 데이터로 초기화
             self.test_accounts_data = {}
     
-    async def _load_test_accounts_data(self) -> None:
-        """구글 시트에서 테스트 계정 데이터를 비동기적으로 로드합니다 (재로드용)."""
-        self._load_test_accounts_data_sync()
-    
     def _is_test_account(self, nickname: str) -> bool:
         """닉네임이 테스트 계정인지 확인합니다."""
         from utils.validators import normalize_nickname_for_comparison
@@ -282,8 +276,6 @@ class TeamProcessor:
     
     def _extract_players_only(self, team_data: TeamData) -> List[str]:
         """팀 데이터에서 플레이어만 추출합니다 (스태프 제외)."""
-        from utils.helpers import extract_players_only
-        
         # MMR 조회를 위해 원본 닉네임 그대로 사용 (대소문자 구분)
         players = extract_players_only(team_data)
         # 공백만 제거하고 원본 대소문자 유지
@@ -641,20 +633,11 @@ class TeamProcessor:
     async def _send_global_announcement(self, guild, groups, unmatched_teams=None):
         await self._discord_service.send_global_announcement(guild, groups, unmatched_teams)
 
-    async def _send_group_announcement_with_image(self, channel, message, group):
-        await self._discord_service.send_group_announcement_with_image(channel, message, group)
-
     async def _send_notices(self, guild, groups, unmatched_teams=None):
         await self._discord_service.send_notices(guild, groups, unmatched_teams)
 
-    async def _handle_discord_roles(self, guild, groups):
-        await self._discord_service.handle_discord_roles(guild, groups)
-
     async def update_group_roles(self, guild, group_letter, group_teams):
         await self._discord_service.update_group_roles(guild, group_letter, group_teams)
-
-    async def _rename_voice_channels(self, guild, groups):
-        await self._discord_service.rename_voice_channels(guild, groups)
 
     def _create_group_announcement_message(self, group_letter, group):
         return self._discord_service.create_group_announcement_message(group_letter, group)
@@ -662,15 +645,4 @@ class TeamProcessor:
     async def _get_group_role_mention(self, guild, group_letter):
         return await self._discord_service._get_group_role_mention(guild, group_letter)
 
-    async def _clear_channel_messages(self, channel):
-        await self._discord_service.clear_channel_messages(channel)
-
-    async def _delete_single_message_with_retry(self, message, max_retries=3):
-        return await self._discord_service.delete_single_message_with_retry(message, max_retries)
-
-    async def _delete_message_batch(self, messages):
-        return await self._discord_service.delete_message_batch(messages)
-
-    async def _delete_single_message(self, message):
-        return await self._discord_service.delete_single_message(message)
 
