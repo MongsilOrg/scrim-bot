@@ -183,6 +183,22 @@ class WarningManager:
 
         return "\n".join(lines)
 
+    def _get_warning_datetime(self, current_time: datetime) -> tuple:
+        """17시 기준으로 경고 날짜를 계산합니다.
+
+        Returns:
+            (warning_date, warning_datetime) 튜플
+            - warning_date: 경고 날짜 (date)
+            - warning_datetime: 제한 해제일 계산용 datetime
+        """
+        if current_time.hour < 17:
+            warning_date = (current_time - timedelta(days=1)).date()
+            warning_datetime = datetime.combine(warning_date, current_time.time())
+        else:
+            warning_date = current_time.date()
+            warning_datetime = current_time
+        return warning_date, warning_datetime
+
     def _calculate_restricted_until(self, warning_date: datetime) -> datetime:
         """
         경고 받은 날짜 기준으로 제한 해제 날짜를 계산합니다.
@@ -259,16 +275,7 @@ class WarningManager:
         if len(cautions) >= 2:
             current_time = get_current_kst_time()
 
-            # 17시 이전이면 전날 날짜로 기록
-            if current_time.hour < 17:
-                from datetime import timedelta
-                warning_date = (current_time - timedelta(days=1)).date()
-                # 제한 해제일 계산을 위해 전날 날짜로 datetime 생성
-                warning_datetime = datetime.combine(warning_date, current_time.time())
-            else:
-                warning_date = current_time.date()
-                warning_datetime = current_time
-
+            warning_date, warning_datetime = self._get_warning_datetime(current_time)
             restricted_until = self._calculate_restricted_until(warning_datetime).date()
 
             # 변환될 주의 내역 2개 저장 (삭제 전에)
@@ -402,15 +409,7 @@ class WarningManager:
             
             # 경고 추가인 경우
             elif warning_type == '경고':
-                # 17시 이전이면 전날 날짜로 경고일 기록
-                if current_time.hour < 17:
-                    warning_date = (current_time - timedelta(days=1)).date()
-                    # 제한 해제일 계산을 위해 전날 날짜로 datetime 생성
-                    warning_datetime = datetime.combine(warning_date, current_time.time())
-                else:
-                    warning_date = current_time.date()
-                    warning_datetime = current_time
-
+                warning_date, warning_datetime = self._get_warning_datetime(current_time)
                 restricted_until = self._calculate_restricted_until(warning_datetime).date()
 
                 row = [
