@@ -32,5 +32,5 @@ jobs:
               git fetch origin main
               git reset --hard origin/main
               pip install -r requirements.txt -q 2>/dev/null
-              pm2 restart scrimbot
+              pmc restart scrimbot
             '
