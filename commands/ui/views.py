@@ -125,10 +125,32 @@ class TeamInputView(LayoutView):
                 # 기존 팀이 있는 경우 - 팀 수정 모달 표시
                 await self._show_team_edit_modal(interaction, user_team, team_data_manager)
             else:
-                # 기존 팀이 없는 경우 - 새 팀 등록 모달 표시
+                # 기존 팀이 없는 경우 - 캐시에서 이전 데이터 조회 후 새 팀 등록 모달 표시
                 from .modals import TeamModal
+                from models.user_team_cache import UserTeamCache
+
+                default_team_name = ""
+                default_players = ""
+                default_staff = ""
+
+                try:
+                    cache = UserTeamCache()
+                    cached = cache.get(str(interaction.user.id))
+                    if cached:
+                        default_team_name = cached.get("team_name", "")
+                        default_players = "\n".join(cached.get("players", []))
+                        default_staff = "\n".join(cached.get("staff", []))
+                except Exception as e:
+                    logger.warning(f"[뷰] 캐시 조회 실패: {e}")
+
+                modal = TeamModal(
+                    self, interaction.user,
+                    default_team_name=default_team_name,
+                    default_players=default_players,
+                    default_staff=default_staff,
+                )
                 if not interaction.response.is_done():
-                    await interaction.response.send_modal(TeamModal(self, interaction.user))
+                    await interaction.response.send_modal(modal)
                 else:
                     await interaction.followup.send("모달을 표시할 수 없습니다. 다시 시도해주세요.", ephemeral=True)
 
