@@ -42,7 +42,7 @@ class ScrimOrchestrator:
                 total_teams, _, spare_teams = team_data_manager.get_team_counts()
 
                 # 17시가 되면 즉시 조편성 시작
-                if current_time.hour >= 17:
+                if current_time.hour >= settings.TEAM_REGISTRATION_DEADLINE_HOUR:
                     await self.start_team_assignment(total_teams, spare_teams)
                     break
 

@@ -74,6 +74,15 @@ class Settings:
     EMBED_FOOTER_TEXT: str = os.getenv('EMBED_FOOTER_TEXT', 'ER Scrim | Powered by Mongsil')
     AUTO_ASSIGNMENT_CHECK_INTERVAL: int = 30  # seconds
 
+    # 스크림 일정 (시간)
+    TEAM_REGISTRATION_DEADLINE_HOUR: int = 17
+    SCRIM_START_HOUR: int = 20
+    NEXT_SCRIM_OPEN_HOUR: int = 22
+
+    # MMR 갱신 간격 (초)
+    MMR_UPDATE_INTERVAL_SECONDS: int = 300
+    MMR_UPDATE_MAINTENANCE_INTERVAL_SECONDS: int = 600
+
     # 로깅 설정
     LOG_LEVEL: str = os.getenv('LOG_LEVEL', 'INFO')
     LOG_FILE: str = os.getenv('LOG_FILE', 'scrimbot.log')

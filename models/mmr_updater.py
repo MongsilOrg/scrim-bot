@@ -119,7 +119,7 @@ class MmrUpdater:
             await asyncio.sleep(10)
 
             while True:
-                sleep_interval = 300  # 기본 5분
+                sleep_interval = settings.MMR_UPDATE_INTERVAL_SECONDS  # 기본 5분
 
                 try:
                     # 최신 TeamDataManager 인스턴스를 동적으로 가져오기
@@ -145,7 +145,7 @@ class MmrUpdater:
                         was_maintenance = team_data_manager._is_maintenance
                         if fail > 0 and success == 0:
                             team_data_manager._is_maintenance = True
-                            sleep_interval = 600  # 점검 중 10분
+                            sleep_interval = settings.MMR_UPDATE_MAINTENANCE_INTERVAL_SECONDS  # 점검 중 10분
                             logger.info(f"[MMR갱신] 서버 점검 감지 — 실패: {fail}팀, 갱신 주기 10분")
                         else:
                             team_data_manager._is_maintenance = False
