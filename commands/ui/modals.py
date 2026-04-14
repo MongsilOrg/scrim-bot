@@ -492,9 +492,20 @@ class TeamEditModal(Modal):
                     discord.Color.green()
                 )
             else:
+                # 변경사항 요약 구성
+                diff_parts = []
+                if self.original_team_name != new_team_name:
+                    diff_parts.append(f"팀명: {self.original_team_name} → {new_team_name}")
+                if removed:
+                    diff_parts.append(f"제외: {', '.join(sorted(removed))}")
+                if added:
+                    diff_parts.append(f"추가: {', '.join(sorted(added))}")
+
+                diff_summary = '\n'.join(diff_parts) if diff_parts else "변경 없음"
+
                 await update_temp_message(
                     temp_message,
-                    f"**{self.original_team_name}** → **{new_team_name}**\n팀 평균 MMR: **{new_team_mmr:.2f}**",
+                    f"**{new_team_name}** 팀이 수정되었습니다.\n\n{diff_summary}\n📊 팀 평균 MMR: **{new_team_mmr:.2f}**",
                     discord.Color.green()
                 )
             # 변경 전후 정보 로깅
