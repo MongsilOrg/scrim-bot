@@ -446,6 +446,18 @@ class TeamEditModal(Modal):
             )
             await team_data_manager.replace_team(self.original_team_name, team_data_obj, new_team_mmr)
 
+            # 캐시 저장
+            try:
+                from models.user_team_cache import UserTeamCache
+                cache = UserTeamCache()
+                cache.set(str(interaction.user.id), {
+                    "team_name": new_team_name,
+                    "players": new_team_data["players"],
+                    "staff": new_team_data["staff"],
+                })
+            except Exception as e:
+                logger.warning(f"[모달] 캐시 저장 실패: {e}")
+
             # 점검 중 수정 시 unverified 처리
             if is_maintenance:
                 # 닉네임이 변경된 경우에만 unverified 추가

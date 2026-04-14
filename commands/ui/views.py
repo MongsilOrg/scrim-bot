@@ -364,6 +364,18 @@ class TeamInputView(LayoutView):
             from utils.helpers import get_team_members
             players, staff = get_team_members(team_data)
 
+            # 캐시 저장
+            try:
+                from models.user_team_cache import UserTeamCache
+                cache = UserTeamCache()
+                cache.set(str(interaction.user.id), {
+                    "team_name": team_name,
+                    "players": players,
+                    "staff": staff,
+                })
+            except Exception as e:
+                logger.warning(f"[뷰] 캐시 저장 실패: {e}")
+
             players_str = ', '.join(players) if players else '(없음)'
             staff_str = ', '.join(staff) if staff else '(없음)'
             team_data_manager.log_action(
