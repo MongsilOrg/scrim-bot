@@ -17,12 +17,22 @@ KST = timezone(timedelta(hours=9))
 
 
 class UserTeamCache:
-    """유저별 최근 신청 데이터 캐시"""
+    """유저별 최근 신청 데이터 캐시 (싱글턴)"""
+
+    _instance: Optional["UserTeamCache"] = None
+
+    def __new__(cls, cache_path: str = "data/user_team_cache.json"):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
 
     def __init__(self, cache_path: str = "data/user_team_cache.json"):
+        if hasattr(self, "_initialized") and self._initialized:
+            return
         self._cache_path = cache_path
         self._data: Dict[str, dict] = {}
         self._load()
+        self._initialized = True
 
     def _load(self) -> None:
         """파일에서 캐시 로드. 실패 시 빈 dict."""
@@ -36,11 +46,13 @@ class UserTeamCache:
             self._data = {}
 
     def _save(self) -> None:
-        """캐시를 파일에 저장."""
+        """캐시를 파일에 원자적으로 저장 (tmp → rename)."""
         try:
             os.makedirs(os.path.dirname(self._cache_path), exist_ok=True)
-            with open(self._cache_path, "w", encoding="utf-8") as f:
+            tmp_path = self._cache_path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(self._data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, self._cache_path)
         except OSError as e:
             logger.error(f"[캐시] 캐시 파일 저장 실패: {e}")
 

@@ -11,6 +11,14 @@ from models.user_team_cache import UserTeamCache
 KST = timezone(timedelta(hours=9))
 
 
+@pytest.fixture(autouse=True)
+def reset_singleton():
+    """테스트마다 싱글턴 리셋"""
+    UserTeamCache._instance = None
+    yield
+    UserTeamCache._instance = None
+
+
 @pytest.fixture
 def cache(tmp_path):
     path = str(tmp_path / "user_team_cache.json")
