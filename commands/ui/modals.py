@@ -38,7 +38,7 @@ class TeamModal(Modal):
     팀명, 선수 4명, 스태프 1명의 정보를 입력받습니다.
     """
     
-    def __init__(self, view: 'TeamInputView', user: discord.Member):
+    def __init__(self, view: 'TeamInputView', user: discord.Member, default_team_name: str = "", default_players: str = "", default_staff: str = ""):
         super().__init__(title="팀 정보 입력")
         self.view = view
         self.user = user
@@ -49,7 +49,8 @@ class TeamModal(Modal):
             placeholder="예: Team ER",
             min_length=3,
             max_length=12,
-            required=True
+            required=True,
+            default=default_team_name or None,
         )
         self.add_item(self.team_name_input)
 
@@ -59,7 +60,8 @@ class TeamModal(Modal):
             placeholder="한 줄에 하나씩 입력",
             max_length=200,
             required=True,
-            style=discord.TextStyle.paragraph
+            style=discord.TextStyle.paragraph,
+            default=default_players or None,
         )
         self.add_item(self.players_input)
 
@@ -69,7 +71,8 @@ class TeamModal(Modal):
             placeholder="한 줄에 하나씩 입력",
             max_length=200,
             required=False,
-            style=discord.TextStyle.paragraph
+            style=discord.TextStyle.paragraph,
+            default=default_staff or None,
         )
         self.add_item(self.staff_input)
 
