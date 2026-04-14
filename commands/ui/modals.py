@@ -39,7 +39,7 @@ class TeamModal(Modal):
     """
     
     def __init__(self, view: 'TeamInputView', user: discord.Member, default_team_name: str = "", default_players: str = "", default_staff: str = ""):
-        super().__init__(title="팀 정보 입력")
+        super().__init__(title="팀 신청")
         self.view = view
         self.user = user
 
