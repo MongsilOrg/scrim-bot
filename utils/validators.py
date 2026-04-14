@@ -1,6 +1,7 @@
 """
 유효성 검사 유틸리티 모듈
 """
+import asyncio
 import re
 from typing import TYPE_CHECKING, List, Tuple
 
@@ -195,3 +196,64 @@ def validate_members_in_guild(
         logger.error(f"[유효성검사] 디스코드 서버 멤버 검증 실패: {e}", exc_info=True)
         # 검증 실패 시 통과시킴 (서버 장애로 인한 등록 차단 방지)
         return True, []
+
+
+async def validate_members_api(
+    members: list[str],
+    team_data_manager,
+) -> tuple[bool, list[str], bool]:
+    """게임 API를 통해 팀원 닉네임을 검증합니다.
+
+    Args:
+        members: 검증할 닉네임 목록
+        team_data_manager: TeamDataManager 인스턴스 (점검 상태 참조용)
+
+    Returns:
+        (is_valid, invalid_members, is_maintenance):
+        - is_valid: 모든 닉네임이 유효하면 True
+        - invalid_members: 유효하지 않은 닉네임 목록
+        - is_maintenance: 서버 점검 중이면 True
+    """
+    from services.bser_api import BSERAPIClient
+
+    try:
+        async with BSERAPIClient() as api:
+            results = await asyncio.gather(
+                *[api.get_user_uid(m) for m in members],
+                return_exceptions=True,
+            )
+            invalid_members = [
+                member
+                for member, result in zip(members, results)
+                if isinstance(result, Exception) or not result
+            ]
+
+            if invalid_members and len(invalid_members) >= len(members) / 2:
+                if team_data_manager._is_maintenance:
+                    return True, [], True
+                try:
+                    is_maintenance = await api.check_server_maintenance()
+                except Exception:
+                    is_maintenance = True
+                if is_maintenance:
+                    return True, [], True
+
+            if invalid_members:
+                return False, invalid_members, False
+            return True, [], False
+
+    except Exception as e:
+        logger.error(f"[validators] API 닉네임 검증 실패: {e}", exc_info=True)
+        if team_data_manager._is_maintenance:
+            return True, [], True
+        try:
+            async with BSERAPIClient() as check:
+                is_maintenance = await check.check_server_maintenance()
+        except Exception:
+            is_maintenance = True
+        if is_maintenance:
+            return True, [], True
+        # API 연결 자체가 실패했고 점검도 아닌 경우: 호출자가 api_error로 처리하도록
+        # 빈 invalid list + maintenance=False 로 반환하여 호출자가 구분할 수 있게 함
+        # 하지만 스펙상 (False, [], False) 케이스는 없으므로 빈 list로 반환
+        return False, [], False

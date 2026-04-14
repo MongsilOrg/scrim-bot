@@ -285,52 +285,11 @@ class TeamInputView(LayoutView):
 
             is_maintenance = False
             if not has_test_account:
-                import asyncio as _aio
-                api_invalid_members = []
-                is_maintenance = False
-                api_error = False
-                try:
-                    async with BSERAPIClient() as api:
-                        results = await _aio.gather(
-                            *[api.get_user_uid(m) for m in team_members],
-                            return_exceptions=True,
-                        )
-                        for member, result in zip(team_members, results):
-                            if isinstance(result, Exception) or not result:
-                                api_invalid_members.append(member)
-
-                        if api_invalid_members and len(api_invalid_members) >= len(team_members) / 2:
-                            # MMR 갱신 루프에서 감지한 점검 상태 우선 참조
-                            if team_data_manager._is_maintenance:
-                                is_maintenance = True
-                            else:
-                                try:
-                                    is_maintenance = await api.check_server_maintenance()
-                                except Exception:
-                                    is_maintenance = True
-                except Exception as e:
-                    logger.error(f"[뷰] API 닉네임 검증 실패: {e}", exc_info=True)
-                    api_error = True
-                    if team_data_manager._is_maintenance:
-                        is_maintenance = True
-                    else:
-                        try:
-                            async with BSERAPIClient() as check:
-                                is_maintenance = await check.check_server_maintenance()
-                        except Exception:
-                            is_maintenance = True
-
-                if is_maintenance:
-                    # 점검 중: API 검증 스킵, 등록은 진행
-                    pass
-                elif api_error:
-                    msg = "게임 서버 연결 실패. 잠시 후 다시 시도해주세요."
-                    if temp_message:
-                        await update_temp_message(temp_message, msg, discord.Color.red())
-                    else:
-                        await send_error_message(interaction, msg)
-                    return
-                elif api_invalid_members:
+                from utils.validators import validate_members_api
+                is_valid, api_invalid_members, is_maintenance = await validate_members_api(
+                    team_members, team_data_manager
+                )
+                if not is_valid and not is_maintenance:
                     msg = f"❌ 게임 내에서 확인되지 않는 닉네임: **{', '.join(api_invalid_members)}**\n💡 게임 내 닉네임을 정확히 입력해주세요."
                     if temp_message:
                         await update_temp_message(temp_message, msg, discord.Color.red())

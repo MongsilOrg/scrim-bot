@@ -377,48 +377,14 @@ class TeamEditModal(Modal):
 
                 # API 닉네임 검증 (게임 내 닉네임 확인)
                 if not has_test_account:
-                    api_invalid_members = []
-                    is_maintenance = False
-                    api_error = False
-                    try:
-                        async with BSERAPIClient() as client_instance:
-                            for member in all_members:
-                                if not await client_instance.get_user_uid(member):
-                                    api_invalid_members.append(member)
-
-                            # 과반수 이상 조회 실패 시 서버 점검 확인
-                            if api_invalid_members and len(api_invalid_members) >= len(all_members) / 2:
-                                if team_data_manager._is_maintenance:
-                                    is_maintenance = True
-                                else:
-                                    try:
-                                        is_maintenance = await client_instance.check_server_maintenance()
-                                    except Exception as e:
-                                        logger.warning(f"[모달] 서버 점검 확인 실패: {e}")
-                                        is_maintenance = True
-                    except Exception as e:
-                        logger.error(f"[모달] API 닉네임 검증 실패: {e}", exc_info=True)
-                        api_error = True
-                        if team_data_manager._is_maintenance:
-                            is_maintenance = True
-                        else:
-                            try:
-                                async with BSERAPIClient() as check_client:
-                                    is_maintenance = await check_client.check_server_maintenance()
-                            except Exception:
-                                is_maintenance = True
-
-                    if is_maintenance:
-                        # 점검 중: API 검증 스킵, 수정은 진행
-                        pass
-                    elif api_error:
-                        # API 예외로 검증 자체가 실패한 경우
-                        await update_temp_message(temp_message, "⚠️ 닉네임 확인 중 문제가 발생했습니다.\n\n💡 잠시 후 다시 시도해주세요.", discord.Color.red())
-                        return
-                    elif api_invalid_members:
+                    from utils.validators import validate_members_api
+                    is_valid, api_invalid_members, is_maintenance = await validate_members_api(
+                        all_members, team_data_manager
+                    )
+                    if not is_valid and not is_maintenance:
                         await update_temp_message(
                             temp_message,
-                            f"❌ 다음 닉네임들을 찾을 수 없습니다.\n**{', '.join(api_invalid_members) if api_invalid_members and isinstance(api_invalid_members, (list, tuple)) else str(api_invalid_members)}**\n\n💡 게임 내 닉네임을 정확히 입력했는지 확인해주세요.",
+                            f"❌ 다음 닉네임들을 찾을 수 없습니다.\n**{', '.join(api_invalid_members)}**\n\n💡 게임 내 닉네임을 정확히 입력했는지 확인해주세요.",
                             discord.Color.red()
                         )
                         return
