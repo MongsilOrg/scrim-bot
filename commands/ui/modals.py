@@ -292,104 +292,146 @@ class TeamEditModal(Modal):
             logger.error(f"[모달] 팀 정보 수정 모달 제출 처리 실패: {e}", exc_info=True)
             await send_error_message(interaction, "팀 정보 수정 중 오류가 발생했습니다.")
     
+    async def _validate_team_edit_preconditions(self, new_team_name: str, new_team_data: dict, temp_message: discord.Message) -> tuple:
+        """팀 수정 사전 검증. Returns (passed, is_roster_change, is_maintenance)."""
+        from commands.ui.views import GroupRosterView
+        from config.settings import settings
+        team_data_manager = BotManager.get_instance().get_team_data_manager()
+        is_roster_change = isinstance(self.view, GroupRosterView)
+        is_maintenance = False
+
+        if team_data_manager.is_team_assignment_started and not is_roster_change:
+            await update_temp_message(temp_message, "17시 조편성이 완료되어 팀 수정이 불가능합니다.", discord.Color.red())
+            return False, is_roster_change, False
+
+        if not is_roster_change:
+            from utils.helpers import get_current_kst_time
+            is_allowed, error_message = await team_data_manager.check_team_edit_allowed(get_current_kst_time())
+            if not is_allowed:
+                await update_temp_message(temp_message, error_message, discord.Color.red())
+                return False, is_roster_change, False
+
+            if new_team_name != self.original_team_name:
+                players = new_team_data.get('players', []) if isinstance(new_team_data, dict) else getattr(new_team_data, 'players', [])
+                staff = new_team_data.get('staff', []) if isinstance(new_team_data, dict) else getattr(new_team_data, 'staff', [])
+                team_members = list(players) + list(staff)
+                is_bot_valid, bot_error = team_data_manager.check_duplicate_with_bot_teams(new_team_name, team_members, exclude_team=self.original_team_name)
+                if not is_bot_valid:
+                    await update_temp_message(temp_message, bot_error, discord.Color.red())
+                    return False, is_roster_change, False
+
+            from utils.helpers import get_team_members
+            players, staff = get_team_members(new_team_data)
+            all_members = players + staff
+            team_processor = BotManager.get_instance().get_team_processor()
+            has_test_account = any(team_processor._is_test_account(m) for m in all_members)
+
+            if not has_test_account:
+                client = BotManager.get_instance().get_client()
+                guild = client.get_guild(settings.GUILD_ID) if client else None
+                if guild:
+                    is_guild_valid, not_found = validate_members_in_guild(guild, all_members)
+                    if not is_guild_valid:
+                        await update_temp_message(
+                            temp_message,
+                            f"❌ 다음 닉네임이 디스코드 서버에서 확인되지 않습니다.\n\n**{', '.join(not_found)}**\n\n💡 디스코드 서버 닉네임과 동일하게 입력해주세요.",
+                            discord.Color.red()
+                        )
+                        return False, is_roster_change, False
+
+                from utils.validators import validate_members_api
+                is_valid, api_invalid, is_maintenance = await validate_members_api(all_members, team_data_manager)
+                if not is_valid and not is_maintenance:
+                    await update_temp_message(
+                        temp_message,
+                        f"❌ 다음 닉네임들을 찾을 수 없습니다.\n**{', '.join(api_invalid)}**\n\n💡 게임 내 닉네임을 정확히 입력했는지 확인해주세요.",
+                        discord.Color.red()
+                    )
+                    return False, is_roster_change, False
+
+        return True, is_roster_change, is_maintenance
+
+    def _compute_and_log_diff(self, interaction: discord.Interaction, new_team_name: str, new_team_data: dict, new_team_mmr: float, team_data_manager) -> tuple:
+        """변경사항 diff 계산 + 로그 기록. Returns (added, removed, original_players)."""
+        if isinstance(self.original_team_data, dict):
+            old_players = set(self.original_team_data.get('players', []))
+            old_staff = set(self.original_team_data.get('staff', []))
+            original_players = self.original_team_data.get('players', [])
+            original_staff = self.original_team_data.get('staff', [])
+        else:
+            old_players = set(getattr(self.original_team_data, 'players', []))
+            old_staff = set(getattr(self.original_team_data, 'staff', []))
+            original_players = getattr(self.original_team_data, 'players', [])
+            original_staff = getattr(self.original_team_data, 'staff', [])
+
+        new_players = set(new_team_data['players'])
+        new_staff = set(new_team_data['staff'])
+        added = (new_players | new_staff) - (old_players | old_staff)
+        removed = (old_players | old_staff) - (new_players | new_staff)
+
+        if (self.original_team_name != new_team_name) or added or removed:
+            players_str = ', '.join(new_team_data['players'])
+            staff_str = ', '.join(new_team_data['staff']) if new_team_data['staff'] else '(없음)'
+            parts = []
+            if self.original_team_name != new_team_name:
+                parts.append(f"{self.original_team_name} → {new_team_name}")
+            if removed:
+                parts.append(f"{', '.join(sorted(removed))} → {', '.join(sorted(added))}" if added else f"-{', '.join(sorted(removed))}")
+            elif added:
+                parts.append(f"+{', '.join(sorted(added))}")
+            detail = ' · '.join(parts) + f" · 선수: {players_str} · 스태프: {staff_str}"
+            team_data_manager.log_action("수정", interaction.user, new_team_name, detail=detail)
+
+        original_players_str = ', '.join(original_players) if original_players else '(없음)'
+        original_staff_str = ', '.join(original_staff) if original_staff else '(없음)'
+        new_players_str = ', '.join(new_team_data['players']) if new_team_data['players'] else '(없음)'
+        new_staff_str = ', '.join(new_team_data['staff']) if new_team_data['staff'] else '(없음)'
+        logger.info(
+            f"[팀수정] {self.original_team_name} → {new_team_name} | MMR: {new_team_mmr:.2f} | "
+            f"선수: [{original_players_str}] → [{new_players_str}] | "
+            f"스태프: [{original_staff_str}] → [{new_staff_str}]"
+        )
+        return added, removed, original_players
+
+    async def _send_edit_result(self, temp_message: discord.Message, new_team_name: str, new_team_mmr: float, added: set, removed: set, is_maintenance: bool) -> None:
+        """수정 결과 메시지 전송."""
+        if is_maintenance:
+            await update_temp_message(
+                temp_message,
+                f"**{self.original_team_name}** → **{new_team_name}**\n\n"
+                f"🔧 서버 점검으로 닉네임 확인을 건너뛰었습니다.\n"
+                f"점검 종료 후 자동으로 확인되며, 결과는 DM으로 안내드립니다.\n"
+                f"💡 닉네임 오타가 없는지 다시 한번 확인해주세요.",
+                discord.Color.green()
+            )
+        else:
+            diff_parts = []
+            if self.original_team_name != new_team_name:
+                diff_parts.append(f"팀명: {self.original_team_name} → {new_team_name}")
+            if removed:
+                diff_parts.append(f"제외: {', '.join(sorted(removed))}")
+            if added:
+                diff_parts.append(f"추가: {', '.join(sorted(added))}")
+            diff_summary = '\n'.join(diff_parts) if diff_parts else "변경 없음"
+            await update_temp_message(
+                temp_message,
+                f"**{new_team_name}** 팀이 수정되었습니다.\n\n{diff_summary}\n📊 팀 평균 MMR: **{new_team_mmr:.2f}**",
+                discord.Color.green()
+            )
+
     async def _process_team_edit(self, interaction: discord.Interaction, new_team_name: str, new_team_data: dict, temp_message: discord.Message) -> None:
         """팀 정보 수정 처리"""
         try:
-            from models.team_processor import TeamProcessor
-            from services.bser_api import BSERAPIClient
-            from config.settings import settings
             team_data_manager = BotManager.get_instance().get_team_data_manager()
-            is_maintenance = False
 
-            # 조편성 시작 여부 확인
-            # GroupRosterView인지 확인하여 로스터 변경인지 판단
-            from commands.ui.views import GroupRosterView
-            is_roster_change = isinstance(self.view, GroupRosterView)
-            
-            if team_data_manager.is_team_assignment_started:
-                # 조편성 이후에는 개별 팀 수정 불가 (관리자 로스터 변경만 가능)
-                if not is_roster_change:
-                    await update_temp_message(temp_message, "17시 조편성이 완료되어 팀 수정이 불가능합니다.", discord.Color.red())
-                    return
-            
-            # 조별 공지 로스터 변경(admin) 시 모든 검증을 건너뜀
-            if not is_roster_change:
-                # 팀 수정 가능 여부 확인 (시간 제한 및 예비팀 상태)
-                from utils.helpers import get_current_kst_time
-                current_time = get_current_kst_time()
-                is_allowed, error_message = await team_data_manager.check_team_edit_allowed(current_time)
-                
-                if not is_allowed:
-                    await update_temp_message(temp_message, error_message, discord.Color.red())
-                    return
-                
-                # 팀명이 변경된 경우 중복 검사
-                if new_team_name != self.original_team_name:
-                    # TeamData 객체에서 안전하게 플레이어와 스태프 추출
-                    players = new_team_data.get('players', []) if isinstance(new_team_data, dict) else getattr(new_team_data, 'players', [])
-                    staff = new_team_data.get('staff', []) if isinstance(new_team_data, dict) else getattr(new_team_data, 'staff', [])
-                    team_members = (players if isinstance(players, (list, tuple)) else []) + (staff if isinstance(staff, (list, tuple)) else [])
-                    
-                    # 조 내 팀 수정인지 개별 팀 수정인지 확인
-                    from commands.ui.views import GroupRosterView
-                    is_roster_change = isinstance(self.view, GroupRosterView)
-                    if is_roster_change:  # 조 내 팀 수정
-                        # 같은 조 내의 다른 팀들과 중복 검사
-                        is_group_valid, group_error = self._check_duplicate_within_group(new_team_name, team_members)
-                        if not is_group_valid:
-                            await update_temp_message(temp_message, group_error, discord.Color.red())
-                            return
-                    else:  # 개별 팀 수정
-                        # 모든 팀과 중복 검사 (기존 팀 제외)
-                        is_bot_valid, bot_error = team_data_manager.check_duplicate_with_bot_teams(new_team_name, team_members, exclude_team=self.original_team_name)
-                        if not is_bot_valid:
-                            await update_temp_message(temp_message, bot_error, discord.Color.red())
-                            return
-                
-                # TeamData 객체에서 안전하게 플레이어와 스태프 추출
-                from utils.helpers import get_team_members, get_all_members
-                players, staff = get_team_members(new_team_data)
-                all_members = players + staff
-                
-                # 팀원 중 테스트 계정이 있는지 확인
-                team_processor = BotManager.get_instance().get_team_processor()
-                
-                has_test_account = any(team_processor._is_test_account(member) for member in all_members)
+            # 1. 사전 검증
+            passed, is_roster_change, is_maintenance = await self._validate_team_edit_preconditions(
+                new_team_name, new_team_data, temp_message
+            )
+            if not passed:
+                return
 
-                is_maintenance = False
-                # 닉네임 검증 (테스트 계정이 없는 경우에만)
-                if not has_test_account:
-                    # 디스코드 서버 멤버 검증 (로컬, API 호출 전에 먼저 수행)
-                    client = BotManager.get_instance().get_client()
-                    guild = client.get_guild(settings.GUILD_ID) if client else None
-
-                    if guild:
-                        is_guild_valid, not_found_members = validate_members_in_guild(guild, all_members)
-                        if not is_guild_valid:
-                            not_found_str = ', '.join(not_found_members)
-                            error_msg = (
-                                f"❌ 다음 닉네임이 디스코드 서버에서 확인되지 않습니다.\n\n"
-                                f"**{not_found_str}**\n\n"
-                                f"💡 디스코드 서버 닉네임과 동일하게 입력해주세요."
-                            )
-                            await update_temp_message(temp_message, error_msg, discord.Color.red())
-                            return
-
-                # API 닉네임 검증 (게임 내 닉네임 확인)
-                if not has_test_account:
-                    from utils.validators import validate_members_api
-                    is_valid, api_invalid_members, is_maintenance = await validate_members_api(
-                        all_members, team_data_manager
-                    )
-                    if not is_valid and not is_maintenance:
-                        await update_temp_message(
-                            temp_message,
-                            f"❌ 다음 닉네임들을 찾을 수 없습니다.\n**{', '.join(api_invalid_members)}**\n\n💡 게임 내 닉네임을 정확히 입력했는지 확인해주세요.",
-                            discord.Color.red()
-                        )
-                        return
-            
-            # MMR 계산 (실패 시 기존 MMR 유지)
+            # 2. MMR 계산 (실패 시 기존 MMR 유지)
             original_mmr = self.original_team_data.mmr if hasattr(self.original_team_data, 'mmr') else (self.original_team_data.get('mmr', 0.0) if isinstance(self.original_team_data, dict) else 0.0)
             new_team_mmr = original_mmr
             try:
@@ -399,24 +441,19 @@ class TeamEditModal(Modal):
                     new_team_mmr = fetched_mmr
             except Exception as e:
                 logger.error(f"[모달] 팀 MMR 계산 실패 - 팀명: {new_team_name}: {e}", exc_info=True)
-                # MMR 계산 실패해도 팀 수정은 진행 (기존 MMR 유지)
 
-            # 팀 데이터 업데이트 (인덱스/캐시 일관성 유지)
+            # 3. 데이터 저장
             from models.team_data import TeamData
             team_data_obj = TeamData(
-                name=new_team_name,
-                players=new_team_data['players'],
-                staff=new_team_data['staff'],
-                user_id=str(interaction.user.id),
+                name=new_team_name, players=new_team_data['players'],
+                staff=new_team_data['staff'], user_id=str(interaction.user.id),
                 created_at=interaction.created_at
             )
             await team_data_manager.replace_team(self.original_team_name, team_data_obj, new_team_mmr)
 
-            # 캐시 저장
             try:
                 from models.user_team_cache import UserTeamCache
-                cache = UserTeamCache()
-                cache.set(str(interaction.user.id), {
+                UserTeamCache().set(str(interaction.user.id), {
                     "team_name": new_team_name,
                     "players": new_team_data["players"],
                     "staff": new_team_data["staff"],
@@ -424,121 +461,42 @@ class TeamEditModal(Modal):
             except Exception as e:
                 logger.warning(f"[모달] 캐시 저장 실패: {e}")
 
-            # 점검 중 수정 시 unverified 처리
+            # 4. unverified 처리
             if is_maintenance:
-                # 닉네임이 변경된 경우에만 unverified 추가
                 if isinstance(self.original_team_data, dict):
                     _orig_players = self.original_team_data.get('players', [])
                 else:
                     _orig_players = getattr(self.original_team_data, 'players', [])
-                old_players_norm = set(normalize_nickname_for_comparison(p) for p in _orig_players)
-                new_players_norm = set(normalize_nickname_for_comparison(p) for p in new_team_data['players'])
-                if old_players_norm != new_players_norm:
+                old_norm = set(normalize_nickname_for_comparison(p) for p in _orig_players)
+                new_norm = set(normalize_nickname_for_comparison(p) for p in new_team_data['players'])
+                if old_norm != new_norm:
                     team_data_manager.unverified_teams.add(new_team_name)
-                # 팀명 변경 시 기존 팀명 제거
                 if new_team_name != self.original_team_name:
                     team_data_manager.unverified_teams.discard(self.original_team_name)
                 team_data_manager._save_backup()
             else:
-                # 정상 수정으로 검증 통과 → unverified 제거
                 team_data_manager.unverified_teams.discard(new_team_name)
                 if new_team_name != self.original_team_name:
                     team_data_manager.unverified_teams.discard(self.original_team_name)
 
-            # 변경사항 diff 계산
-            if isinstance(self.original_team_data, dict):
-                old_players = set(self.original_team_data.get('players', []))
-                old_staff = set(self.original_team_data.get('staff', []))
-            else:
-                old_players = set(getattr(self.original_team_data, 'players', []))
-                old_staff = set(getattr(self.original_team_data, 'staff', []))
-            new_players = set(new_team_data['players'])
-            new_staff = set(new_team_data['staff'])
+            # 5. diff 계산 + 로깅
+            added, removed, original_players = self._compute_and_log_diff(
+                interaction, new_team_name, new_team_data, new_team_mmr, team_data_manager
+            )
 
-            added = (new_players | new_staff) - (old_players | old_staff)
-            removed = (old_players | old_staff) - (new_players | new_staff)
-
-            has_change = (self.original_team_name != new_team_name) or added or removed
-            if has_change:
-                players_str = ', '.join(new_team_data['players'])
-                staff_str = ', '.join(new_team_data['staff']) if new_team_data['staff'] else '(없음)'
-                parts = []
-                if self.original_team_name != new_team_name:
-                    parts.append(f"{self.original_team_name} → {new_team_name}")
-                if removed:
-                    parts.append(f"{', '.join(sorted(removed))} → {', '.join(sorted(added))}" if added else f"-{', '.join(sorted(removed))}")
-                elif added:
-                    parts.append(f"+{', '.join(sorted(added))}")
-                detail = ' · '.join(parts) + f" · 선수: {players_str} · 스태프: {staff_str}"
-                team_data_manager.log_action("수정", interaction.user, new_team_name, detail=detail)
-            
-            # 변경된 팀 데이터 업데이트 (조 내 팀 수정 시에만)
-            from commands.ui.views import GroupRosterView
-            is_roster_change = isinstance(self.view, GroupRosterView)
+            # 6. 조별 업데이트
             if is_roster_change:
                 await self._update_changed_team(team_data_manager, new_team_name, new_team_mmr)
-            
-            # 해당 조의 MMR 메시지 업데이트 (전체 MMR 메시지는 업데이트하지 않음)
-            # 로스터 변경 시에는 조별 공지만 업데이트
-            
-            # 성공 메시지로 임시 메시지 업데이트
-            if is_maintenance:
-                await update_temp_message(
-                    temp_message,
-                    f"**{self.original_team_name}** → **{new_team_name}**\n\n"
-                    f"🔧 서버 점검으로 닉네임 확인을 건너뛰었습니다.\n"
-                    f"점검 종료 후 자동으로 확인되며, 결과는 DM으로 안내드립니다.\n"
-                    f"💡 닉네임 오타가 없는지 다시 한번 확인해주세요.",
-                    discord.Color.green()
-                )
-            else:
-                # 변경사항 요약 구성
-                diff_parts = []
-                if self.original_team_name != new_team_name:
-                    diff_parts.append(f"팀명: {self.original_team_name} → {new_team_name}")
-                if removed:
-                    diff_parts.append(f"제외: {', '.join(sorted(removed))}")
-                if added:
-                    diff_parts.append(f"추가: {', '.join(sorted(added))}")
 
-                diff_summary = '\n'.join(diff_parts) if diff_parts else "변경 없음"
+            # 7. 결과 메시지
+            await self._send_edit_result(temp_message, new_team_name, new_team_mmr, added, removed, is_maintenance)
 
-                await update_temp_message(
-                    temp_message,
-                    f"**{new_team_name}** 팀이 수정되었습니다.\n\n{diff_summary}\n📊 팀 평균 MMR: **{new_team_mmr:.2f}**",
-                    discord.Color.green()
-                )
-            # 변경 전후 정보 로깅
-            if isinstance(self.original_team_data, dict):
-                original_players = self.original_team_data.get('players', [])
-                original_staff = self.original_team_data.get('staff', [])
-            else:
-                # TeamData 객체인 경우
-                original_players = getattr(self.original_team_data, 'players', [])
-                original_staff = getattr(self.original_team_data, 'staff', [])
-            new_players = new_team_data['players']
-            new_staff = new_team_data['staff']
-
-            original_players_str = ', '.join(original_players) if original_players else '(없음)'
-            original_staff_str = ', '.join(original_staff) if original_staff else '(없음)'
-            new_players_str = ', '.join(new_players) if new_players else '(없음)'
-            new_staff_str = ', '.join(new_staff) if new_staff else '(없음)'
-
-            logger.info(
-                f"[팀수정] {self.original_team_name} → {new_team_name} | MMR: {new_team_mmr:.2f} | "
-                f"선수: [{original_players_str}] → [{new_players_str}] | "
-                f"스태프: [{original_staff_str}] → [{new_staff_str}]"
-            )
-            
-            # 로스터 변경 시 주의 부여 처리
+            # 8. 후처리
             if is_roster_change and self.warning_checkbox and self.warning_checkbox.values:
                 await self._apply_roster_warnings(interaction, original_players, temp_message)
-
-            # 조별 공지 업데이트 (조 내 팀 수정 시에만)
             if is_roster_change:
                 await self._update_group_announcement(interaction)
             else:
-                # 개별 팀 수정 시에는 MMR 메시지만 업데이트
                 await self._update_mmr_message_for_individual_team(team_data_manager)
 
         except Exception as e:
