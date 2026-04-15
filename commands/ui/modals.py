@@ -499,6 +499,11 @@ class TeamEditModal(Modal):
             else:
                 await self._update_mmr_message_for_individual_team(team_data_manager)
 
+        except discord.NotFound:
+            logger.warning("[모달] 팀 수정 처리 interaction 만료")
+        except discord.HTTPException as e:
+            logger.error(f"[모달] 팀 수정 Discord API 오류: {e.status} {e.text}", exc_info=True)
+            await send_error_message(interaction, "❌ 팀 수정 중 Discord 오류가 발생했습니다.\n\n💡 잠시 후 다시 시도해주세요.")
         except Exception as e:
             logger.error(f"[모달] 팀 정보 수정 실패: {e}", exc_info=True)
             await send_error_message(interaction, "팀 정보 수정 중 오류가 발생했습니다.")

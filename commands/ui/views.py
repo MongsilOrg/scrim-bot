@@ -232,6 +232,8 @@ class TeamInputView(LayoutView):
             else:
                 await interaction.followup.send_modal(TeamEditModal(self, team_info))
 
+        except discord.NotFound:
+            logger.warning("[뷰] 팀 수정 모달 interaction 만료")
         except Exception as e:
             logger.error(f"[뷰] 팀 수정 모달 표시 실패: {e}", exc_info=True)
             await send_error_message(interaction, "팀 수정 모달 표시 중 오류가 발생했습니다.")
@@ -375,6 +377,11 @@ class TeamInputView(LayoutView):
             team_data_manager._pending_tasks.add(task)
             task.add_done_callback(team_data_manager._pending_tasks.discard)
 
+        except discord.NotFound:
+            logger.warning("[뷰] 팀 등록 interaction 만료")
+        except discord.HTTPException as e:
+            logger.error(f"[뷰] 팀 등록 Discord API 오류: {e.status} {e.text}", exc_info=True)
+            await send_error_message(interaction, "❌ 팀 등록 중 Discord 오류가 발생했습니다.\n\n💡 잠시 후 다시 시도해주세요.")
         except Exception as e:
             logger.error(f"[뷰] 팀 등록 실패: {e}", exc_info=True)
             await send_error_message(
@@ -432,6 +439,8 @@ class TeamInputView(LayoutView):
             # 일반 취소 처리
             await self._execute_team_cancellation(interaction, team_name, team_data_manager)
 
+        except discord.NotFound:
+            logger.warning("[뷰] 팀 취소 interaction 만료")
         except Exception as e:
             logger.error(f"[뷰] 팀 취소 실패: {e}", exc_info=True)
             await send_error_message(interaction, "팀 취소 중 오류가 발생했습니다.")
@@ -479,6 +488,8 @@ class TeamInputView(LayoutView):
             team_data_manager._pending_tasks.add(task)
             task.add_done_callback(team_data_manager._pending_tasks.discard)
 
+        except discord.NotFound:
+            logger.warning("[뷰] 팀 취소 실행 interaction 만료")
         except Exception as e:
             logger.error(f"[뷰] 팀 취소 실행 실패: {e}", exc_info=True)
             await send_response(interaction, error_view("팀 취소 중 오류가 발생했습니다."))
