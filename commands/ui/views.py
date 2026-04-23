@@ -258,17 +258,20 @@ class TeamInputView(LayoutView):
             from utils.helpers import get_all_members
             team_members = get_all_members(team_data) if isinstance(team_data, dict) or hasattr(team_data, 'players') else team_data
 
+            team_processor = BotManager.get_instance().get_team_processor()
+            real_members = [m for m in team_members if not team_processor._is_test_account(m)]
+
             if not errors:
                 is_bot_valid, bot_err = team_data_manager.check_duplicate_with_bot_teams(team_name, team_members)
                 if not is_bot_valid:
                     errors.append(bot_err)
 
-            if not errors:
+            if not errors and real_members:
                 from utils.validators import validate_members_in_guild
                 client = BotManager.get_instance().get_client()
                 guild = client.get_guild(settings.GUILD_ID) if client else None
                 if guild:
-                    is_guild_valid, not_found = validate_members_in_guild(guild, team_members)
+                    is_guild_valid, not_found = validate_members_in_guild(guild, real_members)
                     if not is_guild_valid:
                         errors.append(f"❌ 디스코드 서버에서 확인되지 않는 닉네임: **{', '.join(not_found)}**")
 
@@ -282,14 +285,11 @@ class TeamInputView(LayoutView):
                 return
 
             # ── 2단계: API 검증 (네트워크, 병렬) ──
-            team_processor = BotManager.get_instance().get_team_processor()
-            has_test_account = any(team_processor._is_test_account(m) for m in team_members)
-
             is_maintenance = False
-            if not has_test_account:
+            if real_members:
                 from utils.validators import validate_members_api
                 is_valid, api_invalid_members, is_maintenance = await validate_members_api(
-                    team_members, team_data_manager
+                    real_members, team_data_manager
                 )
                 if not is_valid and not is_maintenance:
                     msg = f"❌ 게임 내에서 확인되지 않는 닉네임: **{', '.join(api_invalid_members)}**\n💡 게임 내 닉네임을 정확히 입력해주세요."
