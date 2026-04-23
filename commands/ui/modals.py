@@ -324,13 +324,13 @@ class TeamEditModal(Modal):
             players, staff = get_team_members(new_team_data)
             all_members = players + staff
             team_processor = BotManager.get_instance().get_team_processor()
-            has_test_account = any(team_processor._is_test_account(m) for m in all_members)
+            real_members = [m for m in all_members if not team_processor._is_test_account(m)]
 
-            if not has_test_account:
+            if real_members:
                 client = BotManager.get_instance().get_client()
                 guild = client.get_guild(settings.GUILD_ID) if client else None
                 if guild:
-                    is_guild_valid, not_found = validate_members_in_guild(guild, all_members)
+                    is_guild_valid, not_found = validate_members_in_guild(guild, real_members)
                     if not is_guild_valid:
                         await update_temp_message(
                             temp_message,
@@ -340,7 +340,7 @@ class TeamEditModal(Modal):
                         return False, is_roster_change, False
 
                 from utils.validators import validate_members_api
-                is_valid, api_invalid, is_maintenance = await validate_members_api(all_members, team_data_manager)
+                is_valid, api_invalid, is_maintenance = await validate_members_api(real_members, team_data_manager)
                 if not is_valid and not is_maintenance:
                     await update_temp_message(
                         temp_message,
