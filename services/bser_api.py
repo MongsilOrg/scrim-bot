@@ -259,7 +259,7 @@ class BSERAPIClient:
     
     async def get_user_rank(self, uid: str) -> Optional[Dict]:
         """사용자 UID로 랭크 정보를 조회합니다."""
-        url = f"{self.base_url}/rank/uid/{uid}/37/3"
+        url = f"{self.base_url}/rank/uid/{uid}/39/3"
         data = await self._request("GET", url)
         if not data:
             return None
