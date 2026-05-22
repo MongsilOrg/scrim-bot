@@ -36,6 +36,14 @@ class MmrUpdater:
                 logger.warning("[MMR메시지] 조편성 시작 이후이므로 갱신 불가")
                 return
 
+            # 시드팀 마킹 (이미지에 시드 여부 표시)
+            try:
+                from bot.manager import BotManager
+                team_processor = BotManager.get_instance().get_team_processor()
+                await team_processor.ensure_seeds_marked(mgr.teams)
+            except Exception as e:
+                logger.warning(f"[MMR메시지] 시드 마킹 실패 (계속 진행): {e}")
+
             # 이미지 생성
             from services.image_generator import ImageGenerator
             img_io = ImageGenerator.generate_mmr_image(mgr.teams, unverified_teams=mgr.unverified_teams)
