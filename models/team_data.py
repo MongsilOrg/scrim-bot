@@ -19,6 +19,8 @@ class TeamData:
     mmr_updated_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    is_seed: bool = False
+    seed_name: Optional[str] = None
     
     def __post_init__(self):
         """초기화 후 처리"""
