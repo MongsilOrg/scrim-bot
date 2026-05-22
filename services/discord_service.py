@@ -477,7 +477,16 @@ class DiscordService:
 
     async def _get_group_role_mention(self, guild: discord.Guild, group_letter: str) -> str:
         """조별 역할 멘션을 가져옵니다."""
-        return ""
+        try:
+            role_name = f"{group_letter}조"
+            role = discord.utils.get(guild.roles, name=role_name)
+            if role:
+                return f"<@&{role.id}>"
+            logger.warning(f"[Discord] 조별 역할을 찾을 수 없음 - 역할: {role_name}")
+            return ""
+        except Exception as e:
+            logger.error(f"[Discord] 조별 역할 멘션 가져오기 실패: {e}", exc_info=True)
+            return ""
 
     async def clear_channel_messages(self, channel: discord.TextChannel) -> None:
         """채널의 모든 메시지를 삭제합니다."""
