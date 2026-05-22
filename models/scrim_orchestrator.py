@@ -79,6 +79,9 @@ class ScrimOrchestrator:
                 logger.warning(f"[조편성] 팀 부족으로 중단 - {total_teams_current}팀 < {settings.TEAMS_PER_GROUP}팀")
                 return
 
+            # 조편성 직전 MMR 마지막 갱신 (시드 마킹도 함께 반영)
+            await self._refresh_mmr_before_assignment(team_data_manager)
+
             team_data_manager.is_team_assignment_started = True
 
             # 조편성 실행
@@ -90,6 +93,26 @@ class ScrimOrchestrator:
             from bot.manager import BotManager
             team_data_manager = BotManager.get_instance().get_team_data_manager()
             team_data_manager.is_team_assignment_started = False
+
+    async def _refresh_mmr_before_assignment(self, team_data_manager) -> None:
+        """조편성 시작 직전 MMR을 새로 fetch하고 이미지를 한 번 갱신합니다."""
+        try:
+            if not team_data_manager.teams:
+                return
+
+            success, fail = await team_data_manager.update_all_team_mmr()
+            logger.info(f"[조편성] 직전 MMR 갱신 - 성공: {success}팀, 실패: {fail}팀")
+
+            channel = None
+            if team_data_manager.mmr_message and team_data_manager.mmr_message.channel:
+                channel = team_data_manager.mmr_message.channel
+            elif team_data_manager.scrim_channel_id and team_data_manager.client:
+                channel = team_data_manager.client.get_channel(team_data_manager.scrim_channel_id)
+
+            if channel:
+                await team_data_manager.update_mmr_message(channel, mmr_fail_count=fail)
+        except Exception as e:
+            logger.error(f"[조편성] 직전 MMR 갱신 실패 (계속 진행): {e}", exc_info=True)
 
     async def execute_auto_assignment(self) -> None:
         """실제 조편성을 실행합니다."""
