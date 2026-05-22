@@ -22,11 +22,33 @@
     .mmr-table th, .mmr-table td {{
         padding: 8px 6px;
         text-align: center;
+        vertical-align: middle;
         font-size: 14px;
         line-height: 1.4;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }}
+    .mmr-table tbody td {{
+        height: 56px;
+    }}
+    .cell-main {{
+        font-size: 14px;
+        line-height: 1.3;
+    }}
+    .cell-sub {{
+        font-size: 11px;
+        line-height: 1.3;
+        margin-top: 3px;
+        opacity: 0.85;
+    }}
+    .cell-sub.seed {{
+        color: #FFD700;
+        font-weight: bold;
+        letter-spacing: 0.5px;
+    }}
+    .cell-sub.staff {{
+        color: #b8a0e8;
     }}
     .header-row th {{
         background-color: {accent_color};
@@ -43,15 +65,6 @@
     .separator {{
         color: #555555;
         margin: 0 4px;
-    }}
-    .staff-badge {{
-        display: inline-block;
-        background-color: #3a3a4a;
-        color: #b8a0e8;
-        font-size: 12px;
-        padding: 1px 6px;
-        border-radius: 3px;
-        margin-left: 2px;
     }}
     .row-even td {{
         background-color: #2d2d2d;

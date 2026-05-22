@@ -171,6 +171,8 @@ class ImageGenerator:
         mmr = team_data.mmr
         players = list(team_data.players)
         staff = list(team_data.staff)
+        is_seed = getattr(team_data, 'is_seed', False)
+        seed_name = getattr(team_data, 'seed_name', None)
 
         row_class = 'row-unverified' if is_unverified else ('row-even' if (rank - 1) % 2 == 0 else 'row-odd')
 
@@ -178,29 +180,32 @@ class ImageGenerator:
         def _esc(s: str) -> str:
             return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
-        # 멤버 셀: 선수는 · 구분, 스태프는 배지로 시각 구분
+        # 팀명 셀: 메인(팀명) + 시드인 경우 하단 작은 글씨 (시드 시트 팀명 표시)
+        team_main = f'<div class="cell-main">{_esc(team_name)}</div>'
+        if is_seed:
+            seed_label = f'시드 · {_esc(seed_name)}' if seed_name else '시드'
+            team_sub = f'<div class="cell-sub seed">{seed_label}</div>'
+        else:
+            team_sub = ''
+        team_cell = team_main + team_sub
+
+        # 멤버 셀: 메인(선수) + 스태프 있는 경우 하단 작은 글씨
         sep = '<span class="separator">·</span>'
-        members_html = ''
-        if players:
-            members_html = sep.join(_esc(p) for p in players)
+        players_text = sep.join(_esc(p) for p in players) if players else '-'
+        members_main = f'<div class="cell-main">{players_text}</div>'
+        members_sub = ''
         if staff:
-            staff_badges = ' '.join(
-                f'<span class="staff-badge">{_esc(s)}</span>' for s in staff
-            )
-            if members_html:
-                members_html += f' {staff_badges}'
-            else:
-                members_html = staff_badges
-        if not members_html:
-            members_html = '-'
+            staff_text = ' · '.join(_esc(s) for s in staff)
+            members_sub = f'<div class="cell-sub staff">{staff_text}</div>'
+        members_cell = members_main + members_sub
 
         mmr_display = f'<td class="mmr-unverified">점검</td>' if is_unverified else f'<td class="mmr-value">{mmr:.2f}</td>'
 
         return f"""<tr class="row {row_class}">
     <td>{rank}</td>
-    <td>{_esc(team_name)}</td>
+    <td>{team_cell}</td>
     {mmr_display}
-    <td>{members_html}</td>
+    <td>{members_cell}</td>
 </tr>
 """
 
