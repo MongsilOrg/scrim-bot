@@ -50,6 +50,7 @@ class TeamProcessor:
             raise ValueError("API 키가 설정되지 않았습니다.")
         
         self.seeds_data = None
+        self._seeds_loaded_at: float = 0.0
         # 테스트 계정 데이터 (닉네임 -> MMR 매핑)
         self.test_accounts_data: Dict[str, float] = {}
         # 구글 시트 클라이언트
@@ -316,6 +317,17 @@ class TeamProcessor:
             # 3명 또는 4명이 아닌 경우 시드 미적용
             return False
     
+    SEEDS_TTL_SECONDS = 3600  # 시드 시트 캐시 TTL (1시간)
+
+    async def ensure_seeds_marked(self, teams: Dict[str, TeamData]) -> None:
+        """시드 데이터 (1시간 TTL 캐시) 로드 후 팀들에 is_seed/seed_name을 마킹합니다."""
+        import time
+        now = time.monotonic()
+        if self.seeds_data is None or (now - self._seeds_loaded_at) >= self.SEEDS_TTL_SECONDS:
+            await self._load_seeds_data()
+            self._seeds_loaded_at = now
+        await self._identify_seeded_teams(teams)
+
     async def _identify_seeded_teams(self, teams: Dict[str, TeamData]) -> Dict[str, int]:
         """시드팀을 식별하고 우선순위를 부여합니다.
         
@@ -325,29 +337,36 @@ class TeamProcessor:
             - 2순위: 시드가 없는 팀
         """
         team_priorities = {}
-        
+
+        # 이전 식별 결과 초기화 (시드 데이터 갱신 또는 팀 변경 반영)
+        for team_data in teams.values():
+            team_data.is_seed = False
+            team_data.seed_name = None
+
         if not self.seeds_data or not self.seeds_data.get("seeds"):
             # 시드 데이터가 없으면 모든 팀을 2순위로 설정
             for team_name in teams.keys():
                 team_priorities[team_name] = 2
             return team_priorities
-        
+
         # 모든 시드팀을 하나의 리스트로 처리
         all_seeds = self.seeds_data.get("seeds", [])
-        
+
         # 모든 팀을 먼저 2순위로 초기화
         for team_name in teams.keys():
             team_priorities[team_name] = 2
-        
+
         # 각 팀에 대해 시드 매칭 확인
         for team_name, team_data in teams.items():
             team_players = self._extract_players_only(team_data)
-            
+
             # 시드팀 확인 (시드 데이터에 있는 팀을 1순위로 처리)
             for seed_team in all_seeds:
                 seed_players = seed_team.get("players", [])
                 if self._are_players_matching(team_players, seed_players):
                     team_priorities[team_name] = 1
+                    team_data.is_seed = True
+                    team_data.seed_name = seed_team.get("team_name") or None
                     break
         
         # 우선순위별 통계
