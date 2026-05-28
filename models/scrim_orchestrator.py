@@ -100,7 +100,7 @@ class ScrimOrchestrator:
             if not team_data_manager.teams:
                 return
 
-            success, fail = await team_data_manager.update_all_team_mmr()
+            success, fail = await team_data_manager._update_all_team_mmr()
             logger.info(f"[조편성] 직전 MMR 갱신 - 성공: {success}팀, 실패: {fail}팀")
 
             channel = None
