@@ -102,8 +102,14 @@ class TeamInputView(LayoutView):
             emoji="🚫"
         )
         self.cancel_team_button.callback = self.cancel_team_callback
-        self.add_item(ActionRow(self.add_team_button, self.cancel_team_button))
-    
+        self.manage_button = Button(
+            label="관리",
+            style=ButtonStyle.secondary,
+            emoji="🛠️"
+        )
+        self.manage_button.callback = self.manage_callback
+        self.add_item(ActionRow(self.add_team_button, self.cancel_team_button, self.manage_button))
+
     async def add_team_callback(self, interaction: discord.Interaction) -> None:
         """팀 추가 버튼 콜백 (기존 팀이 있으면 수정 모달 표시)"""
         if await _check_cooldown(interaction):
@@ -493,7 +499,85 @@ class TeamInputView(LayoutView):
         except Exception as e:
             logger.error(f"[뷰] 팀 취소 실행 실패: {e}", exc_info=True)
             await send_response(interaction, error_view("팀 취소 중 오류가 발생했습니다."))
-    
+
+    # ── 운영진 강제취소 ────────────────────────────────────────────────
+    async def manage_callback(self, interaction: discord.Interaction) -> None:
+        """관리 버튼 콜백 — 운영진 전용 팀 강제취소 진입점."""
+        if await _check_cooldown(interaction):
+            return
+        try:
+            if not is_admin(interaction.user):
+                await send_response(interaction, permission_error_view())
+                return
+
+            team_data_manager = BotManager.get_instance().get_team_data_manager()
+            if team_data_manager.is_team_assignment_started:
+                await send_error_message(interaction, "17시 조편성이 완료되어 강제취소가 불가능합니다.")
+                return
+
+            teams = team_data_manager.get_all_teams()
+            if not teams:
+                await send_response(interaction, info_view("신청한 팀이 없습니다."))
+                return
+
+            view = ForceCancelSelectView(self, teams)
+            view.message = await send_response(interaction, view)
+
+        except discord.NotFound:
+            logger.warning("[뷰] 관리 interaction 만료")
+        except Exception as e:
+            logger.error(f"[뷰] 관리 콜백 처리 실패: {e}", exc_info=True)
+            await send_error_message(interaction, "관리 화면을 여는 중 오류가 발생했습니다.")
+
+    async def _execute_force_cancel(self, interaction: discord.Interaction, team_name: str) -> None:
+        """운영진 강제취소 실행 — 확정 시점에 권한·조편성 상태를 재검증한다."""
+        try:
+            team_data_manager = BotManager.get_instance().get_team_data_manager()
+
+            # 확정 시점 재검증 (드롭다운/확인 대기 중 상태 변화 방지)
+            if not is_admin(interaction.user):
+                await send_response(interaction, permission_error_view())
+                return
+            if team_data_manager.is_team_assignment_started:
+                await send_error_message(interaction, "17시 조편성이 완료되어 강제취소가 불가능합니다.")
+                return
+
+            team_info = team_data_manager.get_team_data(team_name)
+            if team_info is None or team_name not in team_data_manager.get_all_teams():
+                await send_error_message(interaction, "이미 취소되었거나 존재하지 않는 팀입니다.")
+                return
+
+            from utils.helpers import get_team_members
+            players, staff = get_team_members(team_info)
+            applicant_id = getattr(team_info, 'user_id', None)
+
+            success, failure_reason = await team_data_manager.remove_team(team_name)
+            if not success:
+                await send_response(interaction, error_view(failure_reason or "강제취소에 실패했습니다."))
+                return
+
+            players_str = ', '.join(players) if players else '(없음)'
+            staff_str = ', '.join(staff) if staff else '(없음)'
+            applicant = f"<@{applicant_id}>" if applicant_id else "(미상)"
+            team_data_manager.log_action(
+                "강제취소", interaction.user, team_name,
+                detail=f"신청자: {applicant} · 선수: {players_str} · 스태프: {staff_str}",
+            )
+            logger.info(f"[강제취소] {team_name} | 운영진: {interaction.user} | 선수: [{players_str}]")
+
+            await send_response(interaction, success_view(f"**{team_name}** 팀을 강제 취소했습니다."))
+
+            # 백그라운드에서 MMR 갱신 및 대시보드 메시지 업데이트
+            import asyncio
+            task = asyncio.create_task(self._update_mmr_background(team_data_manager, interaction.channel))
+            team_data_manager._pending_tasks.add(task)
+            task.add_done_callback(team_data_manager._pending_tasks.discard)
+
+        except discord.NotFound:
+            logger.warning("[뷰] 강제취소 실행 interaction 만료")
+        except Exception as e:
+            logger.error(f"[뷰] 강제취소 실행 실패: {e}", exc_info=True)
+            await send_response(interaction, error_view("강제취소 중 오류가 발생했습니다."))
 
 
 class GroupRosterView(LayoutView):
@@ -713,6 +797,133 @@ class CancelConfirmView(LayoutView):
 
     async def on_timeout(self) -> None:
         """타임아웃 시 버튼 비활성화 및 안내 메시지"""
+        if self.message:
+            try:
+                await self.message.edit(view=timeout_view(), embed=None, content=None)
+            except Exception:
+                pass
+
+
+_SELECT_OPTION_LIMIT = 25  # Discord Select 옵션 최대 개수
+
+
+class ForceCancelSelectView(LayoutView):
+    """
+    운영진 강제취소 — 팀 선택 뷰
+
+    신청된 전체 팀을 드롭다운으로 보여주고, 선택한 팀을 강제취소 확인 단계로 넘긴다.
+    팀이 25개를 넘으면 Discord Select 제한을 우회하기 위해 드롭다운을 여러 개로 분할한다.
+    """
+
+    def __init__(self, parent_view: Optional['TeamInputView'], teams: Dict[str, 'TeamData']):
+        super().__init__(timeout=60)
+        self.parent_view = parent_view
+        self.message: Optional[discord.Message] = None
+
+        self.add_item(Container(
+            TextDisplay(content="## 🛠️ 팀 강제취소\n취소할 팀을 선택하세요."),
+            Separator(),
+            TextDisplay(content=FOOTER_TEXT),
+            accent_colour=Color.orange(),
+        ))
+
+        sorted_names = sorted(teams.keys())
+        self.selects: list[Select] = []
+        for start in range(0, len(sorted_names), _SELECT_OPTION_LIMIT):
+            chunk = sorted_names[start:start + _SELECT_OPTION_LIMIT]
+            options = [
+                SelectOption(
+                    label=f"{name} (MMR: {getattr(teams[name], 'mmr', 0.0):.2f})"[:100],
+                    value=name,
+                    description=(', '.join(getattr(teams[name], 'players', [])[:3]) or '정보 없음')[:100],
+                )
+                for name in chunk
+            ]
+            select = Select(placeholder="취소할 팀을 선택하세요", options=options)
+            select.callback = self.team_select_callback
+            self.selects.append(select)
+            self.add_item(ActionRow(select))
+
+    async def team_select_callback(self, interaction: discord.Interaction) -> None:
+        """드롭다운에서 팀 선택 → 강제취소 확인 단계로 진입."""
+        try:
+            # 발화한 드롭다운의 선택값을 raw payload에서 직접 읽는다(다중 Select 분할 시 모호성 제거).
+            values = (interaction.data or {}).get("values") or []
+            selected = values[0] if values else None
+            if not selected:
+                await send_response(interaction, error_view("선택된 팀을 확인할 수 없습니다."))
+                return
+
+            confirm_view = ForceCancelConfirmView(self.parent_view, selected)
+            self.stop()  # 확인 단계로 전환 — 이 드롭다운 뷰의 타임아웃 타이머 종료
+            await interaction.response.edit_message(view=confirm_view)
+            confirm_view.message = await interaction.original_response()
+        except discord.InteractionResponded:
+            pass
+        except discord.NotFound:
+            logger.warning("[뷰] 강제취소 팀 선택 interaction 만료")
+        except Exception as e:
+            logger.error(f"[뷰] 강제취소 팀 선택 실패: {e}", exc_info=True)
+            await send_response(interaction, error_view("팀 선택 중 오류가 발생했습니다."))
+
+    async def on_timeout(self) -> None:
+        """타임아웃 시 드롭다운을 안내 메시지로 교체."""
+        if self.message:
+            try:
+                await self.message.edit(view=timeout_view(), embed=None, content=None)
+            except Exception:
+                pass
+
+
+class ForceCancelConfirmView(LayoutView):
+    """
+    운영진 강제취소 — 최종 확인 뷰
+
+    선택한 팀을 강제취소하기 전 운영진의 최종 확인을 받는다.
+    """
+
+    def __init__(self, parent_view: Optional['TeamInputView'], team_name: str):
+        super().__init__(timeout=60)
+        self.parent_view = parent_view
+        self.team_name = team_name
+        self.message: Optional[discord.Message] = None
+
+        self.add_item(Container(
+            TextDisplay(content=f"## 🔨 강제취소 확인\n**{team_name}** 팀을 강제취소하시겠습니까?"),
+            Separator(),
+            TextDisplay(content=FOOTER_TEXT),
+            accent_colour=Color.red(),
+        ))
+
+        self.confirm_button = Button(label="강제 취소하기", style=ButtonStyle.danger, emoji="🔨")
+        self.confirm_button.callback = self.confirm_callback
+        self.back_button = Button(label="돌아가기", style=ButtonStyle.secondary, emoji="↩️")
+        self.back_button.callback = self.back_callback
+        self.add_item(ActionRow(self.confirm_button, self.back_button))
+
+    async def confirm_callback(self, interaction: discord.Interaction) -> None:
+        try:
+            self.confirm_button.disabled = True
+            self.back_button.disabled = True
+            await interaction.response.edit_message(view=self)
+            if self.parent_view is not None:
+                await self.parent_view._execute_force_cancel(interaction, self.team_name)
+        except Exception as e:
+            logger.error(f"[뷰] 강제취소 확인 콜백 실패: {e}", exc_info=True)
+            await interaction.followup.send(
+                view=error_view("강제취소 중 오류가 발생했습니다."), ephemeral=True
+            )
+
+    async def back_callback(self, interaction: discord.Interaction) -> None:
+        try:
+            await interaction.response.edit_message(
+                view=info_view("이전 화면으로 돌아갔습니다."), embed=None, content=None
+            )
+        except Exception as e:
+            logger.error(f"[뷰] 강제취소 돌아가기 콜백 실패: {e}", exc_info=True)
+
+    async def on_timeout(self) -> None:
+        """타임아웃 시 확인 버튼을 안내 메시지로 교체."""
         if self.message:
             try:
                 await self.message.edit(view=timeout_view(), embed=None, content=None)

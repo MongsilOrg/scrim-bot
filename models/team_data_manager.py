@@ -25,6 +25,9 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = get_logger('team_data_manager')
 
+# 로그 액션 타입별 이모지 (신청/수정/취소 + 운영진 강제취소)
+ACTION_EMOJI = {"신청": "📝", "취소": "❌", "수정": "✏️", "강제취소": "🔨"}
+
 
 class TeamDataManager:
     """
@@ -455,7 +458,7 @@ class TeamDataManager:
             if not channel:
                 return
 
-            emoji = {"신청": "📝", "취소": "❌", "수정": "✏️"}.get(action_type, "📌")
+            emoji = ACTION_EMOJI.get(action_type, "📌")
             unix_ts = int(timestamp.timestamp())
 
             msg = f"{emoji} <t:{unix_ts}:t> **{team_name}** — {user.mention}"
