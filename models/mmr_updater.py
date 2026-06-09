@@ -202,8 +202,12 @@ class MmrUpdater:
             team_data_manager = BotManager.get_instance().get_team_data_manager()
             team_data_manager.mmr_update_task = None
 
-    async def update_all_team_mmr(self) -> Tuple[int, int]:
+    async def update_all_team_mmr(self, force: bool = False) -> Tuple[int, int]:
         """모든 팀의 MMR을 갱신합니다 (최근 10분 이내 갱신된 팀은 스킵).
+
+        Args:
+            force: True면 10분 캐시를 무시하고 모든 팀을 실제로 재조회합니다
+                (조편성 직전 마지막 갱신 등에 사용).
 
         Returns:
             Tuple[int, int]: (성공 팀 수, 실패 팀 수)
@@ -224,8 +228,8 @@ class MmrUpdater:
             teams_copy = dict(mgr.teams)
             for team_name, team_data in teams_copy.items():
                 try:
-                    # 최근 10분 이내 갱신된 팀은 스킵
-                    if team_data.mmr_updated_at:
+                    # 최근 10분 이내 갱신된 팀은 스킵 (force면 무시하고 실제 재조회)
+                    if not force and team_data.mmr_updated_at:
                         elapsed = (current_time - team_data.mmr_updated_at).total_seconds()
                         if elapsed < 600:  # 10분 = 600초
                             skipped += 1

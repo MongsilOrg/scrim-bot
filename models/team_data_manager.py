@@ -115,8 +115,8 @@ class TeamDataManager:
     async def mmr_update_loop(self) -> None:
         await self._mmr_updater.mmr_update_loop()
 
-    async def _update_all_team_mmr(self) -> Tuple[int, int]:
-        return await self._mmr_updater.update_all_team_mmr()
+    async def _update_all_team_mmr(self, force: bool = False) -> Tuple[int, int]:
+        return await self._mmr_updater.update_all_team_mmr(force=force)
 
     async def _verify_unverified_teams(self) -> None:
         await self._mmr_updater.verify_unverified_teams()

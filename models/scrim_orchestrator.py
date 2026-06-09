@@ -100,8 +100,12 @@ class ScrimOrchestrator:
             if not team_data_manager.teams:
                 return
 
-            success, fail = await team_data_manager._update_all_team_mmr()
+            success, fail = await team_data_manager._update_all_team_mmr(force=True)
             logger.info(f"[조편성] 직전 MMR 갱신 - 성공: {success}팀, 실패: {fail}팀")
+
+            # 실제 갱신 성공 시 마지막 갱신 시각 반영 (이미지의 '마지막 갱신' 표시)
+            if success > 0:
+                team_data_manager._last_success_time = get_current_kst_time().strftime('%H:%M')
 
             channel = None
             if team_data_manager.mmr_message and team_data_manager.mmr_message.channel:
