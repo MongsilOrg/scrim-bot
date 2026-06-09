@@ -176,6 +176,11 @@ class DiscordService:
     async def send_notices(self, guild: discord.Guild, groups: List[List], unmatched_teams: List[Tuple[str, "TeamData", float]] = None) -> None:
         """공지를 전송합니다."""
         try:
+            # 디스코드 역할 처리 (조별 공지보다 먼저)
+            # — 공지의 역할 핑/권한 게이팅된 채널 가시성이 '새 조 멤버'에게 올바로 가도록,
+            #   조별 공지를 보내기 전에 조 역할을 먼저 재배정한다.
+            await self.handle_discord_roles(guild, groups)
+
             # 모든 조별 채널에 대해 처리 (팀이 있는 조와 없는 조 모두)
             for group_letter in settings.GROUP_CHANNEL_IDS.keys():
                 try:
@@ -206,9 +211,6 @@ class DiscordService:
                     # 각 조별 처리 중 오류가 발생해도 다른 조에 영향을 주지 않도록 개별 처리
                     logger.error(f"[Discord] 조별 공지 전송 실패 - 조: {group_letter}조: {e}", exc_info=True)
                     continue
-
-            # 디스코드 역할 처리
-            await self.handle_discord_roles(guild, groups)
 
             # 음성채널 이름 변경
             await self.rename_voice_channels(guild, groups)
