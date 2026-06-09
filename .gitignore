@@ -50,3 +50,6 @@ teams.csv
 *.csv.bak
 
 .claude/.claude/worktrees/
+
+# 폰트 중복 디렉터리 (코드가 쓰는 폰트는 추적되는 assets/NanumGothic.ttf)
+assets/fonts/
