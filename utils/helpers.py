@@ -61,6 +61,14 @@ def get_current_kst_time() -> datetime:
     return datetime.now(kst)
 
 
+def get_start_of_day_utc(now_kst: datetime = None) -> datetime:
+    """KST 자정(당일 시작) 기준 시각을 UTC로 반환합니다."""
+    if now_kst is None:
+        now_kst = get_current_kst_time()
+    start_of_day_kst = now_kst.replace(hour=0, minute=0, second=0, microsecond=0)
+    return start_of_day_kst.astimezone(pytz.utc)
+
+
 def get_group_letter(channel_id: int) -> str | None:
     """채널 ID로 조 문자를 반환합니다."""
     for letter, ch_id in settings.GROUP_CHANNEL_IDS.items():
