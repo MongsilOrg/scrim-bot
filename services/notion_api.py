@@ -12,6 +12,7 @@ def _is_number(tag: str) -> bool:
 # 1. 설정 정보
 NOTION_TOKEN: str = os.getenv('NOTION_TOKEN', '')
 NOTION_DATABASE_ID: str = os.getenv('NOTION_DATABASE_ID', '')
+UNMANAGED_TOURNAMENT_TAGS = {"KEL"}
 
 def get_date_data(data):
     props = data.get("properties", {})
@@ -48,46 +49,63 @@ def get_notion_data():
     results = res.json().get("results", [])
     return results
 
+def _decide(results, today, tomorrow):
+    count = 0
+    broadcast = True
+    tournament_today = False
+    live_versions = []
+    next_masters_start = None
+    next_masters_versions = []
+
+    for result in results:
+        if "properties" not in result:
+            continue
+
+        start_date, end_date, props = get_date_data(result)
+        tag_names = [tag["name"] for tag in props.get("태그", {}).get("multi_select", [])]
+
+        if any(name in UNMANAGED_TOURNAMENT_TAGS for name in tag_names):
+            if start_date <= today <= end_date:
+                tournament_today = True
+            continue
+
+        numbers = [float(name) for name in tag_names if _is_number(name)]
+        is_tournament_row = len(numbers) != len(tag_names)
+
+        if is_tournament_row:
+            if start_date <= today <= end_date:
+                tournament_today = True
+            elif start_date > today:
+                if next_masters_start is None or start_date < next_masters_start:
+                    next_masters_start = start_date
+                    next_masters_versions = list(numbers)
+                elif start_date == next_masters_start:
+                    next_masters_versions.extend(numbers)
+        elif start_date <= today <= end_date:
+            live_versions.extend(numbers)
+
+        if start_date <= tomorrow <= end_date:
+            count += len(tag_names)
+            if count > 1:
+                broadcast = False
+
+    if tournament_today:
+        return [False, broadcast]
+
+    if live_versions and next_masters_versions:
+        if min(next_masters_versions) < max(live_versions):
+            return [True, broadcast]
+
+    return [False, broadcast]
+
+
 def check_notion_for_tags():
     kst = timezone(timedelta(hours=9))
     now = datetime.now(kst)
     today = now.date() + timedelta(days=1) if now.hour >= 22 else now.date()
     tomorrow = (now + timedelta(days=1)).date()
 
-    results = get_notion_data()
-    
-    today_numbers = []
-    tomorrow_numbers = []
-    count = 0
-    broadcast = True
-
-    for result in results:
-        if "properties" not in result:
-            continue
-        
-        start_date, end_date, props = get_date_data(result)
-        tag_list = props.get("태그", {}).get("multi_select", [])
-        
-        if start_date <= today <= end_date:
-            for tag in tag_list:
-                tag_name = tag["name"]
-                if _is_number(tag_name):
-                    today_numbers.append(float(tag_name))
-
-        if start_date <= tomorrow <= end_date:
-            for tag in tag_list:
-                tag_name = tag["name"]
-                count += 1
-                if _is_number(tag_name):
-                    tomorrow_numbers.append(float(tag_name))
-            if count > 1:
-                broadcast = False
-
-    if today_numbers and tomorrow_numbers:
-        if min(tomorrow_numbers) < min(today_numbers):
-            return [True, broadcast]
-
-    return [False, broadcast]
+    return _decide(get_notion_data(), today, tomorrow)
 
 
 def get_server_info() -> dict:
