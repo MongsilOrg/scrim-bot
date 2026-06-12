@@ -62,7 +62,6 @@ class TeamBackup:
                 'group_message_texts': self._manager.group_message_texts,
                 'dashboard_message_id': self._manager.dashboard_message_id,
                 'mmr_message_id': self._manager.mmr_message_id,
-                'ban_lists': bot_manager._ban_lists,
                 'selected_weathers': bot_manager._selected_weathers,
                 'unverified_teams': list(self._manager.unverified_teams),
             }
@@ -130,12 +129,9 @@ class TeamBackup:
             mgr.mmr_message_id = data.get('mmr_message_id')
             mgr.unverified_teams = set(data.get('unverified_teams', []))
 
-            # BotManager에 밴/날씨 데이터 주입
+            # BotManager에 날씨 데이터 주입
             from bot.manager import BotManager
             bot_manager = BotManager.get_instance()
-            saved_bans = data.get('ban_lists')
-            if saved_bans:
-                bot_manager._ban_lists = saved_bans
             saved_weathers = data.get('selected_weathers')
             if saved_weathers:
                 bot_manager._selected_weathers = saved_weathers

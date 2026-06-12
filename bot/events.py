@@ -3,7 +3,7 @@
 import io
 import re
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import discord
 import pandas as pd
@@ -74,7 +74,7 @@ async def _process_csv_attachments(message: discord.Message) -> None:
     group_info = f"{group_letter}조" if group_letter else "알 수 없음"
     date_str = now_kst.strftime('%m월 %d일')
 
-    team_data, last_csv_df = _aggregate_team_scores(csv_data_list)
+    team_data, _ = _aggregate_team_scores(csv_data_list)
     if not team_data:
         logger.warning("[이벤트] 처리할 팀 데이터 없음")
         return
@@ -83,11 +83,6 @@ async def _process_csv_attachments(message: discord.Message) -> None:
     if not img_buf:
         logger.error("[이벤트] 점수표 이미지 생성 실패", exc_info=True)
         return
-
-    ban_list = _extract_ban_list(last_csv_df)
-    if group_letter:
-        from bot.manager import BotManager
-        BotManager.get_instance().set_ban_list(group_letter, ban_list)
 
     score_view = _build_score_view(current_round_count, group_info, date_str)
     score_file = discord.File(img_buf, filename='score_table.png')
@@ -254,12 +249,44 @@ def _aggregate_team_scores(csv_data_list: List[CSVRow]) -> Tuple[List[dict], Opt
     return team_data, last_csv_df
 
 
+async def compute_ban_list_for_channel(channel) -> List[str]:
+    """채널의 당일 CSV를 스캔해 직전(가장 최근) 라운드 기준 밴 리스트를 즉석 계산합니다.
+
+    저장된 상태에 의존하지 않으므로 전날 밴이 이월되지 않으며, 1라운드처럼
+    당일 업로드된 CSV가 없으면 빈 리스트를 반환합니다.
+    """
+    now_kst = get_current_kst_time()
+    start_utc = _get_start_of_day_utc(now_kst)
+    csv_data_list = await _collect_today_csv_data(channel, start_utc)
+    if not csv_data_list:
+        return []
+    csv_data_list.sort(key=lambda x: x[0])
+    last_csv_df = csv_data_list[-1][1]  # (game_id, df, filename)
+    return _extract_ban_list(last_csv_df)
+
+
 def _extract_ban_list(last_csv_df: Optional[pd.DataFrame]) -> List[str]:
-    """마지막 라운드 기준 밴 리스트를 추출합니다."""
+    """마지막 라운드 기준 밴 리스트를 추출합니다.
+
+    같은 캐릭터를 3회 이상 픽한 경우 밴 대상입니다. 캐릭터명은 앞뒤/중간 공백과
+    대소문자 차이를 무시하고 집계하며, 표시는 첫 등장한 원본 표기를 사용합니다.
+    빈 값은 집계에서 제외합니다.
+    """
     if last_csv_df is None or 'character' not in last_csv_df.columns:
         return []
-    char_counts = last_csv_df['character'].fillna('').astype(str).value_counts()
-    return list(char_counts[char_counts >= 3].index)
+
+    counts: Dict[str, int] = {}
+    display_names: Dict[str, str] = {}  # 정규화 키 → 첫 등장 원본 캐릭터명
+    for raw in last_csv_df['character'].fillna('').astype(str):
+        name = raw.strip()
+        if not name:
+            continue
+        key = normalize_team_name(name)
+        if key not in display_names:
+            display_names[key] = name
+        counts[key] = counts.get(key, 0) + 1
+
+    return [display_names[key] for key, count in counts.items() if count >= 3]
 
 
 def _build_score_view(current_round_count: int, group_info: str, date_str: str) -> 'LayoutView':

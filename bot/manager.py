@@ -41,7 +41,6 @@ class BotManager:
         self._team_processor: Optional[TeamProcessor] = None
         self._warning_manager = None
         self._schedule_manager: Optional[ScheduleManager] = None
-        self._ban_lists: Dict[str, List[str]] = {}
         self._selected_weathers: Dict[str, List[str]] = {}
         self._initialized = True
 
@@ -86,9 +85,8 @@ class BotManager:
             except Exception as exc:
                 logger.warning(f"[봇관리] 이미지 캐시 클리어 중 예외 무시: {exc}")
         
-        self._ban_lists.clear()
         self._selected_weathers.clear()
-        logger.debug("[봇관리] 밴 리스트 및 날씨 상태 초기화 완료")
+        logger.debug("[봇관리] 날씨 상태 초기화 완료")
 
         self._team_data_manager = TeamDataManager(client or self._client)
         return self._team_data_manager
@@ -112,15 +110,6 @@ class BotManager:
         """팀 데이터 매니저의 백업을 트리거합니다."""
         if self._team_data_manager:
             self._team_data_manager._save_backup()
-
-    def set_ban_list(self, group_letter: str, ban_list: List[str]) -> None:
-        """조별 밴 리스트 저장"""
-        self._ban_lists[group_letter] = ban_list
-        self._trigger_backup()
-
-    def get_ban_list(self, group_letter: str) -> List[str]:
-        """조별 밴 리스트 반환"""
-        return self._ban_lists.get(group_letter, [])
 
     def add_selected_weather(self, group_letter: str, weather: str) -> None:
         """조별 서브 날씨 선택 기록 추가"""

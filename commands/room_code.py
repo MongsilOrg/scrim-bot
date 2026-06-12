@@ -14,7 +14,7 @@ from config.logging_config import get_logger
 from config.settings import settings
 from commands.ui.layout_helpers import error_view, warning_view, send_response, FOOTER_TEXT
 from utils.error_handlers import ErrorContext, handle_errors
-from utils.helpers import get_current_kst_time, is_admin, get_group_letter
+from utils.helpers import get_current_kst_time, is_admin, get_group_letter, get_start_of_day_utc
 
 logger = get_logger('room_code')
 
@@ -43,30 +43,36 @@ def calculate_round_start_time(current_time: datetime) -> datetime:
     return round_start
 
 
-async def get_round_number(channel: discord.TextChannel) -> int:
-    """채널의 방코드 메시지를 스캔하여 현재 라운드 번호를 계산"""
+def _is_scrim_notice_message(message: discord.Message) -> bool:
+    """메시지가 스크림 공지(방코드)인지 판별합니다."""
+    # LayoutView 메시지 확인 (Components V2)
     try:
+        for component in message.components:
+            for child in getattr(component, 'children', []):
+                content = getattr(child, 'content', '') or ''
+                if "스크림 공지" in content:
+                    return True
+    except Exception:
+        pass
+    # 레거시 Embed 메시지 확인
+    if message.embeds:
+        title = message.embeds[0].title or ""
+        if "스크림 공지" in title:
+            return True
+    return False
+
+
+async def get_round_number(channel: discord.TextChannel) -> int:
+    """채널의 당일 방코드(스크림 공지) 메시지를 전부 스캔하여 현재 라운드 번호를 계산합니다.
+
+    KST 자정 기준 당일 메시지만 집계하므로 전날 라운드가 이월되지 않으며,
+    채널 전체(당일분)를 스캔하므로 중간 메시지 수와 무관하게 정확합니다.
+    """
+    try:
+        start_utc = get_start_of_day_utc()
         round_count = 0
-        async for message in channel.history(limit=30):
-            found = False
-            # LayoutView 메시지 확인 (Components V2)
-            try:
-                for component in message.components:
-                    if found:
-                        break
-                    for child in getattr(component, 'children', []):
-                        content = getattr(child, 'content', '') or ''
-                        if "스크림 공지" in content:
-                            found = True
-                            break
-            except Exception:
-                pass
-            # 레거시 Embed 메시지 확인
-            if not found and message.embeds:
-                title = message.embeds[0].title or ""
-                if "스크림 공지" in title:
-                    found = True
-            if found:
+        async for message in channel.history(after=start_utc, limit=None):
+            if _is_scrim_notice_message(message):
                 round_count += 1
         return round_count + 1
     except discord.Forbidden:
@@ -241,10 +247,12 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
             else:
                 weather_value = f"`{main_weather}` · {', '.join(f'`{w}`' for w in SUB_WEATHERS)}"
 
-            # 밴 리스트 표시
+            # 밴 리스트 표시 — 저장 상태 대신 당일 CSV를 즉석 스캔하여 계산
+            # (전날 이월 없음, 1라운드는 CSV가 없어 자연히 빈 값)
             ban_display = None
             if group_letter:
-                ban_list = BotManager.get_instance().get_ban_list(group_letter)
+                from bot.events import compute_ban_list_for_channel
+                ban_list = await compute_ban_list_for_channel(interaction.channel)
                 if ban_list:
                     ban_display = " ".join(f"`{char}`" for char in ban_list)
 

@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 
 import pandas as pd
 
@@ -93,6 +94,32 @@ class EventsLogicTest(unittest.TestCase):
         ban_list = events._extract_ban_list(df)
         self.assertEqual(ban_list, ["Aya"])
         self.assertEqual(events._extract_ban_list(None), [])
+
+    def test_extract_ban_list_strips_whitespace(self):
+        """앞뒤 공백이 섞여도 같은 캐릭터로 집계하고 첫 등장 원형으로 표시합니다."""
+        df = pd.DataFrame(
+            {"character": [" Sua", "Sua ", " Sua ", "Johann", "Hart"]}
+        )
+        self.assertEqual(events._extract_ban_list(df), ["Sua"])
+
+    def test_extract_ban_list_case_insensitive(self):
+        """대소문자가 달라도 같은 캐릭터로 집계합니다."""
+        df = pd.DataFrame(
+            {"character": ["Aya", "aya", "AYA", "Jackie"]}
+        )
+        self.assertEqual(events._extract_ban_list(df), ["Aya"])
+
+    def test_extract_ban_list_excludes_blank(self):
+        """빈/NaN 캐릭터 값은 밴 집계에서 제외합니다."""
+        df = pd.DataFrame(
+            {"character": ["", "", "", None, "Nadine"]}
+        )
+        self.assertEqual(events._extract_ban_list(df), [])
+
+    def test_extract_ban_list_missing_column(self):
+        """character 컬럼이 없으면 빈 리스트를 반환합니다."""
+        df = pd.DataFrame({"teamName": ["A", "B"]})
+        self.assertEqual(events._extract_ban_list(df), [])
 
     def test_build_gameid_view(self):
         rows = [
@@ -224,6 +251,31 @@ class EventsLogicTest(unittest.TestCase):
         self.assertTrue(events._is_default_team_name(" Team 5 "))
         self.assertFalse(events._is_default_team_name("DM"))
         self.assertFalse(events._is_default_team_name("TeamAlpha"))
+
+
+class ComputeBanListForChannelTest(unittest.IsolatedAsyncioTestCase):
+    async def test_no_csv_returns_empty(self):
+        """당일 CSV가 없으면(예: 1라운드) 빈 리스트 — 이월 없음."""
+        async def fake_collect(channel, start_utc, limit=200):
+            return []
+
+        with mock.patch.object(events, "_collect_today_csv_data", fake_collect):
+            result = await events.compute_ban_list_for_channel(object())
+        self.assertEqual(result, [])
+
+    async def test_uses_latest_round_by_game_id(self):
+        """gameId 기준 가장 최근 라운드의 픽으로만 밴을 계산한다."""
+        r1 = pd.DataFrame({"character": ["Aya", "Aya", "Aya"]})    # 이전 라운드
+        r2 = pd.DataFrame({"character": ["Hart", "Hart", "Hart"]})  # 최신 라운드
+        # 입력 순서를 일부러 뒤섞어도 gameId 정렬로 r2가 선택되어야 함
+        rows = [(1002, r2, "r2.csv"), (1001, r1, "r1.csv")]
+
+        async def fake_collect(channel, start_utc, limit=200):
+            return rows
+
+        with mock.patch.object(events, "_collect_today_csv_data", fake_collect):
+            result = await events.compute_ban_list_for_channel(object())
+        self.assertEqual(result, ["Hart"])
 
 
 if __name__ == "__main__":
