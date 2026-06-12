@@ -247,10 +247,12 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
             else:
                 weather_value = f"`{main_weather}` · {', '.join(f'`{w}`' for w in SUB_WEATHERS)}"
 
-            # 밴 리스트 표시
+            # 밴 리스트 표시 — 저장 상태 대신 당일 CSV를 즉석 스캔하여 계산
+            # (전날 이월 없음, 1라운드는 CSV가 없어 자연히 빈 값)
             ban_display = None
             if group_letter:
-                ban_list = BotManager.get_instance().get_ban_list(group_letter)
+                from bot.events import compute_ban_list_for_channel
+                ban_list = await compute_ban_list_for_channel(interaction.channel)
                 if ban_list:
                     ban_display = " ".join(f"`{char}`" for char in ban_list)
 
