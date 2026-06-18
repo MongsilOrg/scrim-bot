@@ -29,6 +29,12 @@ BUTTON_COOLDOWN_SECONDS = 1
 
 _COOLDOWN_CLEANUP_THRESHOLD = 100  # 이 크기 초과 시 만료 항목 정리
 
+# 공휴일 사용자 설정 대전 가이드 링크 (공지사항 하단에 표시)
+CUSTOM_GAME_GUIDE_LINK = (
+    "[사용자 설정 대전 가이드]"
+    "(https://www.notion.so/mongsildev/30125b3fe9fb8082b0e4f286d2f45512?source=copy_link)"
+)
+
 
 async def _check_cooldown(interaction: discord.Interaction, cooldown_seconds: float = BUTTON_COOLDOWN_SECONDS) -> bool:
     """버튼 cooldown을 확인합니다. True면 cooldown 중이므로 무시해야 합니다."""
@@ -62,26 +68,41 @@ class TeamInputView(LayoutView):
     사용자의 팀 등록 상태에 따라 적절한 모달을 표시합니다.
     """
 
-    def __init__(self, *, scrim_day: int, scrim_month: int, scrim_weekday: str):
+    def __init__(self, *, scrim_day: int, scrim_month: int, scrim_weekday: str, is_rest_day: bool = False):
         super().__init__(timeout=None)
 
-        # Container (스크림 안내)
-        title = f"🏆 {scrim_month}/{scrim_day} ({scrim_weekday}) 스크림"
-        schedule = (
-            "📋 **일정**\n"
-            "`17:00` 팀 등록 마감 · 조편성\n"
-            "`20:00` 스크림 시작 (4라운드)\n"
-            "`22:00` 다음날 스크림 오픈"
-        )
+        # Container (스크림 안내) — 공휴일·일요일은 '자율 스크림'으로 표시
+        scrim_label = "자율 스크림" if is_rest_day else "스크림"
+        title = f"🏆 {scrim_month}/{scrim_day} ({scrim_weekday}) {scrim_label}"
+        if is_rest_day:
+            schedule = (
+                "📋 **일정**\n"
+                "`17:00` 팀 등록 마감 · 조편성\n"
+                "`19:55` 지정된 팀 방설정 완료\n"
+                "`20:00` 스크림 시작 (4라운드)\n"
+                "`22:00` 다음날 스크림 오픈"
+            )
+        else:
+            schedule = (
+                "📋 **일정**\n"
+                "`17:00` 팀 등록 마감 · 조편성\n"
+                "`20:00` 스크림 시작 (4라운드)\n"
+                "`22:00` 다음날 스크림 오픈"
+            )
 
         children = [
             TextDisplay(content=f"## {title}"),
             TextDisplay(content=schedule),
         ]
 
-        # 공지사항 (정적 설정)
+        # 공지사항 (정적 설정 + 공휴일·일요일 시 사용자 설정 대전 가이드 링크)
+        announcement_lines = []
         if settings.ANNOUNCEMENT_MESSAGE:
-            children.append(TextDisplay(content=f"📢 **공지사항**\n{settings.ANNOUNCEMENT_MESSAGE}"))
+            announcement_lines.append(settings.ANNOUNCEMENT_MESSAGE)
+        if is_rest_day:
+            announcement_lines.append(CUSTOM_GAME_GUIDE_LINK)
+        if announcement_lines:
+            children.append(TextDisplay(content="📢 **공지사항**\n" + "\n".join(announcement_lines)))
 
         children.append(TextDisplay(content="\n아래 버튼을 눌러 팀을 등록해주세요."))
         children.append(Separator())
@@ -654,6 +675,26 @@ class GroupRosterView(LayoutView):
                 await interaction.message.edit(view=new_view)
         except Exception as e:
             logger.error(f"[뷰] View 재생성 실패: {e}", exc_info=True)
+
+
+def build_rest_day_guide_view(team_name: str, user_id: Optional[str] = None) -> LayoutView:
+    mention = f"<@{user_id}>\n" if user_id else ""
+    notice = (
+        f"{mention}"
+        "📢 **공휴일·일요일 스크림 자율 진행 안내**\n"
+        "공휴일 및 일요일 스크림의 경우 레이팅컷에 따른 조 편성만 제공합니다.\n"
+        "따라서 참가자분들께서는 아래 링크를 통해 충분히 숙지하시고 참여 부탁드립니다.\n\n"
+        f"`{team_name}` 팀께서는 사설방 개설 후 양식에 맞춰 업로드 부탁드립니다.\n"
+        f"{CUSTOM_GAME_GUIDE_LINK}"
+    )
+    view = LayoutView(timeout=None)
+    view.add_item(Container(
+        TextDisplay(content=notice),
+        Separator(),
+        TextDisplay(content=FOOTER_TEXT),
+        accent_colour=Color.orange(),
+    ))
+    return view
 
 
 class TeamSelectionView(LayoutView):

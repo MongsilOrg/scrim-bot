@@ -1,8 +1,8 @@
 """
 공통 유틸리티 함수 모듈
 """
-from datetime import datetime
-from typing import TYPE_CHECKING, Dict, List, Union
+from datetime import date, datetime
+from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 import discord
 import pytz
@@ -107,4 +107,30 @@ def get_next_scrim_date(current_time: datetime = None) -> dict:
         "month": next_date.month,
         "year": next_date.year,
         "current_time": current_time
+    }
+
+
+async def get_rest_day_info(target_date: Optional[Union[date, datetime]] = None) -> dict:
+    """오늘(또는 지정일)이 휴무일(일요일·공휴일)인지 표시하여 반환합니다."""
+    from services.holidays_api import get_holiday_names
+
+    if target_date is None:
+        target_date = get_current_kst_time().date()
+    elif isinstance(target_date, datetime):
+        target_date = target_date.date()
+
+    is_sunday = target_date.weekday() == 6
+    holiday_names = await get_holiday_names(target_date)
+    is_holiday = bool(holiday_names)
+
+    labels = (["일요일"] if is_sunday else []) + holiday_names
+
+    return {
+        "date": target_date,
+        "is_rest_day": is_sunday or is_holiday,
+        "is_sunday": is_sunday,
+        "is_holiday": is_holiday,
+        "holiday_names": holiday_names,
+        "labels": labels,
+        "label": " · ".join(labels),
     }

@@ -101,7 +101,7 @@ class DiscordService:
         except Exception as e:
             logger.error(f"[Discord] 전체 공지 전송 실패: {e}", exc_info=True)
 
-    async def send_group_announcement_with_image(self, channel: discord.TextChannel, message: str, group: List[Tuple[str, "TeamData", float]]) -> None:
+    async def send_group_announcement_with_image(self, channel: discord.TextChannel, message: str, group: List[Tuple[str, "TeamData", float]], is_rest_day: bool = False) -> None:
         """조별 MMR 이미지와 함께 공지를 전송합니다."""
         try:
             # 채널 ID로부터 조 이름 추출
@@ -166,6 +166,25 @@ class DiscordService:
             team_data_manager.group_message_texts[group_letter] = full_message
             team_data_manager._save_backup()
 
+            # 공휴일·일요일: 1시드 팀 신청자 태그 + 자율 진행 안내 추가 뷰
+            # (추가 뷰 실패가 본 공지 성공을 가리지 않도록 별도 예외 처리)
+            if is_rest_day and group:
+                try:
+                    top_team_name, top_team_data, _ = group[0]
+                    if isinstance(top_team_data, dict):
+                        top_user_id = top_team_data.get("user_id")
+                    else:
+                        top_user_id = getattr(top_team_data, "user_id", None)
+
+                    from commands.ui.views import build_rest_day_guide_view
+                    guide_view = build_rest_day_guide_view(top_team_name, top_user_id)
+                    await channel.send(
+                        view=guide_view,
+                        allowed_mentions=discord.AllowedMentions(users=True),
+                    )
+                except Exception as e:
+                    logger.error(f"[Discord] 자율 진행 안내 전송 실패 - 조: {group_letter}조: {e}", exc_info=True)
+
         except Exception as e:
             logger.error(f"[Discord] 조별 공지 전송 실패 - 채널: {channel.name}: {e}", exc_info=True)
             try:
@@ -180,6 +199,15 @@ class DiscordService:
             # — 공지의 역할 핑/권한 게이팅된 채널 가시성이 '새 조 멤버'에게 올바로 가도록,
             #   조별 공지를 보내기 전에 조 역할을 먼저 재배정한다.
             await self.handle_discord_roles(guild, groups)
+
+            # 공휴일·일요일 여부 (자율 진행 안내 표시용)
+            # — 휴무일 조회 실패가 본 공지/역할 흐름 전체를 막지 않도록 방어적으로 처리
+            from utils.helpers import get_rest_day_info
+            try:
+                is_rest_day = (await get_rest_day_info())["is_rest_day"]
+            except Exception as e:
+                logger.error(f"[Discord] 휴무일 정보 조회 실패, 자율 진행 안내 생략: {e}", exc_info=True)
+                is_rest_day = False
 
             # 모든 조별 채널에 대해 처리 (팀이 있는 조와 없는 조 모두)
             for group_letter in settings.GROUP_CHANNEL_IDS.keys():
@@ -199,7 +227,7 @@ class DiscordService:
                                 # 팀이 있는 경우: 조별 공지 전송
                                 group = groups[group_index]
                                 message = self.create_group_announcement_message(group_letter, group)
-                                await self.send_group_announcement_with_image(channel, message, group)
+                                await self.send_group_announcement_with_image(channel, message, group, is_rest_day=is_rest_day)
                             else:
                                 # 팀이 없는 경우: 메시지만 삭제하고 공지는 전송하지 않음
                                 pass

@@ -442,11 +442,16 @@ class TeamEditModal(Modal):
             except Exception as e:
                 logger.error(f"[모달] 팀 MMR 계산 실패 - 팀명: {new_team_name}: {e}", exc_info=True)
 
-            # 3. 데이터 저장
+            # 3. 데이터 저장 (기존 신청자 user_id 보존 — 관리자 수정 시 신청자가 바뀌지 않도록)
             from models.team_data import TeamData
+            if isinstance(self.original_team_data, dict):
+                original_user_id = self.original_team_data.get('user_id')
+            else:
+                original_user_id = getattr(self.original_team_data, 'user_id', None)
             team_data_obj = TeamData(
                 name=new_team_name, players=new_team_data['players'],
-                staff=new_team_data['staff'], user_id=str(interaction.user.id),
+                staff=new_team_data['staff'],
+                user_id=original_user_id or str(interaction.user.id),
                 created_at=interaction.created_at
             )
             await team_data_manager.replace_team(self.original_team_name, team_data_obj, new_team_mmr)

@@ -133,7 +133,10 @@ async def _daily_reset_loop(client: ScrimBot) -> None:
 
 async def _refresh_scrim_dashboard(channel: discord.TextChannel) -> None:
     """스크림 대시보드 메시지를 현재 상태로 갱신합니다."""
+    from datetime import date
+
     from commands.ui.views import TeamInputView
+    from utils.helpers import get_rest_day_info
 
     team_data_manager = BotManager.get_instance().get_team_data_manager()
     date_info = get_next_scrim_date()
@@ -142,10 +145,17 @@ async def _refresh_scrim_dashboard(channel: discord.TextChannel) -> None:
     scrim_day = team_data_manager.scrim_day or date_info['day']
     scrim_month = team_data_manager.scrim_month or date_info['month']
 
+    # 스크림 날짜가 공휴일·일요일인지 확인 (자율 스크림 표시)
+    try:
+        scrim_is_rest_day = (await get_rest_day_info(date(date_info['year'], scrim_month, scrim_day)))["is_rest_day"]
+    except ValueError:
+        scrim_is_rest_day = False
+
     view = TeamInputView(
         scrim_day=scrim_day,
         scrim_month=scrim_month,
         scrim_weekday=date_info['weekday_name'],
+        is_rest_day=scrim_is_rest_day,
     )
 
     if team_data_manager.dashboard_message_id:

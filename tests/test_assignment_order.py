@@ -7,6 +7,7 @@ handle_discord_roles로 조 역할을 재배정해서 — 공지 시점엔 핑�
 """
 import unittest
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from config.settings import settings
 from services.discord_service import DiscordService
@@ -37,7 +38,9 @@ class AssignmentOrderTest(unittest.IsolatedAsyncioTestCase):
         guild = SimpleNamespace(get_channel=lambda cid: fake_channel)
         groups = [[("TeamA", SimpleNamespace(), 1500.0)]]
 
-        await service.send_notices(guild, groups)
+        # 휴무일 조회는 외부 HTTP 호출이므로 테스트에서는 스텁 처리
+        with patch("utils.helpers.get_rest_day_info", new=AsyncMock(return_value={"is_rest_day": False})):
+            await service.send_notices(guild, groups)
 
         self.assertIn("roles", order)
         self.assertIn("announce", order)
