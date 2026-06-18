@@ -19,7 +19,7 @@ from utils.helpers import get_current_kst_time, is_admin, get_group_letter, get_
 logger = get_logger('room_code')
 
 # 날씨 상수
-MAIN_WEATHERS = {1: "흐림", 2: "쾌청", 3: "비", 4: "모래바람"}
+MAIN_WEATHERS = {1: "모래바람", 2: "비", 3: "쾌청", 4: "흐림"}
 SUB_WEATHERS = ["무풍", "강풍", "벼락", "자색 안개"]
 
 
