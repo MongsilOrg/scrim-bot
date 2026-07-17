@@ -221,6 +221,9 @@ class MmrUpdater:
 
             team_processor = BotManager.get_instance().get_team_processor()
 
+            # 시트에 새로 추가된 테스트 계정도 인식되도록 MMR 조회 직전 재로드
+            await team_processor.ensure_test_accounts_loaded()
+
             current_time = get_current_kst_time()
             skipped = 0
 

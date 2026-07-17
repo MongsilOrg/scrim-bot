@@ -7,6 +7,7 @@ Discord API 관련 작업은 services.discord_service에 위임합니다.
 """
 import asyncio
 import heapq
+import time
 from collections import OrderedDict
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -53,6 +54,7 @@ class TeamProcessor:
         self._seeds_loaded_at: float = 0.0
         # 테스트 계정 데이터 (닉네임 -> MMR 매핑)
         self.test_accounts_data: Dict[str, float] = {}
+        self._test_accounts_loaded_at: float = 0.0
         # 구글 시트 클라이언트
         self.gspread_client: Optional[gspread.Client] = None
         self.gspread_spreadsheet: Optional[gspread.Spreadsheet] = None
@@ -238,6 +240,31 @@ class TeamProcessor:
             # 오류 발생 시 빈 데이터로 초기화
             self.test_accounts_data = {}
     
+    TEST_ACCOUNTS_TTL_SECONDS = 300  # 테스트 계정 시트 캐시 TTL (5분)
+
+    async def ensure_test_accounts_loaded(self, force: bool = False) -> None:
+        """MMR 계산 직전 테스트 계정 시트를 재로드합니다 (TTL 캐시).
+
+        test_accounts_data 는 __init__ 에서 한 번만 로드되므로, 봇 실행 중
+        '테스트' 시트에 추가된 계정은 기본적으로 인식되지 않습니다. 그 경우
+        해당 계정이 MMR 평균에서 탈락해 팀 MMR 이 2인/1인 평균으로 잘못
+        계산됩니다. TTL 이 지났거나 force=True 이면 시트를 다시 읽어
+        새 테스트 계정도 팀 MMR 에 정상 반영되게 합니다.
+
+        시트 I/O 는 blocking 이므로 스레드로 오프로딩해 이벤트 루프를 막지 않습니다.
+        """
+        now = time.monotonic()
+        if (not force
+                and self._test_accounts_loaded_at
+                and (now - self._test_accounts_loaded_at) < self.TEST_ACCOUNTS_TTL_SECONDS):
+            return
+        try:
+            await asyncio.to_thread(self._load_test_accounts_data_sync)
+        except Exception as e:
+            logger.error(f"[테스트계정] 시트 재로드 실패 (기존 데이터 유지): {e}", exc_info=True)
+            return
+        self._test_accounts_loaded_at = now
+
     def _is_test_account(self, nickname: str) -> bool:
         """닉네임이 테스트 계정인지 확인합니다."""
         from utils.validators import normalize_nickname_for_comparison
@@ -487,6 +514,9 @@ class TeamProcessor:
     
     async def _fetch_all_team_mmr(self, teams: Dict[str, TeamData]) -> List[Tuple[str, TeamData, float]]:
         """모든 팀의 MMR을 가져옵니다."""
+        # 시트에 새로 추가된 테스트 계정도 인식되도록 조회 직전 재로드
+        await self.ensure_test_accounts_loaded()
+
         tasks = [
             self.fetch_team_mmr(team_name, team_data)
             for team_name, team_data in teams.items()
