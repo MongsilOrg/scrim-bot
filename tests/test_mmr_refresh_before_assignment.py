@@ -66,6 +66,7 @@ class TestUpdateAllTeamMmrForce(unittest.IsolatedAsyncioTestCase):
         updater = MmrUpdater(mgr)
 
         tp = MagicMock()
+        tp.ensure_test_accounts_loaded = AsyncMock()
         tp.fetch_team_mmr = AsyncMock(return_value=('x', 'y', 1500))
         with patch('models.mmr_updater.get_current_kst_time',
                    return_value=datetime(2026, 6, 1, 17, 0)), \
