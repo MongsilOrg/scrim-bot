@@ -123,11 +123,17 @@ async def get_rest_day_info(target_date: Optional[Union[date, datetime]] = None)
     holiday_names = await get_holiday_names(target_date)
     is_holiday = bool(holiday_names)
 
+    # [임시] 2026-08-16(포함)까지는 요일/공휴일과 무관하게 모든 스크림을 자율로 상시 안내한다.
+    # 기간 종료 후 이 temp_force 관련 3줄을 삭제하면 원래 동작(일요일·공휴일만)으로 원복된다.
+    temp_force_rest = target_date <= date(2026, 8, 16)
+
     labels = (["일요일"] if is_sunday else []) + holiday_names
+    if temp_force_rest and not labels:
+        labels = ["자율"]
 
     return {
         "date": target_date,
-        "is_rest_day": is_sunday or is_holiday,
+        "is_rest_day": is_sunday or is_holiday or temp_force_rest,
         "is_sunday": is_sunday,
         "is_holiday": is_holiday,
         "holiday_names": holiday_names,
