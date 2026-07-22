@@ -12,10 +12,24 @@ import sys
 
 import sentry_sdk
 
+def _sentry_before_send(event, hint):
+    """일시적 네트워크 에러는 Sentry로 보내지 않는다."""
+    exc_info = hint.get("exc_info")
+    if exc_info:
+        name = getattr(exc_info[0], "__name__", "")
+        msg = str(exc_info[1])
+        if name in ("TimeoutError", "ConnectTimeoutError", "ReadTimeout", "ConnectionError", "ClientConnectorError", "ClientOSError", "ServerDisconnectedError", "WSServerHandshakeError", "ConnectionClosed", "ConnectionResetError"):
+            return None
+        for _t in ("Connection timeout", "Cannot connect to host", "Temporary failure in name resolution", "네트워크 오류", "연결 중 오류"):
+            if _t in msg:
+                return None
+    return event
+
+
 sentry_sdk.init(
     dsn=os.getenv("SENTRY_DSN", ""),
     traces_sample_rate=0.1,
-    environment="production",
+    environment="production", before_send=_sentry_before_send,
 )
 
 import discord
