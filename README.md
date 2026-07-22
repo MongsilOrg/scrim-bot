@@ -1,50 +1,24 @@
-# ScrimBot
+# scrim-bot
 
-이터널 리턴 스크림 대회 관리 Discord 봇
+이터널 리턴 스크림(내전) 대회를 운영하는 Discord 봇. 팀 신청부터 조 편성, 방 코드·날씨 공지, 결과 집계, 패널티 관리까지 대회 하루의 흐름을 자동 처리한다.
 
 ## 주요 기능
 
-- 팀 등록/수정/취소
-- 17시 자동 조편성 (MMR 기반, 시드팀 분산)
-- 방코드 공지 및 날씨 관리
-- CSV 전적 처리 및 점수표 생성
-- 패널티 시스템 (Google Sheets 연동)
+- 채널 상주 대시보드로 팀 신청·수정·취소. 매일 17시 등록 마감
+- MMR 기반 자동 조 편성(8팀 단위, 스네이크 드래프트로 균형). 시드팀은 Google Sheets 연동
+- `/방코드` — 방 코드와 라운드별 날씨(맵) 공지
+- 경기 결과 CSV를 모아 팀별 누적 점수 집계 → 점수표 이미지 생성
+- 지각·노쇼 패널티 관리(주의 2회 → 경고, 경고 시 등록 차단). Google Sheets에 기록
+- 운영진 주간 편성 일정 관리
 
-## 설치 및 실행
+## 동작 방식
 
-```bash
-git clone https://github.com/MongsilDev/scrimbot.git
-cd scrimbot
-pip install -r requirements.txt
-cp .env.example .env  # 환경변수 설정
-python main.py
-```
+하루 사이클(17시 편성 → 20시 경기 공지·집계 → 22시 다음날 전환)을 백그라운드 태스크로 돌린다. 팀 데이터는 메모리 관리 + JSON 백업으로 재시작 시 복구한다. UI는 discord.py Components V2, 점수표·MMR 표는 HTML을 wkhtmltoimage로 렌더한다.
 
-### 필수 요구사항
+## 기술 스택
 
-- Python 3.10+
-- wkhtmltoimage (`brew install --cask wkhtmltopdf` / `apt-get install wkhtmltopdf`)
-- Discord Bot Token + BSER API Key
-- Google Sheets 서비스 계정 (`credentials/google_sheets_credentials.json`)
+Python, discord.py, pandas, Pillow/wkhtmltoimage. 연동: bser Open API, Google Sheets, Notion, 공휴일 API. NAS 상시 구동 + main push 시 GitHub Actions 자동 배포.
 
-## 환경변수
+## 제약
 
-`.env.example` 참고. 주요 항목:
-
-| 변수 | 설명 |
-|------|------|
-| `DISCORD_TOKEN` | Discord 봇 토큰 |
-| `GUILD_ID` | Discord 서버 ID |
-| `ADMIN_ROLE_IDS` | 관리자 역할 ID (쉼표 구분) |
-| `BSER_API_KEY` | 이터널 리턴 API 키 |
-| `NOTICE_CHANNEL_ID` | 공지 채널 |
-| `GROUP_CHANNEL_IDS` | 조별 채널 (A:id,B:id,...) |
-| `GOOGLE_SHEETS_MAIN_SPREADSHEET_ID` | 스프레드시트 ID |
-| `NOTION_TOKEN` | Notion API 토큰 |
-| `NOTION_DATABASE_ID` | Notion 데이터베이스 ID |
-
-## Discord Intents
-
-Developer Portal에서 활성화 필요:
-- Message Content Intent
-- Server Members Intent
+단일 서버 전제. 조 편성은 8팀 이상·8의 배수. 시간 기준(17/20/22시)은 코드 고정.
