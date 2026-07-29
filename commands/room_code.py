@@ -135,7 +135,7 @@ class RoomCodeView(LayoutView):
         children: list = [
             TextDisplay(content=header),
             TextDisplay(content=f"# `{cleaned_room_code}`"),
-            TextDisplay(content=f"🌤️ {weather_value}  ·  ⏱️ `{round_start_str}`"),
+            TextDisplay(content=f"🌤️ {weather_value}  ⏱️ `{round_start_str}`"),
         ]
 
         if ban_display:
@@ -166,7 +166,7 @@ class RoomCodeView(LayoutView):
             manager.add_selected_weather(self.group_letter, weather_name)
 
             main_weather = MAIN_WEATHERS.get(self.round_number, "알 수 없음")
-            new_weather = f"`{main_weather}` · `{weather_name}`"
+            new_weather = f"`{main_weather}` `{weather_name}`"
 
             # 버튼 없는 확정 View로 교체
             new_view = RoomCodeView(
@@ -236,18 +236,18 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                     # 4라운드: 자동 확정
                     sub_weather = available[0]
                     manager.add_selected_weather(group_letter, sub_weather)
-                    weather_value = f"`{main_weather}` · `{sub_weather}`"
+                    weather_value = f"`{main_weather}` `{sub_weather}`"
                 elif len(available) == 0:
                     weather_value = f"`{main_weather}`"
                 else:
                     # 후보 전체 표시 + 버튼으로 등장한 날씨 선택
                     sub_list = ", ".join(f"`{w}`" for w in available)
-                    weather_value = f"`{main_weather}` · {sub_list}"
+                    weather_value = f"`{main_weather}` {sub_list}"
                     weather_options = available
             else:
-                weather_value = f"`{main_weather}` · {', '.join(f'`{w}`' for w in SUB_WEATHERS)}"
+                weather_value = f"`{main_weather}` {', '.join(f'`{w}`' for w in SUB_WEATHERS)}"
 
-            # 밴 리스트 표시 — 저장 상태 대신 당일 CSV를 즉석 스캔하여 계산
+            # 밴 리스트는 저장 상태 대신 당일 CSV를 즉석 스캔하여 계산
             # (전날 이월 없음, 1라운드는 CSV가 없어 자연히 빈 값)
             ban_display = None
             if group_letter:

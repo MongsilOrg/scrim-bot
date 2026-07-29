@@ -77,7 +77,7 @@ class ScheduleManager:
             f"{next_monday.month}/{next_monday.day} ~ "
             f"{next_saturday.month}/{next_saturday.day}"
         )
-        # 초기화 (상태 메시지 참조는 유지 — 기존 메시지를 갱신하기 위해)
+        # 초기화 (기존 메시지를 갱신하기 위해 상태 메시지 참조는 유지)
         self.availability.clear()
         self.absence_reasons.clear()
         self.admin_names.clear()
@@ -134,7 +134,6 @@ class ScheduleManager:
     # ------------------------------------------------------------------
 
     def get_responded_user_ids(self) -> Set[str]:
-        """응답한 관리자 ID 집합을 반환합니다."""
         responded = set(self.availability.keys())
         # 불참 사유 등록자도 응답으로 간주
         responded.update(self.absence_reasons.keys())
@@ -164,7 +163,7 @@ class ScheduleManager:
                 reasons = self.absence_reasons.get(uid, {})
 
                 if -1 in reasons:
-                    lines.append(f'> ❌ {name} — 불참 ({reasons[-1]})')
+                    lines.append(f'> ❌ {name}: 불참 ({reasons[-1]})')
                 elif avail:
                     day_labels = ', '.join(WEEKDAYS[d] for d in sorted(avail))
                     # 아래 로직은 레거시 백업 호환용 (현재 UI에서는 부분 불참 미지원)
@@ -175,7 +174,7 @@ class ScheduleManager:
                     suffix = ''
                     if absence_parts:
                         suffix = f' | 불참: {", ".join(absence_parts)}'
-                    lines.append(f'> ✅ {name} — {day_labels}{suffix}')
+                    lines.append(f'> ✅ {name}: {day_labels}{suffix}')
                 elif reasons:
                     # 레거시 백업 호환: 부분 불참만 등록된 경우 (현재 UI에서 발생하지 않음)
                     absence_parts = [
@@ -183,11 +182,11 @@ class ScheduleManager:
                         for d in sorted(reasons) if d >= 0
                     ]
                     if absence_parts:
-                        lines.append(f'> ⚠️ {name} — 불참: {", ".join(absence_parts)}')
+                        lines.append(f'> ⚠️ {name} 불참: {", ".join(absence_parts)}')
                     else:
-                        lines.append(f'> ❌ {name} — 가용일 없음')
+                        lines.append(f'> ❌ {name}: 가용일 없음')
                 else:
-                    lines.append(f'> ❌ {name} — 가용일 없음')
+                    lines.append(f'> ❌ {name}: 가용일 없음')
 
         # 미응답 관리자
         not_responded = [
@@ -229,11 +228,11 @@ class ScheduleManager:
                 total_for_day = len(all_uids) + len(extra_deployed)
                 if name_parts:
                     lines.append(
-                        f'> **{WEEKDAYS[day_idx]}** ({total_for_day}명) — '
+                        f'> **{WEEKDAYS[day_idx]}** ({total_for_day}명): '
                         f'{", ".join(name_parts)}'
                     )
                 else:
-                    lines.append(f'> **{WEEKDAYS[day_idx]}** (0명) — (배정 없음)')
+                    lines.append(f'> **{WEEKDAYS[day_idx]}** (0명): 배정 없음')
 
         return '\n'.join(lines)
 
@@ -357,10 +356,10 @@ class ScheduleManager:
         """completed_day 이후 투입 미완료 요일의 편성을 재조정합니다.
 
         정렬 기준 (오름차순):
-          1. 투입 횟수 — 실제 투입이 많을수록 후순위
-          2. 배정 횟수 — 나머지 요일 배정이 많을수록 후순위
-          3. 가용일 수 — 가용일이 적을수록 우선 (선택지가 적으니 먼저 배정)
-          4. user_id  — 안정 정렬
+          1. 투입 횟수: 실제 투입이 많을수록 후순위
+          2. 배정 횟수: 나머지 요일 배정이 많을수록 후순위
+          3. 가용일 수: 가용일이 적을수록 우선 (선택지가 적으니 먼저 배정)
+          4. user_id: 안정 정렬
         """
         # 실투입 횟수 계산
         deploy_count: Dict[str, int] = defaultdict(int)

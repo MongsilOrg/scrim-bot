@@ -58,9 +58,9 @@ class MmrUpdater:
 
             update_time = mgr._last_success_time or get_current_kst_time().strftime('%H:%M')
             if mgr._is_maintenance:
-                desc = f"🔧 서버 점검 중 · 마지막 갱신: `{update_time}`"
+                desc = f"🔧 서버 점검 중, 마지막 갱신: `{update_time}`"
             else:
-                desc = f"총 **{len(mgr.teams)}**팀 · 마지막 갱신: `{update_time}`"
+                desc = f"총 **{len(mgr.teams)}**팀, 마지막 갱신: `{update_time}`"
                 if mmr_fail_count > 0:
                     desc += f"\n⚠️ {mmr_fail_count}개 팀 MMR 갱신 실패"
 

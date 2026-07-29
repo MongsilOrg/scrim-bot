@@ -379,7 +379,7 @@ class TeamEditModal(Modal):
                 parts.append(f"{', '.join(sorted(removed))} → {', '.join(sorted(added))}" if added else f"-{', '.join(sorted(removed))}")
             elif added:
                 parts.append(f"+{', '.join(sorted(added))}")
-            detail = ' · '.join(parts) + f" · 선수: {players_str} · 스태프: {staff_str}"
+            detail = ' | '.join(parts) + f" | 선수: {players_str} | 스태프: {staff_str}"
             team_data_manager.log_action("수정", interaction.user, new_team_name, detail=detail)
 
         original_players_str = ', '.join(original_players) if original_players else '(없음)'
@@ -442,7 +442,7 @@ class TeamEditModal(Modal):
             except Exception as e:
                 logger.error(f"[모달] 팀 MMR 계산 실패 - 팀명: {new_team_name}: {e}", exc_info=True)
 
-            # 3. 데이터 저장 (기존 신청자 user_id 보존 — 관리자 수정 시 신청자가 바뀌지 않도록)
+            # 3. 데이터 저장 (관리자 수정 시 신청자가 바뀌지 않도록 기존 신청자 user_id 보존)
             from models.team_data import TeamData
             if isinstance(self.original_team_data, dict):
                 original_user_id = self.original_team_data.get('user_id')

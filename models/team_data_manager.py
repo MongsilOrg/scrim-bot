@@ -176,10 +176,7 @@ class TeamDataManager:
     # ──────────────────────────────────────────────
 
     async def reset_team_data(self) -> None:
-        """모든 팀 데이터를 초기화합니다.
-
-        비동기 태스크를 완전히 종료할 때까지 대기한 후 데이터를 초기화합니다.
-        """
+        """비동기 태스크를 완전히 종료할 때까지 대기한 후 모든 팀 데이터를 초기화합니다."""
         try:
             logger.debug("[팀데이터] 초기화 시작")
 
@@ -352,7 +349,6 @@ class TeamDataManager:
         if self.scrim_day != current_time.day:
             return True, ""
 
-        # 17시 이전에는 모든 팀 등록 가능
         if current_time.hour < 17 or allow_admin_override:
             return True, ""
 
@@ -376,7 +372,6 @@ class TeamDataManager:
         if self.scrim_day != current_time.day:
             return True, ""
 
-        # 17시 이전에는 모든 팀 수정 가능
         if current_time.hour < 17:
             return True, ""
 
@@ -461,9 +456,9 @@ class TeamDataManager:
             emoji = ACTION_EMOJI.get(action_type, "📌")
             unix_ts = int(timestamp.timestamp())
 
-            msg = f"{emoji} <t:{unix_ts}:t> **{team_name}** — {user.mention}"
+            msg = f"{emoji} <t:{unix_ts}:t> **{team_name}** {user.mention}"
             if detail:
-                msg += f" · {detail}"
+                msg += f" | {detail}"
 
             await channel.send(msg)
         except Exception as e:
@@ -607,7 +602,7 @@ class TeamDataManager:
 
 
     async def replace_team(self, old_team_name: str, new_team: TeamData, new_mmr: float) -> None:
-        """기존 팀을 새 팀으로 교체하며 인덱스·MMR 정보를 일관되게 갱신합니다."""
+        """기존 팀을 새 팀으로 교체하며 인덱스와 MMR 정보를 일관되게 갱신합니다."""
         async with self._teams_lock:
             # 기존 팀 제거
             if old_team_name in self.teams:

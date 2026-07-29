@@ -25,7 +25,6 @@ else:
 TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'assets', 'templates')
 
 def _load_template(name: str) -> str:
-    """assets/templates/ 에서 HTML 템플릿 파일을 읽어 반환한다."""
     path = os.path.join(TEMPLATES_DIR, name)
     with open(path, 'r', encoding='utf-8') as f:
         return f.read()
@@ -183,19 +182,19 @@ class ImageGenerator:
         # 팀명 셀: 메인(팀명) + 시드인 경우 하단 작은 글씨 (시드 시트 팀명 표시)
         team_main = f'<div class="cell-main">{_esc(team_name)}</div>'
         if is_seed:
-            seed_label = f'시드 · {_esc(seed_name)}' if seed_name else '시드'
+            seed_label = f'시드 {_esc(seed_name)}' if seed_name else '시드'
             team_sub = f'<div class="cell-sub seed">{seed_label}</div>'
         else:
             team_sub = ''
         team_cell = team_main + team_sub
 
         # 멤버 셀: 메인(선수) + 스태프 있는 경우 하단 작은 글씨
-        sep = '<span class="separator">·</span>'
+        sep = '<span class="separator">,</span>'
         players_text = sep.join(_esc(p) for p in players) if players else '-'
         members_main = f'<div class="cell-main">{players_text}</div>'
         members_sub = ''
         if staff:
-            staff_text = ' · '.join(_esc(s) for s in staff)
+            staff_text = ', '.join(_esc(s) for s in staff)
             members_sub = f'<div class="cell-sub staff">{staff_text}</div>'
         members_cell = members_main + members_sub
 

@@ -71,13 +71,13 @@ class TeamInputView(LayoutView):
     def __init__(self, *, scrim_day: int, scrim_month: int, scrim_weekday: str, is_rest_day: bool = False):
         super().__init__(timeout=None)
 
-        # Container (스크림 안내) — 공휴일·일요일은 '자율 스크림'으로 표시
+        # Container (스크림 안내): 공휴일/일요일은 '자율 스크림'으로 표시
         scrim_label = "자율 스크림" if is_rest_day else "스크림"
         title = f"🏆 {scrim_month}/{scrim_day} ({scrim_weekday}) {scrim_label}"
         if is_rest_day:
             schedule = (
                 "📋 **일정**\n"
-                "`17:00` 팀 등록 마감 · 조편성\n"
+                "`17:00` 팀 등록 마감, 조편성\n"
                 "`19:55` 지정된 팀 방설정 완료\n"
                 "`20:00` 스크림 시작 (4라운드)\n"
                 "`22:00` 다음날 스크림 오픈"
@@ -85,7 +85,7 @@ class TeamInputView(LayoutView):
         else:
             schedule = (
                 "📋 **일정**\n"
-                "`17:00` 팀 등록 마감 · 조편성\n"
+                "`17:00` 팀 등록 마감, 조편성\n"
                 "`20:00` 스크림 시작 (4라운드)\n"
                 "`22:00` 다음날 스크림 오픈"
             )
@@ -95,7 +95,7 @@ class TeamInputView(LayoutView):
             TextDisplay(content=schedule),
         ]
 
-        # 공지사항 (정적 설정 + 공휴일·일요일 시 사용자 설정 대전 가이드 링크)
+        # 공지사항 (정적 설정 + 공휴일/일요일 시 사용자 설정 대전 가이드 링크)
         announcement_lines = []
         if settings.ANNOUNCEMENT_MESSAGE:
             announcement_lines.append(settings.ANNOUNCEMENT_MESSAGE)
@@ -368,7 +368,7 @@ class TeamInputView(LayoutView):
             staff_str = ', '.join(staff) if staff else '(없음)'
             team_data_manager.log_action(
                 "신청", interaction.user, team_name,
-                detail=f"선수: {players_str} · 스태프: {staff_str}",
+                detail=f"선수: {players_str} | 스태프: {staff_str}",
             )
             logger.info(f"[팀신청] {team_name} | MMR: {team_mmr:.2f} | 선수: [{players_str}] | 스태프: [{staff_str}]")
 
@@ -502,7 +502,7 @@ class TeamInputView(LayoutView):
             staff_str = ', '.join(staff) if staff else '(없음)'
             team_data_manager.log_action(
                 "취소", interaction.user, team_name,
-                detail=f"선수: {players_str} · 스태프: {staff_str}",
+                detail=f"선수: {players_str} | 스태프: {staff_str}",
             )
             logger.info(f"[팀취소] {team_name} | 선수: [{players_str}] | 스태프: [{staff_str}]")
 
@@ -523,7 +523,7 @@ class TeamInputView(LayoutView):
 
     # ── 운영진 강제취소 ────────────────────────────────────────────────
     async def manage_callback(self, interaction: discord.Interaction) -> None:
-        """관리 버튼 콜백 — 운영진 전용 팀 강제취소 진입점."""
+        """관리 버튼 콜백: 운영진 전용 팀 강제취소 진입점."""
         if await _check_cooldown(interaction):
             return
         try:
@@ -551,7 +551,7 @@ class TeamInputView(LayoutView):
             await send_error_message(interaction, "관리 화면을 여는 중 오류가 발생했습니다.")
 
     async def _execute_force_cancel(self, interaction: discord.Interaction, team_name: str) -> None:
-        """운영진 강제취소 실행 — 확정 시점에 권한·조편성 상태를 재검증한다."""
+        """운영진 강제취소 실행: 확정 시점에 권한과 조편성 상태를 재검증한다."""
         try:
             team_data_manager = BotManager.get_instance().get_team_data_manager()
 
@@ -582,7 +582,7 @@ class TeamInputView(LayoutView):
             applicant = f"<@{applicant_id}>" if applicant_id else "(미상)"
             team_data_manager.log_action(
                 "강제취소", interaction.user, team_name,
-                detail=f"신청자: {applicant} · 선수: {players_str} · 스태프: {staff_str}",
+                detail=f"신청자: {applicant} | 선수: {players_str} | 스태프: {staff_str}",
             )
             logger.info(f"[강제취소] {team_name} | 운영진: {interaction.user} | 선수: [{players_str}]")
 
@@ -681,7 +681,7 @@ def build_rest_day_guide_view(team_name: str, user_id: Optional[str] = None) -> 
     mention = f"<@{user_id}>\n" if user_id else ""
     notice = (
         f"{mention}"
-        "📢 **공휴일·일요일 스크림 자율 진행 안내**\n"
+        "📢 **공휴일과 일요일 스크림 자율 진행 안내**\n"
         "공휴일 및 일요일 스크림의 경우 레이팅컷에 따른 조 편성만 제공합니다.\n"
         "따라서 참가자분들께서는 아래 링크를 통해 충분히 숙지하시고 참여 부탁드립니다.\n\n"
         f"`{team_name}` 팀께서는 사설방 개설 후 양식에 맞춰 업로드 부탁드립니다.\n"
@@ -850,7 +850,7 @@ _SELECT_OPTION_LIMIT = 25  # Discord Select 옵션 최대 개수
 
 class ForceCancelSelectView(LayoutView):
     """
-    운영진 강제취소 — 팀 선택 뷰
+    운영진 강제취소: 팀 선택 뷰
 
     신청된 전체 팀을 드롭다운으로 보여주고, 선택한 팀을 강제취소 확인 단계로 넘긴다.
     팀이 25개를 넘으면 Discord Select 제한을 우회하기 위해 드롭다운을 여러 개로 분할한다.
@@ -896,7 +896,7 @@ class ForceCancelSelectView(LayoutView):
                 return
 
             confirm_view = ForceCancelConfirmView(self.parent_view, selected)
-            self.stop()  # 확인 단계로 전환 — 이 드롭다운 뷰의 타임아웃 타이머 종료
+            self.stop()  # 확인 단계로 전환: 이 드롭다운 뷰의 타임아웃 타이머 종료
             await interaction.response.edit_message(view=confirm_view)
             confirm_view.message = await interaction.original_response()
         except discord.InteractionResponded:
@@ -918,7 +918,7 @@ class ForceCancelSelectView(LayoutView):
 
 class ForceCancelConfirmView(LayoutView):
     """
-    운영진 강제취소 — 최종 확인 뷰
+    운영진 강제취소: 최종 확인 뷰
 
     선택한 팀을 강제취소하기 전 운영진의 최종 확인을 받는다.
     """

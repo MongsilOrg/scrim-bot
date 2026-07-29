@@ -20,7 +20,7 @@ logger = get_logger('schedule_views')
 class ScheduleView(LayoutView):
     """주간 일정 관리 뷰
 
-    관리자들이 참가/불참을 등록하고 편성·투입을 관리합니다.
+    관리자들이 참가/불참을 등록하고 편성/투입을 관리합니다.
     현황 표시 + 일정등록/응답삭제/편성/투입 버튼을 포함합니다.
     """
 
@@ -56,7 +56,7 @@ class ScheduleView(LayoutView):
         ))
 
     async def register_callback(self, interaction: discord.Interaction) -> None:
-        """참가 버튼 — 요일 선택 모달"""
+        """참가 버튼: 요일 선택 모달"""
         from .views import _check_cooldown
         if await _check_cooldown(interaction):
             return
@@ -79,7 +79,7 @@ class ScheduleView(LayoutView):
         await interaction.response.send_modal(AvailabilityModal(current_days))
 
     async def absence_callback(self, interaction: discord.Interaction) -> None:
-        """불참 버튼 — 사유 입력 모달"""
+        """불참 버튼: 사유 입력 모달"""
         from .views import _check_cooldown
         if await _check_cooldown(interaction):
             return
@@ -103,7 +103,7 @@ class ScheduleView(LayoutView):
         await interaction.response.send_modal(AbsenceReasonModal(current_reason))
 
     async def assign_callback(self, interaction: discord.Interaction) -> None:
-        """편성 버튼 — 상태에 따라 편성/재편성/편성취소 분기"""
+        """편성 버튼: 상태에 따라 편성/재편성/편성취소 분기"""
         from .views import _check_cooldown
         if await _check_cooldown(interaction):
             return
@@ -195,7 +195,7 @@ class ScheduleView(LayoutView):
         await send_response(interaction, menu_view)
 
     async def deploy_callback(self, interaction: discord.Interaction) -> None:
-        """투입 기록 버튼 — 요일별 버튼으로 본인 투입 토글"""
+        """투입 기록 버튼: 요일별 버튼으로 본인 투입 토글"""
         from .views import _check_cooldown
         if await _check_cooldown(interaction):
             return
@@ -272,9 +272,9 @@ def _build_deploy_view(schedule_mgr, user_id: str) -> LayoutView:
     # 배정 요일 안내
     if assigned_days:
         assigned_str = ', '.join(WEEKDAYS[d] for d in sorted(assigned_days))
-        info_line = f"내 배정: **{assigned_str}** · 내 투입: **{my_status}**"
+        info_line = f"내 배정: **{assigned_str}**\n내 투입: **{my_status}**"
     else:
-        info_line = f"배정된 요일이 없습니다. · 내 투입: **{my_status}**"
+        info_line = f"배정된 요일이 없습니다.\n내 투입: **{my_status}**"
 
     deploy_view = LayoutView()
     deploy_view.add_item(Container(
@@ -288,7 +288,7 @@ def _build_deploy_view(schedule_mgr, user_id: str) -> LayoutView:
         accent_colour=Color.blue(),
     ))
 
-    # ActionRow 당 최대 5개 제한 — 배정 요일 우선 배치 후 분할
+    # ActionRow 당 최대 5개 제한: 배정 요일 우선 배치 후 분할
     all_buttons = assigned_buttons + extra_buttons
     deploy_view.add_item(ActionRow(*all_buttons[:5]))
     if len(all_buttons) > 5:
