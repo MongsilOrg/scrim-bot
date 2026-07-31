@@ -9,8 +9,13 @@ if TYPE_CHECKING:
     import discord
 
 from config.logging_config import get_logger
+from config.settings import settings
 
 logger = get_logger('validators')
+
+# 테스트 계정 닉네임 규칙 ('테스트' 시트 등록 여부와 무관하게 닉네임만으로 판정).
+# 영문 경계를 요구해 Fastest, Latest, Contest 같은 정상 닉네임을 걸러낸다.
+TEST_NICKNAME_PATTERN = re.compile(r'(?:^|[^a-z])test(?:[^a-z]|$)')
 
 
 def validate_team_name(team_name: str) -> Tuple[bool, str]:
@@ -73,7 +78,7 @@ def validate_team_data(team_data) -> Tuple[bool, str]:
         
     except Exception as e:
         logger.error(f"[유효성검사] 팀 데이터 유효성 검사 실패: {e}", exc_info=True)
-        return False, "⚠️ 팀 정보 확인 중 문제가 발생했습니다.\n\n잠시 후 다시 시도해주세요."
+        return False, "❌ 팀 정보 확인 중 문제가 발생했습니다.\n💡 잠시 후 다시 시도해주세요."
 
 
 def validate_discord_user_in_team(team_data, user_name: str) -> bool:
@@ -147,7 +152,7 @@ def check_duplicate_members(players: List[str], staff: List[str]) -> Tuple[bool,
         
     except Exception as e:
         logger.error(f"[유효성검사] 팀원 중복 검사 실패: {e}", exc_info=True)
-        return False, "⚠️ 팀원 중복 확인 중 문제가 발생했습니다.\n\n잠시 후 다시 시도해주세요."
+        return False, "❌ 팀원 중복 확인 중 문제가 발생했습니다.\n💡 잠시 후 다시 시도해주세요."
 
 
 def validate_members_in_guild(
@@ -257,3 +262,62 @@ async def validate_members_api(
         # 빈 invalid list + maintenance=False 로 반환하여 호출자가 구분할 수 있게 함
         # 하지만 스펙상 (False, [], False) 케이스는 없으므로 빈 list로 반환
         return False, [], False
+
+
+def split_test_nicknames(nicknames: List[str]) -> Tuple[List[str], List[str]]:
+    """닉네임 목록을 (일반, 테스트 계정)으로 분리합니다."""
+    normal: List[str] = []
+    test_like: List[str] = []
+    for nickname in nicknames:
+        if TEST_NICKNAME_PATTERN.search(nickname.lower()):
+            test_like.append(nickname)
+        else:
+            normal.append(nickname)
+    return normal, test_like
+
+
+def build_test_account_notice(nicknames: List[str]) -> str:
+    """테스트 계정 닉네임에 대한 문의 안내를 만듭니다."""
+    if not nicknames:
+        return ""
+    return (
+        f"❌ 테스트 계정은 확인이 필요합니다: **{', '.join(nicknames)}**\n"
+        f"💡 <@{settings.TEST_ACCOUNT_CONTACT_ID}>에게 문의해주세요."
+    )
+
+
+GUILD_NICKNAME_ERROR = "❌ 디스코드 서버에서 확인되지 않는 닉네임: **{names}**\n💡 디스코드 서버 닉네임과 동일하게 입력해주세요."
+GAME_NICKNAME_ERROR = "❌ 게임 내에서 확인되지 않는 닉네임: **{names}**\n💡 게임 내 닉네임을 정확히 입력해주세요."
+API_UNAVAILABLE_NOTICE = "❌ 게임 서버 응답이 없어 닉네임을 확인할 수 없습니다.\n💡 잠시 후 다시 시도해주세요."
+
+
+def build_team_mmr_line(team_mmr: float, players: List[str], is_test_account) -> str:
+    """팀 MMR 표시 줄을 만듭니다.
+
+    MMR 0 은 두 가지 원인이 있어 구분해야 합니다. 전원 테스트 계정이면 '테스트'
+    시트에 MMR 이 없는 것이라 자동 갱신으로 채워지지 않고, 일반 팀이면 게임 API
+    조회 실패라 다음 갱신에서 채워집니다.
+    """
+    if team_mmr > 0:
+        return f"📊 팀 평균 MMR: **{team_mmr:.2f}**"
+    if players and all(is_test_account(player) for player in players):
+        return (
+            "📊 팀 평균 MMR: 미등록\n"
+            f"💡 테스트 계정 MMR이 등록되지 않았습니다. <@{settings.TEST_ACCOUNT_CONTACT_ID}>에게 문의해주세요."
+        )
+    return "📊 팀 평균 MMR: 확인 중\n💡 잠시 후 자동으로 갱신됩니다."
+
+
+def compose_nickname_error(nicknames: List[str], template: str, fallback: str = "") -> str:
+    """닉네임 검증 실패 안내를 조립합니다. 테스트 계정 몫은 별도 문구로 분리합니다.
+
+    template 의 {names} 자리에 일반 닉네임이 들어갑니다. validate_members_api 는
+    API 연결 자체가 실패하면 빈 목록으로 실패를 알리므로, 그때는 fallback 을 씁니다.
+    """
+    normal, test_like = split_test_nicknames(nicknames)
+    parts = []
+    if normal:
+        parts.append(template.format(names=', '.join(normal)))
+    if test_like:
+        parts.append(build_test_account_notice(test_like))
+    return '\n\n'.join(parts) or fallback

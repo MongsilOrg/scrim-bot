@@ -19,6 +19,7 @@ def _bare_processor():
     tp = TeamProcessor.__new__(TeamProcessor)
     tp.test_accounts_data = {}
     tp._test_accounts_loaded_at = 0.0
+    tp._test_accounts_attempted_at = 0.0
     return tp
 
 
@@ -30,6 +31,7 @@ class TestEnsureTestAccountsLoaded(unittest.IsolatedAsyncioTestCase):
 
         def fake_load():
             tp.test_accounts_data = {"신규테스트": 6000.0}
+            return True
 
         with patch.object(tp, "_load_test_accounts_data_sync", side_effect=fake_load) as loader:
             await tp.ensure_test_accounts_loaded()
@@ -53,6 +55,39 @@ class TestEnsureTestAccountsLoaded(unittest.IsolatedAsyncioTestCase):
             await tp.ensure_test_accounts_loaded()
             await tp.ensure_test_accounts_loaded(force=True)
         self.assertEqual(loader.call_count, 2)
+
+
+class TestLoadFailureKeepsCache(unittest.IsolatedAsyncioTestCase):
+    """시트 로드 실패가 등록된 테스트 계정을 지우면 안 됨.
+
+    버그: _load_test_accounts_data_sync 가 예외를 삼키고 test_accounts_data 를
+    {} 로 덮어써서, 구글 시트 503 한 번에 등록된 테스트 계정 전체가 미등록으로
+    취급되고 신청이 '닉네임을 찾을 수 없음'으로 반려됐다.
+    """
+
+    def test_sheet_error_keeps_previous_accounts(self):
+        tp = _bare_processor()
+        tp.test_accounts_data = {"TEST1": 6000.0}
+        tp.gspread_spreadsheet = MagicMock()
+        tp.gspread_spreadsheet.worksheet.side_effect = RuntimeError("503")
+
+        self.assertFalse(tp._load_test_accounts_data_sync())
+        self.assertEqual(tp.test_accounts_data, {"TEST1": 6000.0})
+
+    async def test_failure_does_not_mark_cache_fresh(self):
+        """실패 시 loaded_at 을 갱신하면 안 됨(쿨다운 후 재시도 가능해야 함)."""
+        tp = _bare_processor()
+        with patch.object(tp, "_load_test_accounts_data_sync", return_value=False):
+            self.assertFalse(await tp.ensure_test_accounts_loaded())
+        self.assertEqual(tp._test_accounts_loaded_at, 0.0)
+
+    async def test_failure_cooldown_blocks_immediate_retry(self):
+        """직전 시도가 실패했으면 쿨다운 동안 시트를 다시 때리지 않아야 함."""
+        tp = _bare_processor()
+        with patch.object(tp, "_load_test_accounts_data_sync", return_value=False) as loader:
+            await tp.ensure_test_accounts_loaded()
+            await tp.ensure_test_accounts_loaded()
+        loader.assert_called_once()
 
 
 class TestFetchAllTeamMmrReloadsTestAccounts(unittest.IsolatedAsyncioTestCase):

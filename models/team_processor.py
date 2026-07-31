@@ -55,6 +55,7 @@ class TeamProcessor:
         # 테스트 계정 데이터 (닉네임 -> MMR 매핑)
         self.test_accounts_data: Dict[str, float] = {}
         self._test_accounts_loaded_at: float = 0.0
+        self._test_accounts_attempted_at: float = 0.0
         # 구글 시트 클라이언트
         self.gspread_client: Optional[gspread.Client] = None
         self.gspread_spreadsheet: Optional[gspread.Spreadsheet] = None
@@ -196,74 +197,88 @@ class TeamProcessor:
             # 오류 발생 시 빈 데이터로 초기화
             self.seeds_data = {"seeds": []}
     
-    def _load_test_accounts_data_sync(self) -> None:
-        """구글 시트에서 테스트 계정 데이터를 동기적으로 로드합니다."""
-        try:
+    def _load_test_accounts_data_sync(self) -> bool:
+        """구글 시트에서 테스트 계정 데이터를 동기적으로 로드합니다.
+
+        실패해도 test_accounts_data 를 비우지 않습니다. 캐시를 비우면 시트에
+        등록된 테스트 계정이 미등록으로 취급되어 신청이 반려됩니다.
+
+        Returns:
+            로드 성공 여부
+        """
+        if not self.gspread_spreadsheet:
+            self._initialize_gspread_client()
             if not self.gspread_spreadsheet:
-                # 클라이언트가 없으면 다시 초기화 시도
-                self._initialize_gspread_client()
-                if not self.gspread_spreadsheet:
-                    logger.warning("[구글시트] 스프레드시트를 열 수 없음")
-                    self.test_accounts_data = {}
-                    return
-            
-            # 테스트 계정 시트 열기
-            try:
-                worksheet = self.gspread_spreadsheet.worksheet(settings.GOOGLE_SHEETS_TEST_ACCOUNTS_WORKSHEET_NAME)
-            except gspread.exceptions.WorksheetNotFound:
-                logger.warning(f"[구글시트] 테스트 계정 시트를 찾을 수 없음 - 시트명: {settings.GOOGLE_SHEETS_TEST_ACCOUNTS_WORKSHEET_NAME}")
-                self.test_accounts_data = {}
-                return
-            
-            # 모든 데이터 가져오기
+                logger.warning("[구글시트] 스프레드시트를 열 수 없음")
+                return False
+
+        try:
+            worksheet = self.gspread_spreadsheet.worksheet(settings.GOOGLE_SHEETS_TEST_ACCOUNTS_WORKSHEET_NAME)
             all_values = worksheet.get_all_records()
-            
-            # 테스트 계정 데이터 딕셔너리 초기화
-            test_accounts = {}
-            
-            for row in all_values:
-                nickname = str(row.get('nickname', '')).strip()
-                mmr_str = str(row.get('mmr', '0')).strip()
-                
-                if nickname:
-                    try:
-                        mmr = float(mmr_str) if mmr_str else 0.0
-                        test_accounts[nickname] = mmr
-                    except (ValueError, TypeError):
-                        logger.warning(f"[구글시트] 테스트 계정 MMR 파싱 실패 - 닉네임: {nickname}, MMR: {mmr_str}")
-                        test_accounts[nickname] = 0.0
-            
-            self.test_accounts_data = test_accounts
-            
+        except gspread.exceptions.WorksheetNotFound:
+            logger.warning(f"[구글시트] 테스트 계정 시트를 찾을 수 없음 - 시트명: {settings.GOOGLE_SHEETS_TEST_ACCOUNTS_WORKSHEET_NAME}")
+            return False
         except Exception as e:
             logger.error(f"[구글시트] 테스트 계정 데이터 로드 실패: {e}", exc_info=True)
-            # 오류 발생 시 빈 데이터로 초기화
-            self.test_accounts_data = {}
-    
-    TEST_ACCOUNTS_TTL_SECONDS = 300  # 테스트 계정 시트 캐시 TTL (5분)
+            return False
 
-    async def ensure_test_accounts_loaded(self, force: bool = False) -> None:
-        """MMR 계산 직전 테스트 계정 시트를 재로드합니다 (TTL 캐시).
+        test_accounts = {}
+        for row in all_values:
+            nickname = str(row.get('nickname', '')).strip()
+            mmr_str = str(row.get('mmr', '0')).strip()
+
+            if nickname:
+                try:
+                    mmr = float(mmr_str) if mmr_str else 0.0
+                    test_accounts[nickname] = mmr
+                except (ValueError, TypeError):
+                    logger.warning(f"[구글시트] 테스트 계정 MMR 파싱 실패 - 닉네임: {nickname}, MMR: {mmr_str}")
+                    test_accounts[nickname] = 0.0
+
+        self.test_accounts_data = test_accounts
+        return True
+
+    TEST_ACCOUNTS_TTL_SECONDS = 300  # 테스트 계정 시트 캐시 TTL (5분)
+    TEST_ACCOUNTS_RETRY_COOLDOWN_SECONDS = 30
+
+    async def ensure_test_accounts_loaded(self, force: bool = False) -> bool:
+        """테스트 계정 시트를 재로드합니다 (TTL 캐시).
 
         test_accounts_data 는 __init__ 에서 한 번만 로드되므로, 봇 실행 중
         '테스트' 시트에 추가된 계정은 기본적으로 인식되지 않습니다. 그 경우
         해당 계정이 MMR 평균에서 탈락해 팀 MMR 이 2인/1인 평균으로 잘못
-        계산됩니다. TTL 이 지났거나 force=True 이면 시트를 다시 읽어
-        새 테스트 계정도 팀 MMR 에 정상 반영되게 합니다.
+        계산되고, 신청 시에는 일반 계정으로 취급되어 반려됩니다.
+
+        직전 시도가 실패했으면 쿨다운 동안 재시도하지 않습니다. 신청이 몰릴 때
+        매 호출이 재시도 지연을 그대로 물지 않도록 합니다.
 
         시트 I/O 는 blocking 이므로 스레드로 오프로딩해 이벤트 루프를 막지 않습니다.
+
+        Returns:
+            캐시가 최신 시트 내용인지 여부
         """
         now = time.monotonic()
-        if (not force
-                and self._test_accounts_loaded_at
-                and (now - self._test_accounts_loaded_at) < self.TEST_ACCOUNTS_TTL_SECONDS):
-            return
+        is_fresh = bool(
+            self._test_accounts_loaded_at
+            and (now - self._test_accounts_loaded_at) < self.TEST_ACCOUNTS_TTL_SECONDS
+        )
+        in_cooldown = bool(
+            self._test_accounts_attempted_at
+            and (now - self._test_accounts_attempted_at) < self.TEST_ACCOUNTS_RETRY_COOLDOWN_SECONDS
+        )
+        if not force and (is_fresh or in_cooldown):
+            return is_fresh
+
+        self._test_accounts_attempted_at = now
         try:
-            await asyncio.to_thread(self._load_test_accounts_data_sync)
+            loaded = await asyncio.to_thread(self._load_test_accounts_data_sync)
         except Exception as e:
             logger.error(f"[테스트계정] 시트 재로드 실패 (기존 데이터 유지): {e}", exc_info=True)
-            return
-        self._test_accounts_loaded_at = now
+            loaded = False
+
+        if loaded:
+            self._test_accounts_loaded_at = now
+        return loaded
 
     def _is_test_account(self, nickname: str) -> bool:
         """닉네임이 테스트 계정인지 확인합니다."""
@@ -547,9 +562,6 @@ class TeamProcessor:
             excluded_teams = []
 
             if len(all_teams) > max_teams:
-                # 초과하는 팀 수 계산
-                excess = len(all_teams) - max_teams
-
                 # 우선순위별로 팀 분류
                 priority_1_teams = [team for team in all_teams if team_priorities.get(team[0], 2) == 1]  # 시드팀
                 priority_2_teams = [team for team in all_teams if team_priorities.get(team[0], 2) == 2]  # 비시드팀
@@ -639,14 +651,7 @@ class TeamProcessor:
         all_teams.sort(key=lambda x: x[2], reverse=True)
         
         new_groups = [[] for _ in range(num_groups)]
-        
-        if num_groups % 2 == 0:
-            # 짝수 그룹: 2/2/2... 패턴 (2개씩 묶어서 스네이크)
-            self._apply_grouped_snake_pattern(all_teams, new_groups, num_groups)
-        else:
-            # 홀수 그룹: 2/2/2.../1 패턴 (마지막 1개 그룹만 MMR 순)
-            self._apply_grouped_snake_pattern(all_teams, new_groups, num_groups)
-        
+        self._apply_grouped_snake_pattern(all_teams, new_groups, num_groups)
         return new_groups
     
     def _apply_grouped_snake_pattern(self, teams: List[Tuple[str, TeamData, float]], groups: List[List], num_groups: int) -> None:

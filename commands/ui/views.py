@@ -11,16 +11,13 @@ from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
 from commands.ui.layout_helpers import (
-    error_view, success_view, warning_view, info_view,
-    processing_view, timeout_view, permission_error_view,
-    custom_view, send_response, edit_to_layout, FOOTER_TEXT,
+    error_view, success_view, info_view,
+    timeout_view, permission_error_view,
+    send_response, FOOTER_TEXT,
     update_temp_message, send_error_message,
 )
 from models.team_data_manager import TeamDataManager
-from models.team_processor import TeamProcessor
-from services.bser_api import BSERAPIClient
 from utils.helpers import get_current_kst_time, is_admin
-from utils.validators import validate_team_name
 
 # 버튼 cooldown 관리 (사용자별 마지막 클릭 시간)
 _button_cooldowns: Dict[int, float] = {}
@@ -42,7 +39,6 @@ async def _check_cooldown(interaction: discord.Interaction, cooldown_seconds: fl
     now = time.monotonic()
     last_click = _button_cooldowns.get(user_id, 0)
     if now - last_click < cooldown_seconds:
-        remaining = cooldown_seconds - (now - last_click)
         await send_response(interaction, info_view("요청 처리 중입니다. 잠시 기다려주세요.", title="⏳ 대기"))
         return True
     _button_cooldowns[user_id] = now
@@ -54,7 +50,6 @@ async def _check_cooldown(interaction: discord.Interaction, cooldown_seconds: fl
     return False
 
 if TYPE_CHECKING:
-    from .modals import TeamModal
     from models.team_data import TeamData
 
 logger = get_logger('views')
@@ -104,7 +99,6 @@ class TeamInputView(LayoutView):
         if announcement_lines:
             children.append(TextDisplay(content="📢 **공지사항**\n" + "\n".join(announcement_lines)))
 
-        children.append(TextDisplay(content="\n아래 버튼을 눌러 팀을 등록해주세요."))
         children.append(Separator())
         children.append(TextDisplay(content=FOOTER_TEXT))
 
@@ -286,6 +280,7 @@ class TeamInputView(LayoutView):
             team_members = get_all_members(team_data) if isinstance(team_data, dict) or hasattr(team_data, 'players') else team_data
 
             team_processor = BotManager.get_instance().get_team_processor()
+            await team_processor.ensure_test_accounts_loaded()
             real_members = [m for m in team_members if not team_processor._is_test_account(m)]
 
             if not errors:
@@ -294,17 +289,22 @@ class TeamInputView(LayoutView):
                     errors.append(bot_err)
 
             if not errors and real_members:
-                from utils.validators import validate_members_in_guild
+                from utils.validators import (
+                    GUILD_NICKNAME_ERROR,
+                    compose_nickname_error,
+                    validate_members_in_guild,
+                )
                 client = BotManager.get_instance().get_client()
                 guild = client.get_guild(settings.GUILD_ID) if client else None
                 if guild:
                     is_guild_valid, not_found = validate_members_in_guild(guild, real_members)
                     if not is_guild_valid:
-                        errors.append(f"❌ 디스코드 서버에서 확인되지 않는 닉네임: **{', '.join(not_found)}**")
+                        errors.append(compose_nickname_error(not_found, GUILD_NICKNAME_ERROR))
 
             # 로컬 검증 실패 시 즉시 반환 (네트워크 호출 생략)
             if errors:
                 msg = '\n'.join(errors)
+                logger.info(f"[팀신청실패] {team_name} | 단계: 로컬검증 | 사유: {' / '.join(errors)}")
                 if temp_message:
                     await update_temp_message(temp_message, msg, discord.Color.red())
                 else:
@@ -314,18 +314,24 @@ class TeamInputView(LayoutView):
             # ── 2단계: API 검증 (네트워크, 병렬) ──
             is_maintenance = False
             if real_members:
-                from utils.validators import validate_members_api
+                from utils.validators import (
+                    API_UNAVAILABLE_NOTICE,
+                    GAME_NICKNAME_ERROR,
+                    compose_nickname_error,
+                    validate_members_api,
+                )
                 is_valid, api_invalid_members, is_maintenance = await validate_members_api(
                     real_members, team_data_manager
                 )
                 if not is_valid and not is_maintenance:
-                    msg = f"❌ 게임 내에서 확인되지 않는 닉네임: **{', '.join(api_invalid_members)}**\n💡 게임 내 닉네임을 정확히 입력해주세요."
+                    msg = compose_nickname_error(api_invalid_members, GAME_NICKNAME_ERROR, API_UNAVAILABLE_NOTICE)
+                    logger.info(f"[팀신청실패] {team_name} | 단계: API검증 | 대상: [{', '.join(api_invalid_members) or '(응답 없음)'}]")
                     if temp_message:
                         await update_temp_message(temp_message, msg, discord.Color.red())
                     else:
                         await send_error_message(interaction, msg)
                     return
-            
+
             # MMR 계산 (team_data dict에 mmr 필드가 설정됨)
             team_mmr = 0.0
             try:
@@ -342,6 +348,7 @@ class TeamInputView(LayoutView):
                     "❌ 팀 등록에 실패했습니다.\n\n"
                     "💡 신청 시간 제한을 확인해주세요."
                 )
+                logger.info(f"[팀신청실패] {team_name} | 단계: 저장 | 사유: {failure_reason or '(사유 없음)'}")
                 if temp_message:
                     await update_temp_message(temp_message, error_message, discord.Color.red())
                 else:
@@ -368,7 +375,7 @@ class TeamInputView(LayoutView):
             staff_str = ', '.join(staff) if staff else '(없음)'
             team_data_manager.log_action(
                 "신청", interaction.user, team_name,
-                detail=f"선수: {players_str} | 스태프: {staff_str}",
+                detail=f"선수: {players_str} / 스태프: {staff_str}",
             )
             logger.info(f"[팀신청] {team_name} | MMR: {team_mmr:.2f} | 선수: [{players_str}] | 스태프: [{staff_str}]")
 
@@ -384,11 +391,12 @@ class TeamInputView(LayoutView):
                     f"💡 닉네임 오타가 없는지 다시 한번 확인해주세요."
                 )
             else:
+                from utils.validators import build_team_mmr_line
                 success_msg = (
                     f"**{team_name}** 팀이 성공적으로 등록되었습니다!\n\n"
                     f"🎮 선수: {players_str}\n"
                     f"🛠️ 스태프: {staff_str}\n"
-                    f"📊 팀 평균 MMR: **{team_mmr:.2f}**"
+                    f"{build_team_mmr_line(team_mmr, players, team_processor._is_test_account)}"
                 )
 
             if temp_message:
@@ -419,9 +427,6 @@ class TeamInputView(LayoutView):
     async def _update_mmr_background(self, team_data_manager, channel) -> None:
         """백그라운드에서 MMR 갱신 및 메시지 업데이트"""
         try:
-            # ✅ scrim.py 방식: 직접 가져오기, 복잡한 체크 제거
-            client = BotManager.get_instance().get_client()
-            
             # MMR 갱신
             try:
                 await team_data_manager._update_all_team_mmr()
@@ -448,7 +453,7 @@ class TeamInputView(LayoutView):
             
             # 조편성 시작 이후인지 확인
             if team_data_manager.is_team_assignment_started:
-                await send_error_message(interaction, "17시 조편성이 완료되어 팀 취소가 불가능합니다. 관리자에게 문의하세요.")
+                await send_error_message(interaction, "17시 조편성이 완료되어 팀 취소가 불가능합니다. 관리자에게 문의해주세요.")
                 return
             
             # 팀 취소 가능 여부 확인
@@ -502,7 +507,7 @@ class TeamInputView(LayoutView):
             staff_str = ', '.join(staff) if staff else '(없음)'
             team_data_manager.log_action(
                 "취소", interaction.user, team_name,
-                detail=f"선수: {players_str} | 스태프: {staff_str}",
+                detail=f"선수: {players_str} / 스태프: {staff_str}",
             )
             logger.info(f"[팀취소] {team_name} | 선수: [{players_str}] | 스태프: [{staff_str}]")
 
@@ -582,7 +587,7 @@ class TeamInputView(LayoutView):
             applicant = f"<@{applicant_id}>" if applicant_id else "(미상)"
             team_data_manager.log_action(
                 "강제취소", interaction.user, team_name,
-                detail=f"신청자: {applicant} | 선수: {players_str} | 스태프: {staff_str}",
+                detail=f"신청자: {applicant} / 선수: {players_str} / 스태프: {staff_str}",
             )
             logger.info(f"[강제취소] {team_name} | 운영진: {interaction.user} | 선수: [{players_str}]")
 
@@ -681,10 +686,10 @@ def build_rest_day_guide_view(team_name: str, user_id: Optional[str] = None) -> 
     mention = f"<@{user_id}>\n" if user_id else ""
     notice = (
         f"{mention}"
-        "📢 **공휴일과 일요일 스크림 자율 진행 안내**\n"
+        "📢 **공휴일/일요일 스크림 자율 진행 안내**\n"
         "공휴일 및 일요일 스크림의 경우 레이팅컷에 따른 조 편성만 제공합니다.\n"
-        "따라서 참가자분들께서는 아래 링크를 통해 충분히 숙지하시고 참여 부탁드립니다.\n\n"
-        f"`{team_name}` 팀께서는 사설방 개설 후 양식에 맞춰 업로드 부탁드립니다.\n"
+        "아래 링크를 확인한 뒤 참여해주세요.\n\n"
+        f"`{team_name}` 팀은 사설방 개설 후 양식에 맞춰 업로드해주세요.\n"
         f"{CUSTOM_GAME_GUIDE_LINK}"
     )
     view = LayoutView(timeout=None)
@@ -712,7 +717,7 @@ class TeamSelectionView(LayoutView):
 
         # Container (안내 텍스트)
         self.add_item(Container(
-            TextDisplay(content="## 팀 선택\n변경할 팀을 선택하세요."),
+            TextDisplay(content="## 팀 선택\n변경할 팀을 선택해주세요."),
             Separator(),
             TextDisplay(content=FOOTER_TEXT),
             accent_colour=Color.blue(),
@@ -734,7 +739,7 @@ class TeamSelectionView(LayoutView):
 
         # ActionRow (팀 선택 드랍다운)
         self.team_select = Select(
-            placeholder="변경할 팀을 선택하세요",
+            placeholder="변경할 팀을 선택해주세요",
             options=options,
             disabled=self.is_empty
         )
@@ -862,7 +867,7 @@ class ForceCancelSelectView(LayoutView):
         self.message: Optional[discord.Message] = None
 
         self.add_item(Container(
-            TextDisplay(content="## 🛠️ 팀 강제취소\n취소할 팀을 선택하세요."),
+            TextDisplay(content="## 🛠️ 팀 강제취소\n취소할 팀을 선택해주세요."),
             Separator(),
             TextDisplay(content=FOOTER_TEXT),
             accent_colour=Color.orange(),
@@ -880,7 +885,7 @@ class ForceCancelSelectView(LayoutView):
                 )
                 for name in chunk
             ]
-            select = Select(placeholder="취소할 팀을 선택하세요", options=options)
+            select = Select(placeholder="취소할 팀을 선택해주세요", options=options)
             select.callback = self.team_select_callback
             self.selects.append(select)
             self.add_item(ActionRow(select))

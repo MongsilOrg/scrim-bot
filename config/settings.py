@@ -51,6 +51,7 @@ class Settings:
     DISCORD_TOKEN: str = os.getenv('DISCORD_TOKEN', '')
     GUILD_ID: int = _parse_int(os.getenv('GUILD_ID', ''))
     ADMIN_ROLE_IDS: Set[int] = _parse_int_set(os.getenv('ADMIN_ROLE_IDS', ''))
+    TEST_ACCOUNT_CONTACT_ID: int = _parse_int(os.getenv('TEST_ACCOUNT_CONTACT_ID', '602522819594551306'))
 
     # BSER API 설정
     BSER_API_KEY: str = os.getenv('BSER_API_KEY', '')
@@ -70,13 +71,11 @@ class Settings:
 
     # 상수 설정
     TEAMS_PER_GROUP: int = 8
-    THUMBNAIL_URL: str = os.getenv('THUMBNAIL_URL', 'https://mongsil.dev/w/src/Scrim.jpg')
     EMBED_FOOTER_TEXT: str = os.getenv('EMBED_FOOTER_TEXT', 'ER Scrim | Powered by Mongsil')
     AUTO_ASSIGNMENT_CHECK_INTERVAL: int = 30  # seconds
 
     # 스크림 일정 (시간)
     TEAM_REGISTRATION_DEADLINE_HOUR: int = 17
-    SCRIM_START_HOUR: int = 20
     NEXT_SCRIM_OPEN_HOUR: int = 22
 
     # MMR 갱신 간격 (초)

@@ -1,23 +1,28 @@
 """
 Discord Modal 컴포넌트들
 """
-from typing import TYPE_CHECKING, Dict, List, Tuple, Union
+from typing import TYPE_CHECKING, List, Tuple, Union
 
 import discord
-from discord.components import CheckboxGroupOption, RadioGroupOption
-from discord.ui import CheckboxGroup, Label, Modal, RadioGroup, Select, TextDisplay, TextInput
+from discord.components import CheckboxGroupOption
+from discord.ui import CheckboxGroup, Label, Modal, TextInput
 
 from bot.manager import BotManager
 from commands.ui.layout_helpers import (
-    error_view, success_view, warning_view, info_view,
-    processing_view, timeout_view, custom_view,
-    send_response, FOOTER_TEXT,
+    processing_view, custom_view,
     update_temp_message, send_error_message,
 )
 from config.logging_config import get_logger
 from utils.validators import (
+    API_UNAVAILABLE_NOTICE,
+    GAME_NICKNAME_ERROR,
+    GUILD_NICKNAME_ERROR,
+    build_team_mmr_line,
+    build_test_account_notice,
     check_duplicate_members,
+    compose_nickname_error,
     normalize_nickname_for_comparison,
+    split_test_nicknames,
     validate_discord_user_in_team,
     validate_members_in_guild,
     validate_team_data,
@@ -26,6 +31,7 @@ from utils.validators import (
 
 if TYPE_CHECKING:
     from .views import TeamInputView, GroupRosterView
+    from models.team_data import TeamData
 
 logger = get_logger('modals')
 
@@ -122,7 +128,8 @@ class TeamModal(Modal):
             
             # 팀원 중 테스트 계정이 있는지 확인
             team_processor = BotManager.get_instance().get_team_processor()
-            
+            await team_processor.ensure_test_accounts_loaded()
+
             # 테스트 계정이 포함된 경우 디스코드 닉네임 확인 생략
             all_members = players + staff
             has_test_account = any(team_processor._is_test_account(member) for member in all_members)
@@ -134,8 +141,13 @@ class TeamModal(Modal):
                     error_msg = (f"❌ 본인의 디스코드 닉네임이 팀원 목록에 포함되어 있지 않습니다.\n\n"
                                f"📌 **참가팀의 팀원만 신청할 수 있습니다.**\n\n"
                                f"**현재 디스코드 닉네임**: {submitter_name}\n"
-                               f"**입력된 팀원**: {', '.join(players + staff) if players and staff and isinstance(players, (list, tuple)) and isinstance(staff, (list, tuple)) else '정보 없음'}\n\n"
+                               f"**입력된 팀원**: {', '.join(all_members) if all_members else '정보 없음'}\n\n"
                                f"💡 플레이어 또는 스태프 목록에 본인의 디스코드 닉네임을 포함해주세요.")
+                    # 시트에 없는 테스트 계정이 섞였을 수 있으므로 원래 사유에 덧붙인다
+                    notice = build_test_account_notice(split_test_nicknames(all_members)[1])
+                    if notice:
+                        error_msg = f"{error_msg}\n\n{notice}"
+                    logger.info(f"[팀신청실패] {team_name} | 단계: 신청자확인 | 신청자: {submitter_name} | 팀원: [{', '.join(all_members)}]")
                     await update_temp_message(temp_message, error_msg, discord.Color.red())
                     return
             
@@ -300,6 +312,9 @@ class TeamEditModal(Modal):
         is_roster_change = isinstance(self.view, GroupRosterView)
         is_maintenance = False
 
+        # 로스터 변경도 뒤이어 MMR 을 재계산하므로 경로와 무관하게 갱신한다
+        await BotManager.get_instance().get_team_processor().ensure_test_accounts_loaded()
+
         if team_data_manager.is_team_assignment_started and not is_roster_change:
             await update_temp_message(temp_message, "17시 조편성이 완료되어 팀 수정이 불가능합니다.", discord.Color.red())
             return False, is_roster_change, False
@@ -332,21 +347,17 @@ class TeamEditModal(Modal):
                 if guild:
                     is_guild_valid, not_found = validate_members_in_guild(guild, real_members)
                     if not is_guild_valid:
-                        await update_temp_message(
-                            temp_message,
-                            f"❌ 다음 닉네임이 디스코드 서버에서 확인되지 않습니다.\n\n**{', '.join(not_found)}**\n\n💡 디스코드 서버 닉네임과 동일하게 입력해주세요.",
-                            discord.Color.red()
-                        )
+                        logger.info(f"[팀수정실패] {new_team_name} | 단계: 디스코드검증 | 대상: [{', '.join(not_found)}]")
+                        msg = compose_nickname_error(not_found, GUILD_NICKNAME_ERROR)
+                        await update_temp_message(temp_message, msg, discord.Color.red())
                         return False, is_roster_change, False
 
                 from utils.validators import validate_members_api
                 is_valid, api_invalid, is_maintenance = await validate_members_api(real_members, team_data_manager)
                 if not is_valid and not is_maintenance:
-                    await update_temp_message(
-                        temp_message,
-                        f"❌ 다음 닉네임들을 찾을 수 없습니다.\n**{', '.join(api_invalid)}**\n\n💡 게임 내 닉네임을 정확히 입력했는지 확인해주세요.",
-                        discord.Color.red()
-                    )
+                    logger.info(f"[팀수정실패] {new_team_name} | 단계: API검증 | 대상: [{', '.join(api_invalid) or '(응답 없음)'}]")
+                    msg = compose_nickname_error(api_invalid, GAME_NICKNAME_ERROR, API_UNAVAILABLE_NOTICE)
+                    await update_temp_message(temp_message, msg, discord.Color.red())
                     return False, is_roster_change, False
 
         return True, is_roster_change, is_maintenance
@@ -379,7 +390,7 @@ class TeamEditModal(Modal):
                 parts.append(f"{', '.join(sorted(removed))} → {', '.join(sorted(added))}" if added else f"-{', '.join(sorted(removed))}")
             elif added:
                 parts.append(f"+{', '.join(sorted(added))}")
-            detail = ' | '.join(parts) + f" | 선수: {players_str} | 스태프: {staff_str}"
+            detail = ' / '.join(parts) + f" / 선수: {players_str} / 스태프: {staff_str}"
             team_data_manager.log_action("수정", interaction.user, new_team_name, detail=detail)
 
         original_players_str = ', '.join(original_players) if original_players else '(없음)'
@@ -393,7 +404,7 @@ class TeamEditModal(Modal):
         )
         return added, removed, original_players
 
-    async def _send_edit_result(self, temp_message: discord.Message, new_team_name: str, new_team_mmr: float, added: set, removed: set, is_maintenance: bool) -> None:
+    async def _send_edit_result(self, temp_message: discord.Message, new_team_name: str, new_team_mmr: float, added: set, removed: set, is_maintenance: bool, players: List[str]) -> None:
         """수정 결과 메시지 전송."""
         if is_maintenance:
             await update_temp_message(
@@ -413,9 +424,11 @@ class TeamEditModal(Modal):
             if added:
                 diff_parts.append(f"추가: {', '.join(sorted(added))}")
             diff_summary = '\n'.join(diff_parts) if diff_parts else "변경 없음"
+            team_processor = BotManager.get_instance().get_team_processor()
+            mmr_line = build_team_mmr_line(new_team_mmr, players, team_processor._is_test_account)
             await update_temp_message(
                 temp_message,
-                f"**{new_team_name}** 팀이 수정되었습니다.\n\n{diff_summary}\n📊 팀 평균 MMR: **{new_team_mmr:.2f}**",
+                f"**{new_team_name}** 팀이 수정되었습니다.\n\n{diff_summary}\n{mmr_line}",
                 discord.Color.green()
             )
 
@@ -442,7 +455,7 @@ class TeamEditModal(Modal):
             except Exception as e:
                 logger.error(f"[모달] 팀 MMR 계산 실패 - 팀명: {new_team_name}: {e}", exc_info=True)
 
-            # 3. 데이터 저장 (관리자 수정 시 신청자가 바뀌지 않도록 기존 신청자 user_id 보존)
+            # 3. 데이터 저장 (관리자 수정 시 신청자가 바뀌지 않도록 user_id 보존)
             from models.team_data import TeamData
             if isinstance(self.original_team_data, dict):
                 original_user_id = self.original_team_data.get('user_id')
@@ -494,7 +507,10 @@ class TeamEditModal(Modal):
                 await self._update_changed_team(team_data_manager, new_team_name, new_team_mmr)
 
             # 7. 결과 메시지
-            await self._send_edit_result(temp_message, new_team_name, new_team_mmr, added, removed, is_maintenance)
+            await self._send_edit_result(
+                temp_message, new_team_name, new_team_mmr, added, removed, is_maintenance,
+                new_team_data.get('players', []),
+            )
 
             # 8. 후처리
             if is_roster_change and self.warning_checkbox and self.warning_checkbox.values:
@@ -571,7 +587,6 @@ class TeamEditModal(Modal):
             result_text = " | ".join(result_parts)
 
             try:
-                current_content = temp_message.content if hasattr(temp_message, 'content') else ""
                 await update_temp_message(
                     temp_message,
                     f"**{self.original_team_name}** → 로스터 변경 완료\n⚡ {result_text}",
@@ -620,45 +635,6 @@ class TeamEditModal(Modal):
         except Exception as e:
             logger.error(f"[로스터주의] DM 발송 실패 - 대상: {target_user.display_name}, 오류: {e}", exc_info=True)
 
-    def _check_duplicate_within_group(self, new_team_name: str, new_team_members: List[str]) -> Tuple[bool, str]:
-        """같은 조 내에서만 중복 검사"""
-        try:
-            from utils.validators import normalize_nickname_for_comparison, normalize_team_name
-
-            normalized_new_team = normalize_team_name(new_team_name)
-            normalized_new_members = [normalize_nickname_for_comparison(member) for member in new_team_members]
-
-            # 같은 조 내의 다른 팀들과 중복 검사
-            for team_name, team_data, mmr in self.view.group_teams:
-                if team_name == self.original_team_name:
-                    continue  # 현재 수정 중인 팀은 제외
-                
-                # 팀명 중복 검사
-                if normalize_team_name(team_name) == normalized_new_team:
-                    return False, f"'{new_team_name}' 팀명이 이미 같은 조에 존재합니다."
-                
-                # 팀원 중복 검사
-                from utils.helpers import get_team_members
-                if hasattr(team_data, 'players') or isinstance(team_data, dict):
-                    existing_players, existing_staff = get_team_members(team_data)
-                else:
-                    existing_players = list(team_data)
-                    existing_staff = []
-                
-                existing_members = existing_players + existing_staff
-                normalized_existing = [normalize_nickname_for_comparison(member) for member in existing_members]
-                
-                # 새 팀원이 기존 팀에 속해있는지 확인
-                for new_member_norm, new_member_raw in zip(normalized_new_members, new_team_members):
-                    if new_member_norm in normalized_existing:
-                        return False, f"'{new_member_raw}' 닉네임이 이미 같은 조의 다른 팀에 등록되어 있습니다."
-            
-            return True, ""
-            
-        except Exception as e:
-            logger.error(f"[모달] 조 내 중복 검사 실패: {e}", exc_info=True)
-            return False, "중복 검사 중 오류가 발생했습니다."
-    
     async def _update_mmr_message_for_individual_team(self, team_data_manager) -> None:
         """개별 팀 수정 시 MMR 메시지 업데이트"""
         try:
@@ -790,9 +766,6 @@ class TeamEditModal(Modal):
             if not channel:
                 logger.warning(f"[모달] 조별 채널을 찾을 수 없음 - 조: {group_letter}조")
                 return
-            
-            # 현재 조의 팀들 수집 (업데이트된 정보로)
-            team_data_manager = BotManager.get_instance().get_team_data_manager()
             
             # view의 group_teams를 사용 (이미 업데이트됨)
             updated_group_teams = self.view.group_teams.copy()

@@ -58,9 +58,9 @@ class MmrUpdater:
 
             update_time = mgr._last_success_time or get_current_kst_time().strftime('%H:%M')
             if mgr._is_maintenance:
-                desc = f"🔧 서버 점검 중, 마지막 갱신: `{update_time}`"
+                desc = f"🔧 서버 점검 중 / 마지막 갱신: `{update_time}`"
             else:
-                desc = f"총 **{len(mgr.teams)}**팀, 마지막 갱신: `{update_time}`"
+                desc = f"총 **{len(mgr.teams)}**팀 / 마지막 갱신: `{update_time}`"
                 if mmr_fail_count > 0:
                     desc += f"\n⚠️ {mmr_fail_count}개 팀 MMR 갱신 실패"
 
@@ -128,6 +128,7 @@ class MmrUpdater:
 
             while True:
                 sleep_interval = settings.MMR_UPDATE_INTERVAL_SECONDS  # 기본 5분
+                final_run = False
 
                 try:
                     # 최신 TeamDataManager 인스턴스를 동적으로 가져오기
@@ -154,7 +155,7 @@ class MmrUpdater:
                         if fail > 0 and success == 0:
                             team_data_manager._is_maintenance = True
                             sleep_interval = settings.MMR_UPDATE_MAINTENANCE_INTERVAL_SECONDS  # 점검 중 10분
-                            logger.info(f"[MMR갱신] 서버 점검 감지 — 실패: {fail}팀, 갱신 주기 10분")
+                            logger.info(f"[MMR갱신] 서버 점검 감지 - 실패: {fail}팀, 갱신 주기 10분")
                         else:
                             team_data_manager._is_maintenance = False
                             # 실제 갱신 성공 시에만 마지막 갱신 시각 업데이트
@@ -274,6 +275,7 @@ class MmrUpdater:
         from bot.manager import BotManager
 
         team_processor = BotManager.get_instance().get_team_processor()
+        await team_processor.ensure_test_accounts_loaded()
         teams_to_check = list(mgr.unverified_teams)
         logger.info(f"[점검해제] 미검증 팀 {len(teams_to_check)}개 재검증 시작")
 
@@ -311,7 +313,7 @@ class MmrUpdater:
                 logger.error(f"[점검해제] 팀 재검증 실패 - {team_name}: {e}", exc_info=True)
 
         mgr._save_backup()
-        logger.info(f"[점검해제] 미검증 팀 재검증 완료 — 잔여: {len(mgr.unverified_teams)}개")
+        logger.info(f"[점검해제] 미검증 팀 재검증 완료 - 잔여: {len(mgr.unverified_teams)}개")
 
     async def _send_verification_dm(self, team_name: str, team_data, invalid_members: list) -> None:
         """점검 해제 후 닉네임 검증 결과를 DM으로 발송합니다."""
@@ -371,9 +373,9 @@ class MmrUpdater:
                 ))
 
             await user.send(view=view)
-            logger.info(f"[점검해제] DM 발송 — {team_name} ({'성공' if not invalid_members else '실패'})")
+            logger.info(f"[점검해제] DM 발송 - {team_name} ({'성공' if not invalid_members else '실패'})")
 
         except discord.Forbidden:
-            logger.warning(f"[점검해제] DM 발송 실패 (DM 차단) — {team_name}")
+            logger.warning(f"[점검해제] DM 발송 실패 (DM 차단) - {team_name}")
         except Exception as e:
-            logger.error(f"[점검해제] DM 발송 실패 — {team_name}: {e}", exc_info=True)
+            logger.error(f"[점검해제] DM 발송 실패 - {team_name}: {e}", exc_info=True)
