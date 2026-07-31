@@ -6,7 +6,6 @@ import logging
 import os
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
-from typing import Optional
 
 import pytz
 
@@ -92,5 +91,5 @@ class ScrimbotLogger:
 
 
 def get_logger(name: str) -> logging.Logger:
-    """편의 함수: 모듈별 로거 반환"""
+    """모듈별 로거를 반환합니다."""
     return ScrimbotLogger.get_logger(name)

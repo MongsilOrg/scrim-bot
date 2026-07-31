@@ -71,5 +71,3 @@ async def get_holiday_names(
     return holidays.get(target.isoformat(), [])
 
 
-def clear_cache() -> None:
-    _holiday_cache.clear()

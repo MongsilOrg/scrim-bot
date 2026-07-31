@@ -101,9 +101,6 @@ class WarningReasonModal(Modal):
 
             if success:
 
-                from utils.helpers import get_current_kst_time
-                current_time = get_current_kst_time().strftime('%Y-%m-%d %H:%M:%S')
-
                 # 주의 2회 누적으로 경고 전환된 경우
                 if auto_warning and converted_cautions:
                     caution_lines = []
@@ -172,9 +169,6 @@ class WarningReasonModal(Modal):
     ) -> None:
         """경고/주의 부여 시 대상자에게 DM을 발송합니다."""
         try:
-            from utils.helpers import get_current_kst_time
-            current_time = get_current_kst_time().strftime('%Y-%m-%d %H:%M')
-
             # 주의 2회 누적으로 경고 전환된 경우
             if auto_warning and converted_cautions:
                 restricted_until = auto_warning.get('restricted_until', 'N/A')

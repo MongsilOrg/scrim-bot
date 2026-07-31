@@ -14,6 +14,7 @@ from bot.client import ScrimBot
 from bot.manager import BotManager
 from commands.ui.schedule_views import ScheduleView
 from config.logging_config import get_logger
+from config.settings import settings
 from utils.helpers import get_current_kst_time, is_admin
 
 logger = get_logger('schedule')
@@ -64,7 +65,7 @@ async def _weekly_reset_loop(client: ScrimBot) -> None:
     while not client.is_closed():
         now = get_current_kst_time()
         days_until_saturday = (5 - now.weekday()) % 7
-        if days_until_saturday == 0 and now.hour >= 22:
+        if days_until_saturday == 0 and now.hour >= settings.NEXT_SCRIM_OPEN_HOUR:
             days_until_saturday = 7
 
         next_saturday_22 = now.replace(
@@ -100,7 +101,7 @@ async def setup_schedule_dashboard(client: ScrimBot) -> None:
 
     channel = guild.get_channel(SCHEDULE_CHANNEL_ID)
     if not channel:
-        logger.warning(f"[일정] 대시보드 채널을 찾을 수 없습니다.")
+        logger.warning("[일정] 대시보드 채널을 찾을 수 없습니다.")
         return
 
     schedule_mgr = BotManager.get_instance().get_schedule_manager()

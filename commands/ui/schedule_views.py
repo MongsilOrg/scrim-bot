@@ -20,7 +20,7 @@ logger = get_logger('schedule_views')
 class ScheduleView(LayoutView):
     """주간 일정 관리 뷰
 
-    관리자들이 참가/불참을 등록하고 편성/투입을 관리합니다.
+    관리자들이 참가/불참을 등록하고 편성과 투입을 관리합니다.
     현황 표시 + 일정등록/응답삭제/편성/투입 버튼을 포함합니다.
     """
 
@@ -205,7 +205,7 @@ class ScheduleView(LayoutView):
 
         schedule_mgr = BotManager.get_instance().get_schedule_manager()
         if not schedule_mgr.assignments:
-            await send_response(interaction, error_view("주간 일정이 편성되지 않았습니다.\n먼저 편성을 실행하세요."))
+            await send_response(interaction, error_view("주간 일정이 편성되지 않았습니다.\n먼저 편성을 실행해주세요."))
             return
 
         deploy_view = _build_deploy_view(schedule_mgr, str(interaction.user.id))
@@ -272,23 +272,23 @@ def _build_deploy_view(schedule_mgr, user_id: str) -> LayoutView:
     # 배정 요일 안내
     if assigned_days:
         assigned_str = ', '.join(WEEKDAYS[d] for d in sorted(assigned_days))
-        info_line = f"내 배정: **{assigned_str}**\n내 투입: **{my_status}**"
+        info_line = f"내 배정: **{assigned_str}** / 내 투입: **{my_status}**"
     else:
-        info_line = f"배정된 요일이 없습니다.\n내 투입: **{my_status}**"
+        info_line = f"배정된 요일이 없습니다. / 내 투입: **{my_status}**"
 
     deploy_view = LayoutView()
     deploy_view.add_item(Container(
         TextDisplay(
             content=f"## ✅ 투입 기록\n"
             f"{info_line}\n\n"
-            f"투입한 요일을 선택하세요. (다시 누르면 해제)"
+            f"투입한 요일을 선택해주세요. (다시 누르면 해제)"
         ),
         Separator(),
         TextDisplay(content=FOOTER_TEXT),
         accent_colour=Color.blue(),
     ))
 
-    # ActionRow 당 최대 5개 제한: 배정 요일 우선 배치 후 분할
+    # ActionRow 당 최대 5개 제한: 배정 요일을 우선 배치한 뒤 분할
     all_buttons = assigned_buttons + extra_buttons
     deploy_view.add_item(ActionRow(*all_buttons[:5]))
     if len(all_buttons) > 5:

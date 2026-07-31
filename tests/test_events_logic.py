@@ -255,7 +255,7 @@ class EventsLogicTest(unittest.TestCase):
 
 class ComputeBanListForChannelTest(unittest.IsolatedAsyncioTestCase):
     async def test_no_csv_returns_empty(self):
-        """당일 CSV가 없으면(예: 1라운드) 빈 리스트 — 이월 없음."""
+        """당일 CSV가 없으면(예: 1라운드) 빈 리스트: 이월 없음."""
         async def fake_collect(channel, start_utc, limit=200):
             return []
 

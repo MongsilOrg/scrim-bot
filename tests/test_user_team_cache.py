@@ -1,8 +1,5 @@
 """UserTeamCache 단위 테스트"""
-import json
-import os
-import tempfile
-from datetime import datetime, timezone, timedelta
+from datetime import timezone, timedelta
 
 import pytest
 

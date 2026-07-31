@@ -1,4 +1,4 @@
-"""강제취소 기능 테스트 — 로그 타입 + 강제취소 선택 뷰."""
+"""강제취소 기능 테스트: 로그 타입 + 강제취소 선택 뷰."""
 import unittest
 
 from models.team_data import TeamData

@@ -9,7 +9,6 @@ from typing import Dict, List, Optional
 from services.notion_api import get_server_info
 
 import imgkit
-import pandas as pd
 
 from config.logging_config import get_logger
 
@@ -59,26 +58,6 @@ def _render_html_to_image(html_str: str, width: int = 800, height: int = None) -
 
 class ImageGenerator:
     """이미지 생성 클래스"""
-
-    @staticmethod
-    def generate_result_image(df: pd.DataFrame) -> Optional[BytesIO]:
-        """결과 이미지를 생성하는 함수"""
-        try:
-            html_str = ImageGenerator._create_html_template(df)
-            return _render_html_to_image(html_str, width=800, height=600)
-        except Exception as e:
-            logger.error(f"[이미지생성] 이미지 생성 실패: {e}", exc_info=True)
-            return None
-
-    @staticmethod
-    def _create_html_template(df: pd.DataFrame) -> str:
-        """결과 이미지용 HTML 템플릿 생성"""
-        is_tournament = get_server_info()['is_tournament']
-        table_html = df.to_html(index=False, escape=False, classes='table')
-        header_color = '#FB9206' if is_tournament else '#4a9eff'
-
-        template = _load_template('result_table.html')
-        return template.format(header_color=header_color, table_html=table_html)
 
     @staticmethod
     def generate_mmr_image(teams_data: dict, *, sort_by_mmr: bool = True, unverified_teams: set = None) -> Optional[BytesIO]:
@@ -198,7 +177,7 @@ class ImageGenerator:
             members_sub = f'<div class="cell-sub staff">{staff_text}</div>'
         members_cell = members_main + members_sub
 
-        mmr_display = f'<td class="mmr-unverified">점검</td>' if is_unverified else f'<td class="mmr-value">{mmr:.2f}</td>'
+        mmr_display = '<td class="mmr-unverified">점검</td>' if is_unverified else f'<td class="mmr-value">{mmr:.2f}</td>'
 
         return f"""<tr class="row {row_class}">
     <td>{rank}</td>

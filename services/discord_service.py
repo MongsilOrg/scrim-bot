@@ -166,7 +166,7 @@ class DiscordService:
             team_data_manager.group_message_texts[group_letter] = full_message
             team_data_manager._save_backup()
 
-            # 공휴일·일요일: 1시드 팀 신청자 태그 + 자율 진행 안내 추가 뷰
+            # 공휴일/일요일: 1시드 팀 신청자 태그 + 자율 진행 안내 추가 뷰
             # (추가 뷰 실패가 본 공지 성공을 가리지 않도록 별도 예외 처리)
             if is_rest_day and group:
                 try:
@@ -196,12 +196,11 @@ class DiscordService:
         """공지를 전송합니다."""
         try:
             # 디스코드 역할 처리 (조별 공지보다 먼저)
-            # — 공지의 역할 핑/권한 게이팅된 채널 가시성이 '새 조 멤버'에게 올바로 가도록,
-            #   조별 공지를 보내기 전에 조 역할을 먼저 재배정한다.
+            # 역할 핑과 채널 가시성이 '새 조 멤버'에게 올바로 가도록 공지보다 먼저 재배정한다.
             await self.handle_discord_roles(guild, groups)
 
-            # 공휴일·일요일 여부 (자율 진행 안내 표시용)
-            # — 휴무일 조회 실패가 본 공지/역할 흐름 전체를 막지 않도록 방어적으로 처리
+            # 공휴일/일요일 여부 (자율 진행 안내 표시용)
+            # 휴무일 조회 실패가 공지와 역할 흐름 전체를 막지 않게 한다
             from utils.helpers import get_rest_day_info
             try:
                 is_rest_day = (await get_rest_day_info())["is_rest_day"]
@@ -569,7 +568,7 @@ class DiscordService:
                         await asyncio.sleep(0.5 * (attempt + 1))
                         continue
                     return 0
-            except Exception as e:
+            except Exception:
                 if attempt < max_retries - 1:
                     await asyncio.sleep(0.5 * (attempt + 1))
                     continue
@@ -577,13 +576,3 @@ class DiscordService:
 
         return 0
 
-    async def delete_message_batch(self, messages: List[discord.Message]) -> int:
-        """메시지 배치를 삭제합니다."""
-        deleted_count = 0
-        for message in messages:
-            deleted_count += await self.delete_single_message_with_retry(message)
-        return deleted_count
-
-    async def delete_single_message(self, message: discord.Message) -> int:
-        """단일 메시지를 삭제합니다."""
-        return await self.delete_single_message_with_retry(message)

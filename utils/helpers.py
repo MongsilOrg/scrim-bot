@@ -86,7 +86,7 @@ def get_next_scrim_date(current_time: datetime = None) -> dict:
     current_weekday = current_time.weekday()
     
     # 22시 이후라면 익일부터 계산
-    if current_time.hour >= 22:
+    if current_time.hour >= settings.NEXT_SCRIM_OPEN_HOUR:
         # 익일 계산
         from datetime import timedelta
         next_date = current_time + timedelta(days=1)
@@ -111,7 +111,7 @@ def get_next_scrim_date(current_time: datetime = None) -> dict:
 
 
 async def get_rest_day_info(target_date: Optional[Union[date, datetime]] = None) -> dict:
-    """오늘(또는 지정일)이 휴무일(일요일·공휴일)인지 표시하여 반환합니다."""
+    """오늘(또는 지정일)이 휴무일(일요일/공휴일)인지 표시하여 반환합니다."""
     from services.holidays_api import get_holiday_names
 
     if target_date is None:
@@ -124,7 +124,7 @@ async def get_rest_day_info(target_date: Optional[Union[date, datetime]] = None)
     is_holiday = bool(holiday_names)
 
     # [임시] 2026-08-16(포함)까지는 요일/공휴일과 무관하게 모든 스크림을 자율로 상시 안내한다.
-    # 기간 종료 후 이 temp_force 관련 3줄을 삭제하면 원래 동작(일요일·공휴일만)으로 원복된다.
+    # 기간 종료 후 이 temp_force 관련 3줄을 삭제하면 원래 동작(일요일/공휴일만)으로 원복된다.
     temp_force_rest = target_date <= date(2026, 8, 16)
 
     labels = (["일요일"] if is_sunday else []) + holiday_names
@@ -138,5 +138,5 @@ async def get_rest_day_info(target_date: Optional[Union[date, datetime]] = None)
         "is_holiday": is_holiday,
         "holiday_names": holiday_names,
         "labels": labels,
-        "label": " · ".join(labels),
+        "label": " / ".join(labels),
     }

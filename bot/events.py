@@ -3,18 +3,21 @@
 import io
 import re
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import discord
 import pandas as pd
 import pytz
 
-from commands.ui.layout_helpers import image_response_view, custom_view, FOOTER_TEXT
+from commands.ui.layout_helpers import image_response_view, custom_view
 from config.logging_config import get_logger
 from config.settings import settings
 from services.image_generator import ImageGenerator
 from utils.helpers import get_current_kst_time
 from utils.validators import normalize_team_name
+
+if TYPE_CHECKING:
+    from discord.ui import LayoutView
 
 logger = get_logger('events')
 

@@ -71,7 +71,7 @@ async def _bootstrap_on_ready(client: ScrimBot, logger) -> None:
                     and current_time.month == team_data_manager.scrim_month
                 )
                 if is_scrim_day and current_time.hour >= 17:
-                    # 스크림 당일 17시 이후 재시작 — 조편성 미완료 → 즉시 실행
+                    # 스크림 당일 17시 이후 재시작: 조편성이 미완료면 즉시 실행
                     logger.info("[시작] 17시 이후 재시작 - 조편성 미완료, 즉시 실행")
                     total_teams, _, spare_teams = team_data_manager.get_team_counts()
                     asyncio.create_task(
@@ -87,7 +87,7 @@ async def _bootstrap_on_ready(client: ScrimBot, logger) -> None:
                     )
                     logger.info("[시작] 조편성/MMR 태스크 재시작")
             else:
-                # 조편성 후 복구 — GroupRosterView 재등록
+                # 조편성 후 복구: GroupRosterView 재등록
                 await team_data_manager.restore_group_roster_views(client)
                 logger.info("[시작] 조편성 후 복구 완료")
         else:

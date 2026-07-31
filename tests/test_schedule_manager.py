@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import patch
 
-from models.schedule_manager import ScheduleManager, ACTIVE_DAYS, WEEKDAYS
+from models.schedule_manager import ScheduleManager, ACTIVE_DAYS
 
 
 class TestRegisterSchedule(unittest.TestCase):
@@ -14,41 +14,41 @@ class TestRegisterSchedule(unittest.TestCase):
 
     @patch.object(ScheduleManager, '_save_backup')
     def test_full_participation(self, mock_save):
-        """전체 참가 — 모든 요일 선택, 사유 없음"""
+        """전체 참가: 모든 요일 선택, 사유 없음"""
         self.mgr.register_schedule('u1', 'Admin1', {0, 1, 2, 3, 4, 5})
         self.assertEqual(self.mgr.availability['u1'], {0, 1, 2, 3, 4, 5})
         self.assertNotIn('u1', self.mgr.absence_reasons)
 
     @patch.object(ScheduleManager, '_save_backup')
     def test_partial_participation(self, mock_save):
-        """부분 참가 — 월화수목만 선택 → 불참 사유 없음"""
+        """부분 참가: 월화수목만 선택 → 불참 사유 없음"""
         self.mgr.register_schedule('u1', 'Admin1', {0, 1, 2, 3})
         self.assertEqual(self.mgr.availability['u1'], {0, 1, 2, 3})
         self.assertNotIn('u1', self.mgr.absence_reasons)
 
     @patch.object(ScheduleManager, '_save_backup')
     def test_partial_participation_without_reason(self, mock_save):
-        """부분 참가 — 월화수 참가, 사유 없음 → 불참 사유 미기록"""
+        """부분 참가: 월화수 참가, 사유 없음 → 불참 사유 미기록"""
         self.mgr.register_schedule('u1', 'Admin1', {0, 1, 2})
         self.assertEqual(self.mgr.availability['u1'], {0, 1, 2})
         self.assertNotIn('u1', self.mgr.absence_reasons)
 
     @patch.object(ScheduleManager, '_save_backup')
     def test_full_absence(self, mock_save):
-        """전체 불참 — 0개 선택 + 사유 있음"""
+        """전체 불참: 0개 선택 + 사유 있음"""
         self.mgr.register_schedule('u1', 'Admin1', set(), '출장')
         self.assertEqual(self.mgr.availability['u1'], set())
         self.assertEqual(self.mgr.absence_reasons['u1'], {-1: '출장'})
 
     @patch.object(ScheduleManager, '_save_backup')
     def test_full_absence_no_reason(self, mock_save):
-        """전체 불참 — 0개 선택 + 사유 없음 → 기본 사유"""
+        """전체 불참: 0개 선택 + 사유 없음 → 기본 사유"""
         self.mgr.register_schedule('u1', 'Admin1', set(), None)
         self.assertEqual(self.mgr.absence_reasons['u1'], {-1: '사유 없음'})
 
     @patch.object(ScheduleManager, '_save_backup')
     def test_overwrite_previous_response(self, mock_save):
-        """기존 응답을 덮어쓰기 — 전체불참 → 부분참가"""
+        """기존 응답을 덮어쓰기: 전체불참 → 부분참가"""
         self.mgr.register_schedule('u1', 'Admin1', set(), '출장')
         self.assertEqual(self.mgr.absence_reasons['u1'], {-1: '출장'})
 
@@ -58,7 +58,7 @@ class TestRegisterSchedule(unittest.TestCase):
 
     @patch.object(ScheduleManager, '_save_backup')
     def test_overwrite_partial_to_full_absence(self, mock_save):
-        """기존 응답 덮어쓰기 — 부분참가 → 전체불참"""
+        """기존 응답 덮어쓰기: 부분참가 → 전체불참"""
         self.mgr.register_schedule('u1', 'Admin1', {0, 1, 2}, '약속')
         self.mgr.register_schedule('u1', 'Admin1', set(), '입원')
         self.assertEqual(self.mgr.availability['u1'], set())

@@ -5,7 +5,6 @@ import discord
 
 from commands.ui.layout_helpers import error_view, permission_error_view, send_response
 from config.logging_config import get_logger
-from config.settings import settings
 from commands.ui.warning_modals import WarningReasonModal
 from utils.helpers import is_admin
 

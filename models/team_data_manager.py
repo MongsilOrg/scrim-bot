@@ -6,7 +6,7 @@
 import asyncio
 import os
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple, Union, TYPE_CHECKING
+from typing import Dict, List, Optional, Tuple, Union
 
 import discord
 
@@ -19,9 +19,6 @@ from .team_data import TeamData
 from .team_backup import TeamBackup
 from .scrim_orchestrator import ScrimOrchestrator
 from .mmr_updater import MmrUpdater
-
-if TYPE_CHECKING:  # pragma: no cover
-    from bot.manager import BotManager  # type: ignore
 
 logger = get_logger('team_data_manager')
 
@@ -354,7 +351,7 @@ class TeamDataManager:
 
         # 17시 이후 로직
         if current_time.hour >= 17 and not allow_admin_override:
-            return False, "⏰ 17:00 이후에는 추가 등록이 불가능합니다.\n💡 관리자에게 문의하세요."
+            return False, "⏰ 17:00 이후에는 추가 등록이 불가능합니다.\n💡 관리자에게 문의해주세요."
 
         return True, ""
 
@@ -377,7 +374,7 @@ class TeamDataManager:
 
         # 17시 이후 로직
         if current_time.hour >= 17:
-            return False, "⏰ 17:00 이후에는 팀 수정이 불가능합니다.\n💡 관리자에게 문의하세요."
+            return False, "⏰ 17:00 이후에는 팀 수정이 불가능합니다.\n💡 관리자에게 문의해주세요."
 
         return True, ""
 
@@ -456,9 +453,9 @@ class TeamDataManager:
             emoji = ACTION_EMOJI.get(action_type, "📌")
             unix_ts = int(timestamp.timestamp())
 
-            msg = f"{emoji} <t:{unix_ts}:t> **{team_name}** {user.mention}"
+            msg = f"{emoji} <t:{unix_ts}:t> **{team_name}** - {user.mention}"
             if detail:
-                msg += f" | {detail}"
+                msg += f" / {detail}"
 
             await channel.send(msg)
         except Exception as e:
@@ -623,16 +620,6 @@ class TeamDataManager:
                 key = self._normalize_member_key(member)
                 self.user_teams[key] = new_team.name
         self._save_backup()
-
-    def set_scrim_date(self, day: int, month: int) -> None:
-        """스크림 날짜를 설정합니다."""
-        self.scrim_day = day
-        self.scrim_month = month
-
-
-    def set_scrim_channel(self, channel_id: int) -> None:
-        """스크림 명령어가 실행된 채널을 설정합니다."""
-        self.scrim_channel_id = channel_id
 
     # ──────────────────────────────────────────────
     # 중복 검사

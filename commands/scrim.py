@@ -40,7 +40,7 @@ def _is_scrim_expired(team_data_manager) -> bool:
 
         if scrim_date < today:
             return True
-        if scrim_date == today and now.hour >= 22:
+        if scrim_date == today and now.hour >= settings.NEXT_SCRIM_OPEN_HOUR:
             return True
         return False
     except ValueError:
@@ -98,7 +98,7 @@ async def _transition_to_next_scrim(client: ScrimBot, channel: discord.TextChann
         except Exception as e:
             logger.error(f"[스크림] MMR 메시지 생성 실패: {e}", exc_info=True)
 
-    logger.info(f"[스크림] 다음 스크림 전환 완료 — {date_info['month']}/{date_info['day']} ({date_info['weekday_name']})")
+    logger.info(f"[스크림] 다음 스크림 전환 완료 - {date_info['month']}/{date_info['day']} ({date_info['weekday_name']})")
 
 
 async def _daily_reset_loop(client: ScrimBot) -> None:
@@ -145,7 +145,7 @@ async def _refresh_scrim_dashboard(channel: discord.TextChannel) -> None:
     scrim_day = team_data_manager.scrim_day or date_info['day']
     scrim_month = team_data_manager.scrim_month or date_info['month']
 
-    # 스크림 날짜가 공휴일·일요일인지 확인 (자율 스크림 표시)
+    # 스크림 날짜가 공휴일/일요일인지 확인 (자율 스크림 표시)
     try:
         scrim_is_rest_day = (await get_rest_day_info(date(date_info['year'], scrim_month, scrim_day)))["is_rest_day"]
     except ValueError:
@@ -195,7 +195,7 @@ async def setup_scrim_dashboard(client: ScrimBot) -> None:
         # 첫 실행이면 오늘/내일 스크림으로 설정
         await _transition_to_next_scrim(client, channel)
     else:
-        # 활성 스크림 — 대시보드 갱신
+        # 활성 스크림: 대시보드 갱신
         await _refresh_scrim_dashboard(channel)
 
         # 조편성 전이고 팀이 있으면 MMR 메시지 재생성

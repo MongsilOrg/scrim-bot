@@ -27,7 +27,7 @@ class WarningManager:
     주의 2회 → 경고 1회 자동 환산 및 제한 날짜 계산을 수행합니다.
     """
     
-    # 구글 시트 컬럼 인덱스 (0-based) - 패널티 시트 (내부용, 활성 경고만)
+    # 패널티 시트 컬럼 인덱스 (0-based). 활성 경고만 남고 만료분은 삭제된다.
     COL_DATE = 0
     COL_TARGET = 1
     COL_TARGET_ID = 2
@@ -119,7 +119,7 @@ class WarningManager:
                 if first_row:
                     self.worksheet.delete_rows(1)
                 self.worksheet.insert_row(expected_headers, 1)
-                logger.info(f"[경고관리] 패널티 시트 헤더 생성")
+                logger.info("[경고관리] 패널티 시트 헤더 생성")
         except Exception as e:
             logger.error(f"[경고관리] 패널티 시트 헤더 확인 실패: {e}")
 
@@ -139,7 +139,7 @@ class WarningManager:
                 if first_row:
                     self.warning_log_worksheet.delete_rows(1)
                 self.warning_log_worksheet.insert_row(expected_headers, 1)
-                logger.info(f"[경고관리] 패널티로그 시트 헤더 생성")
+                logger.info("[경고관리] 패널티로그 시트 헤더 생성")
         except Exception as e:
             logger.error(f"[경고관리] 경고로그 시트 헤더 확인 실패: {e}")
 

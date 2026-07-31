@@ -7,7 +7,6 @@ from typing import Dict, List, Optional
 
 from bot.client import ScrimBot
 from config.logging_config import get_logger
-from config.settings import settings
 from models.team_data_manager import TeamDataManager
 from models.team_processor import TeamProcessor
 from models.schedule_manager import ScheduleManager
@@ -76,7 +75,6 @@ class BotManager:
             except Exception as exc:  # pragma: no cover - 최후 안전장치
                 logger.warning(f"[봇관리] 팀 데이터 매니저 리셋 중 예외 무시: {exc}")
         
-        # ✅ TeamProcessor의 이미지 캐시 클리어
         if self._team_processor:
             try:
                 self._team_processor.group_image_cache.clear()

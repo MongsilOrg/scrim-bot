@@ -183,28 +183,10 @@ class BSERAPIClient:
 
         return None
     
-    def clear_cache(self) -> None:
-        """전체 캐시 클리어"""
-        self._nickname_cache.clear()
-        self._mmr_cache.clear()
-
-    def clear_nickname_cache(self) -> None:
-        """닉네임 캐시만 클리어"""
-        self._nickname_cache.clear()
-
     def clear_mmr_cache(self) -> None:
         """MMR 캐시만 클리어"""
         self._mmr_cache.clear()
 
-    def get_cache_stats(self) -> Dict[str, Any]:
-        """캐시 통계 반환"""
-        return {
-            "nickname_cache_size": len(self._nickname_cache),
-            "nickname_cache_ttl": self.NICKNAME_CACHE_TTL,
-            "mmr_cache_size": len(self._mmr_cache),
-            "mmr_cache_ttl": self.MMR_CACHE_TTL
-        }
-    
     async def check_server_maintenance(self) -> bool:
         """BSER 서버 점검 여부를 확인합니다.
 
@@ -220,6 +202,7 @@ class BSERAPIClient:
             return data.get("code") != 200
         except Exception:
             return True
+
 
     async def get_user_uid(self, user_nickname: str) -> Optional[str]:
         """사용자 닉네임으로 사용자 UID를 조회합니다."""
@@ -267,8 +250,6 @@ class BSERAPIClient:
         if data.get("code") == 200:
             user_rank = data.get("userRank")
             if user_rank:
-                mmr_value = user_rank.get("mmr", 0)
-                # MMR 0은 정상적인 경우일 수 있으므로 로그 제거
                 return {"userRank": user_rank}
             logger.warning(f"[API] userRank 데이터 없음 - UID: {uid}")
             return {"userRank": {"mmr": 0}}
@@ -278,30 +259,6 @@ class BSERAPIClient:
         else:
             logger.warning(f"[API] 사용자 MMR 조회 API 응답 코드 오류 - UID: {uid}, 코드: {data.get('code')}, 메시지: {data.get('message')}")
         return None
-    
-    async def get_user_stats(self, uid: str) -> Optional[Dict[str, Any]]:
-        """사용자 통계 조회"""
-        if not self.session:
-            return None
-        
-        try:
-            url = f"{self.base_url}/user/stats/{uid}/rank"
-
-            async with self.session.get(url, headers=self._headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    if data.get("code") == 200:
-                        return data.get("userStats", [])
-                    else:
-                        logger.warning(f"[API] 사용자 통계를 찾을 수 없음 - UID: {uid}")
-                        return None
-                else:
-                    logger.warning(f"[API] API 요청 실패 - 상태: {response.status}")
-                    return None
-                    
-        except Exception as e:
-            logger.error(f"[API] 사용자 통계 조회 실패: {e}", exc_info=True)
-            return None
     
     async def get_user_mmr(self, uid: str) -> Optional[float]:
         """사용자 MMR 조회 (60초 캐시 적용)
