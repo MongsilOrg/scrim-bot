@@ -118,15 +118,17 @@ async def get_rest_day_info(target_date: Optional[Union[date, datetime]] = None)
     elif isinstance(target_date, datetime):
         target_date = target_date.date()
 
+    is_saturday = target_date.weekday() == 5
     is_sunday = target_date.weekday() == 6
     holiday_names = await get_holiday_names(target_date)
     is_holiday = bool(holiday_names)
 
-    labels = (["일요일"] if is_sunday else []) + holiday_names
+    labels = (["토요일"] if is_saturday else []) + (["일요일"] if is_sunday else []) + holiday_names
 
     return {
         "date": target_date,
-        "is_rest_day": is_sunday or is_holiday,
+        "is_rest_day": is_saturday or is_sunday or is_holiday,
+        "is_saturday": is_saturday,
         "is_sunday": is_sunday,
         "is_holiday": is_holiday,
         "holiday_names": holiday_names,
