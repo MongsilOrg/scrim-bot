@@ -3,7 +3,7 @@
 """
 import discord
 
-from commands.ui.layout_helpers import error_view, permission_error_view, send_response
+from utils.layout_helpers import error_view, permission_error_view, send_response
 from config.logging_config import get_logger
 from commands.ui.warning_modals import WarningReasonModal
 from utils.helpers import is_admin
@@ -19,7 +19,6 @@ async def 제재부여(interaction: discord.Interaction, user: discord.Member) -
 
         logger.debug(f"[명령어] 제재 부여 시작 - 관리자: {admin_name}, 대상: {target_name} (ID: {user.id})")
 
-        # 관리자 권한 확인
         if not is_admin(interaction.user):
             logger.warning(f"[명령어] 제재 부여 권한 없음 - 사용자: {admin_name} (ID: {interaction.user.id})")
             await send_response(interaction, permission_error_view())

@@ -5,45 +5,44 @@
 주의 2회 → 경고 1회 자동 환산 및 제한 날짜 계산을 수행합니다.
 """
 import asyncio
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+import json
+from datetime import date, datetime, timedelta
+from typing import Dict, Iterator, List, Optional, Tuple
 
 import gspread
-import pytz
+from gspread.utils import rowcol_to_a1
 
 from config.logging_config import get_logger
 from config.settings import settings
 from utils.gsheet_client import create_gspread_client
-from utils.helpers import get_current_kst_time
+from utils.helpers import KST, get_current_kst_time, save_json_atomic
+from utils.validators import normalize_nickname_for_comparison
 
 logger = get_logger('warning_manager')
 
 
 class WarningManager:
-    """
-    경고 관리 클래스
-    
-    구글 시트 API를 통해 경고/주의를 관리합니다.
-    주의 2회 → 경고 1회 자동 환산 및 제한 날짜 계산을 수행합니다.
-    """
-    
-    # 패널티 시트 컬럼 인덱스 (0-based). 활성 경고만 남고 만료분은 삭제된다.
-    COL_DATE = 0
-    COL_TARGET = 1
-    COL_TARGET_ID = 2
-    COL_TYPE = 3  # 주의/경고
-    COL_REASON = 4
-    COL_WARNING_DATE = 5
-    COL_RESTRICTED_UNTIL = 6
-    COL_ADMIN_ID = 7
-    COL_NOTE = 8
+    """경고 관리 클래스"""
 
-    # 경고로그 시트 컬럼 인덱스 (0-based) - 외부용, 영구 보관
-    LOG_COL_TARGET = 0
-    LOG_COL_DATE = 1
-    LOG_COL_RESTRICTED_UNTIL = 2
-    LOG_COL_REASON = 3
-    LOG_COL_TYPE = 4
+
+    # 패널티 시트 (내부용). 활성 경고만 남고 만료분은 삭제된다
+    PENALTY_HEADERS = ['날짜', '대상', '대상ID', '유형', '사유', '경고일', '제한해제일', '관리자ID', '비고']
+    COL_RESTRICTED_UNTIL = PENALTY_HEADERS.index('제한해제일')  # batch_update A1 주소 계산용
+
+    # 경고로그 시트 (외부용, 영구 보관)
+    LOG_HEADERS = ['대상', '날짜', '제한해제일', '사유', '유형', '대상ID']
+
+    # 경고 누적 회차별 제한 일수. 표에 없는 회차는 RESTRICTION_DAYS_MAX 적용
+    RESTRICTION_DAYS = {1: 3, 2: 7}
+    RESTRICTION_DAYS_MAX = 14
+
+    # 주의 → 경고 자동 전환 임계. 안내 문구도 이 값으로 포맷한다
+    CAUTION_TO_WARNING_COUNT = 2
+
+    # 만료 정리 컷오프 시각 (제한해제일 당일 이 시각 이후 행 삭제)
+    CLEANUP_HOUR = 18
+
+    MASTERS_STATE_FILE = settings.MASTERS_STATE_PATH
 
     def __init__(self):
         self.client: Optional[gspread.Client] = None
@@ -54,11 +53,10 @@ class WarningManager:
         # 경고 데이터 캐시
         self._warnings_cache: Optional[List[Dict]] = None
         self._cache_timestamp: Optional[datetime] = None
-        self._cache_ttl: int = 300  # 5분 캐시 TTL (초)
+        self._cache_ttl: int = 300  # 초
         self._initialize_client()
     
     def _initialize_client(self) -> None:
-        """구글 시트 클라이언트 초기화"""
         self.client, self.spreadsheet = create_gspread_client(caller='경고관리')
 
         if not self.spreadsheet:
@@ -72,7 +70,6 @@ class WarningManager:
                 )
                 logger.debug(f"[경고관리] 패널티 시트 연결 성공 - 이름: {settings.GOOGLE_SHEETS_WARNING_WORKSHEET_NAME}")
             except gspread.WorksheetNotFound:
-                # 시트가 없으면 생성
                 self.worksheet = self.spreadsheet.add_worksheet(
                     title=settings.GOOGLE_SHEETS_WARNING_WORKSHEET_NAME,
                     rows=100,
@@ -87,7 +84,6 @@ class WarningManager:
                 )
                 logger.debug(f"[경고관리] 패널티로그 시트 연결 성공 - 이름: {settings.GOOGLE_SHEETS_WARNING_LOG_WORKSHEET_NAME}")
             except gspread.WorksheetNotFound:
-                # 시트가 없으면 생성
                 self.warning_log_worksheet = self.spreadsheet.add_worksheet(
                     title=settings.GOOGLE_SHEETS_WARNING_LOG_WORKSHEET_NAME,
                     rows=100,
@@ -95,7 +91,6 @@ class WarningManager:
                 )
                 logger.info(f"[경고관리] 패널티로그 시트 생성됨 - 이름: {settings.GOOGLE_SHEETS_WARNING_LOG_WORKSHEET_NAME}")
 
-            # 헤더 확인 및 생성
             self._ensure_headers()
             self._ensure_warning_log_headers()
 
@@ -109,17 +104,15 @@ class WarningManager:
                 logger.warning("[경고관리] 패널티 워크시트가 None입니다")
                 return
 
-            # 첫 번째 행 확인
             first_row = self.worksheet.row_values(1)
-            expected_headers = ['날짜', '대상', '대상ID', '유형', '사유', '경고일', '제한해제일', '관리자ID', '비고']
+            expected_headers = self.PENALTY_HEADERS
 
-            if not first_row or first_row != expected_headers:
-                # 헤더가 없거나 다르면 첫 번째 행에 헤더 추가
-                # 기존 데이터가 있으면 삭제 후 헤더 추가
-                if first_row:
-                    self.worksheet.delete_rows(1)
+            if not first_row:
                 self.worksheet.insert_row(expected_headers, 1)
                 logger.info("[경고관리] 패널티 시트 헤더 생성")
+            elif first_row != expected_headers:
+                # 데이터 보호를 위해 자동 수정하지 않는다
+                logger.warning(f"[경고관리] 패널티 시트 헤더 불일치 - 현재: {first_row}")
         except Exception as e:
             logger.error(f"[경고관리] 패널티 시트 헤더 확인 실패: {e}")
 
@@ -130,30 +123,128 @@ class WarningManager:
                 logger.warning("[경고관리] 패널티로그 워크시트가 None입니다")
                 return
 
-            # 첫 번째 행 확인
             first_row = self.warning_log_worksheet.row_values(1)
-            expected_headers = ['대상', '날짜', '제한해제일', '사유', '유형']
+            expected_headers = self.LOG_HEADERS
 
-            if not first_row or first_row != expected_headers:
-                # 헤더가 없거나 다르면 첫 번째 행에 헤더 추가
-                if first_row:
-                    self.warning_log_worksheet.delete_rows(1)
+            if not first_row:
                 self.warning_log_worksheet.insert_row(expected_headers, 1)
                 logger.info("[경고관리] 패널티로그 시트 헤더 생성")
+            elif first_row != expected_headers:
+                # 데이터 보호를 위해 자동 수정하지 않는다
+                logger.warning(f"[경고관리] 패널티로그 시트 헤더 불일치 - 현재: {first_row}")
         except Exception as e:
             logger.error(f"[경고관리] 경고로그 시트 헤더 확인 실패: {e}")
 
-    def _add_to_warning_log(self, warning_type: str, target: str, date: str, restricted_until: str, reason: str) -> None:
-        """패널티로그 시트에 항목을 추가합니다. (영구 보관 - 삭제되지 않음)"""
-        try:
-            if not self.warning_log_worksheet:
-                return
+    def _add_to_warning_log(self, warning_type: str, target: str, date: str, restricted_until: str, reason: str, target_id: str = '') -> None:
+        """패널티로그 시트에 항목을 추가합니다. (영구 보관 - 삭제되지 않음)
 
-            row = [target, date, restricted_until, reason, warning_type]
-            self.warning_log_worksheet.append_row(row)
-            logger.debug(f"[경고관리] 외부 로그 기록 - 대상: {target}, 유형: {warning_type}")
+        영구 원장 누락은 이후 누적 회차 축소 산정으로 이어지므로 1회 재시도합니다.
+        """
+        if not self.warning_log_worksheet:
+            return
+
+        row = self._sheet_row(self.LOG_HEADERS, {
+            '대상': target,
+            '날짜': date,
+            '제한해제일': restricted_until,
+            '사유': reason,
+            '유형': warning_type,
+            '대상ID': str(target_id),
+        })
+        for attempt in (1, 2):
+            try:
+                self.warning_log_worksheet.append_row(row)
+                logger.debug(f"[경고관리] 외부 로그 기록 - 대상: {target}, 유형: {warning_type}")
+                return
+            except Exception as e:
+                if attempt == 1:
+                    logger.warning(f"[경고관리] 경고로그 추가 실패 - 재시도 - 대상: {target}: {e}")
+                else:
+                    logger.error(f"[경고관리] 경고로그 추가 최종 실패 - 대상: {target}: {e}")
+
+    @classmethod
+    def restriction_days_for(cls, warning_count: int) -> int:
+        return cls.RESTRICTION_DAYS.get(warning_count, cls.RESTRICTION_DAYS_MAX)
+
+    @staticmethod
+    def _parse_sheet_date(value) -> Optional[date]:
+        """시트의 'YYYY-MM-DD' 값을 date로 파싱합니다. 빈 값과 형식 오류는 None."""
+        try:
+            return datetime.strptime(str(value).strip(), '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _sheet_row(headers: List[str], values: Dict[str, str]) -> List[str]:
+        """헤더명 기준으로 시트 행 리스트를 만듭니다."""
+        return [values.get(header, '') for header in headers]
+
+    def _penalty_row(self, values: Dict[str, str]) -> List[str]:
+        return self._sheet_row(self.PENALTY_HEADERS, values)
+
+    def _iter_penalty_rows(self) -> Iterator[Tuple[int, Dict]]:
+        """패널티 시트 데이터 행을 (1-based 행 번호, 레코드 dict)로 순회합니다.
+
+        전체를 한 번에 읽으므로 순회 결과와 행 번호가 같은 스냅샷을 공유합니다.
+        짧은 행은 빈 값으로 채워 호출부의 인덱스 가드를 없앱니다.
+        """
+        all_values = self.worksheet.get_all_values()
+        for row_num, row in enumerate(all_values[1:], start=2):
+            padded = row + [''] * (len(self.PENALTY_HEADERS) - len(row))
+            yield row_num, dict(zip(self.PENALTY_HEADERS, padded))
+
+    def _delete_rows_desc(self, row_nums: List[int], label: str) -> int:
+        """행 번호가 밀리지 않도록 아래 행부터 삭제합니다. Returns 삭제 성공 수."""
+        deleted = 0
+        for row_num in sorted(row_nums, reverse=True):
+            try:
+                self.worksheet.delete_rows(row_num)
+                deleted += 1
+            except Exception as e:
+                logger.error(f"[경고관리] {label} 행 삭제 실패 - 행: {row_num}: {e}")
+        return deleted
+
+    @staticmethod
+    def _matches_target(record_id: str, record_name: str, target_id: Optional[str], target_name: Optional[str]) -> bool:
+        """행이 대상과 일치하는지 판단합니다.
+
+        양쪽 다 ID가 있으면 ID로만 판단합니다 (동명이인 오판 방지).
+        어느 한쪽이라도 ID가 없으면 정규화 닉네임으로 판단합니다.
+        """
+        record_id = str(record_id).strip() if record_id else ''
+        target_id = str(target_id).strip() if target_id else ''
+
+        if record_id and target_id:
+            return record_id == target_id
+
+        if not target_name:
+            return False
+        return (
+            normalize_nickname_for_comparison(str(record_name))
+            == normalize_nickname_for_comparison(target_name)
+        )
+
+    def _count_previous_warnings(self, target_id: str = None, target_name: str = None) -> Optional[int]:
+        """영구 보관용 패널티로그를 기준으로 기존 경고 횟수를 셉니다."""
+        if not self.warning_log_worksheet:
+            return None
+
+        try:
+            records = self.warning_log_worksheet.get_all_records(expected_headers=self.LOG_HEADERS)
         except Exception as e:
-            logger.error(f"[경고관리] 경고로그 추가 실패 - 대상: {target}: {e}")
+            logger.error(f"[경고관리] 경고 횟수 집계 실패: {e}")
+            return None
+
+        count = 0
+        for record in records:
+            if str(record.get('유형', '')).strip() != '경고':
+                continue
+            if self._matches_target(
+                record.get('대상ID', ''), record.get('대상', ''),
+                target_id, target_name,
+            ):
+                count += 1
+        return count
 
     def _build_caution_detail_reason(self, converted_cautions: List[Dict], for_external: bool = False) -> str:
         """
@@ -161,16 +252,16 @@ class WarningManager:
 
         Args:
             converted_cautions: 변환된 주의 내역 리스트
-            for_external: 외부용(패널티로그)인 경우 True (처리자 정보 제외)
+            for_external: 패널티로그용이면 True, 처리자 정보를 뺀다
 
         Returns:
             포맷팅된 상세 사유 문자열
         """
-        if not converted_cautions or len(converted_cautions) < 2:
+        if not converted_cautions or len(converted_cautions) < self.CAUTION_TO_WARNING_COUNT:
             return "주의 누적"
 
         lines = ["[주의 누적]"]
-        for i, caution in enumerate(converted_cautions[:2], 1):
+        for i, caution in enumerate(converted_cautions[:self.CAUTION_TO_WARNING_COUNT], 1):
             caution_date = caution.get('날짜', 'N/A')
             caution_reason = caution.get('사유', 'N/A')
             if for_external:
@@ -183,83 +274,55 @@ class WarningManager:
 
         return "\n".join(lines)
 
-    def _get_warning_datetime(self, current_time: datetime) -> tuple:
-        """17시 기준으로 경고 날짜를 계산합니다.
-
-        Returns:
-            (warning_date, warning_datetime) 튜플
-            - warning_date: 경고 날짜 (date)
-            - warning_datetime: 제한 해제일 계산용 datetime
-        """
-        if current_time.hour < 17:
-            warning_date = (current_time - timedelta(days=1)).date()
-            warning_datetime = datetime.combine(warning_date, current_time.time())
-        else:
-            warning_date = current_time.date()
-            warning_datetime = current_time
-        return warning_date, warning_datetime
-
-    def _calculate_restricted_until(self, warning_date: datetime) -> datetime:
-        """
-        경고 받은 날짜 기준으로 제한 해제 날짜를 계산합니다.
-        경고 받은 날의 다음날
-        """
-        next_day = warning_date + timedelta(days=1)
-        return next_day
+    @staticmethod
+    def _get_warning_date(current_time: datetime) -> date:
+        """17시 기준으로 경고 날짜를 판정합니다. 17시 이전은 전날 스크림 건으로 본다."""
+        if current_time.hour < settings.TEAM_REGISTRATION_DEADLINE_HOUR:
+            return (current_time - timedelta(days=1)).date()
+        return current_time.date()
     
-    def _get_recent_cautions(self, target_id: str, limit: int = 10) -> List[Dict]:
-        """최근 주의 기록을 가져옵니다."""
+    def _find_cautions(self, target_id: str, target_name: str = None) -> List[Tuple[int, Dict]]:
         if not self.worksheet:
             return []
 
         try:
-            # 캐시 없이 직접 조회 (주의 데이터는 경량)
-            # expected_headers를 명시하여 빈 헤더 셀로 인한 중복 오류 방지
-            expected_headers = ['날짜', '대상', '대상ID', '유형', '사유', '경고일', '제한해제일', '관리자ID', '비고']
-            all_records = self.worksheet.get_all_records(expected_headers=expected_headers)
-            
-            cautions = []
-            
-            for record in reversed(all_records):  # 최신순
-                # 대상ID를 문자열로 변환 (구글 시트에서 숫자는 int로 반환될 수 있음)
-                record_target_id = str(record.get('대상ID', '')).strip()
-                record_type = str(record.get('유형', '')).strip()
-                
-                if record_target_id == str(target_id) and record_type == '주의':
-                    cautions.append(record)
-                    if len(cautions) >= limit:
-                        break
-            
-            return cautions
+            return [
+                (row_num, record)
+                for row_num, record in self._iter_penalty_rows()
+                if str(record['유형']).strip() == '주의'
+                and self._matches_target(
+                    record['대상ID'], record['대상'], target_id, target_name
+                )
+            ]
         except Exception as e:
             logger.error(f"[경고관리] 주의 기록 조회 실패: {e}")
             return []
-    
-    def _find_caution_rows(self, target_id: str) -> List[int]:
-        """주의 기록의 행 번호를 찾습니다 (헤더 제외, 1-based)."""
-        if not self.worksheet:
-            return []
-        
-        try:
-            all_values = self.worksheet.get_all_values()
-            caution_rows = []
-            
-            # 헤더 제외하고 2번째 행부터 확인 (인덱스 1부터)
-            for i in range(1, len(all_values)):
-                row = all_values[i]
-                if len(row) > self.COL_TARGET_ID and len(row) > self.COL_TYPE:
-                    # 문자열로 변환하여 비교 (구글 시트에서 숫자는 문자열로 저장됨)
-                    row_target_id = str(row[self.COL_TARGET_ID]).strip() if row[self.COL_TARGET_ID] else ''
-                    row_type = str(row[self.COL_TYPE]).strip() if row[self.COL_TYPE] else ''
-                    
-                    if row_target_id == str(target_id) and row_type == '주의':
-                        caution_rows.append(i + 1)  # 1-based 행 번호
-            
-            return caution_rows
-        except Exception as e:
-            logger.error(f"[경고관리] 주의 행 찾기 실패: {e}")
-            return []
-    
+
+    def _compute_restriction_terms(
+        self, target: str, target_id: str, *, fallback_on_failure: bool
+    ) -> Optional[Dict]:
+        """경고 회차와 제한 일수, 해제일을 산정합니다.
+
+        누적 집계 실패 시 fallback_on_failure가 True면 최소 회차로 진행하고,
+        False면 None을 반환해 호출부가 중단하게 합니다.
+        마스터즈 진행일 연장은 일일 배치(process_masters_days)가 처리합니다.
+        """
+        warning_date = self._get_warning_date(get_current_kst_time())
+        prev_warnings = self._count_previous_warnings(target_id, target)
+        if prev_warnings is None:
+            if not fallback_on_failure:
+                return None
+            logger.error(f"[경고관리] 누적 집계 실패 - 최소 회차로 진행: {target}")
+            prev_warnings = 0
+        warning_count = prev_warnings + 1
+        duration_days = self.restriction_days_for(warning_count)
+        return {
+            'warning_date': warning_date,
+            'warning_count': warning_count,
+            'duration_days': duration_days,
+            'restricted_until': warning_date + timedelta(days=duration_days),
+        }
+
     def _check_and_convert_cautions(self, target: str, target_id: str) -> Tuple[Optional[Dict], List[Dict]]:
         """
         주의 2회 → 경고 1회 자동 환산
@@ -269,37 +332,27 @@ class WarningManager:
         Returns:
             (자동 경고 정보, 변환된 주의 내역 2개 리스트)
         """
-        cautions = self._get_recent_cautions(target_id)
+        cautions = self._find_cautions(target_id, target)
 
-        # 주의가 2회 이상인 경우
-        if len(cautions) >= 2:
-            current_time = get_current_kst_time()
+        # 주의가 전환 임계 이상인 경우
+        if len(cautions) >= self.CAUTION_TO_WARNING_COUNT:
+            # 주의는 이미 기록된 뒤라 집계 실패 시에도 최소 회차로 전환을 진행한다
+            terms = self._compute_restriction_terms(target, target_id, fallback_on_failure=True)
 
-            warning_date, warning_datetime = self._get_warning_datetime(current_time)
-            restricted_until = self._calculate_restricted_until(warning_datetime).date()
+            # 최근 주의들을 최신부터 역순으로 잡아 표시 순서와 아래 행부터 삭제를 겸한다
+            converted_rows = cautions[-self.CAUTION_TO_WARNING_COUNT:][::-1]
+            converted_cautions = [record for _, record in converted_rows]
 
-            # 변환될 주의 내역 2개 저장 (삭제 전에)
-            converted_cautions = cautions[:2]
-
-            # 주의 2개 행 삭제
-            caution_rows = self._find_caution_rows(target_id)
-            if len(caution_rows) >= 2:
-                # 내림차순 정렬하여 아래 행부터 삭제 (행 번호가 바뀌지 않도록)
-                caution_rows.sort(reverse=True)
-                for row_num in caution_rows[:2]:
-                    try:
-                        self.worksheet.delete_rows(row_num)
-                    except Exception as e:
-                        logger.error(f"[경고관리] 주의 행 삭제 실패 - 행: {row_num}: {e}")
+            self._delete_rows_desc([row_num for row_num, _ in converted_rows], "주의")
 
             return {
-                'date': warning_date.strftime('%Y-%m-%d'),
                 'target': target,
                 'target_id': target_id,
                 'type': '경고',
-                'reason': '자동',
-                'warning_date': warning_date.strftime('%Y-%m-%d'),
-                'restricted_until': restricted_until.strftime('%Y-%m-%d'),
+                'warning_date': terms['warning_date'].strftime('%Y-%m-%d'),
+                'restricted_until': terms['restricted_until'].strftime('%Y-%m-%d'),
+                'warning_count': terms['warning_count'],
+                'duration_days': terms['duration_days'],
                 'admin_id': '시스템',
                 'note': '주의 누적'
             }, converted_cautions
@@ -338,18 +391,15 @@ class WarningManager:
 
             # 주의 추가인 경우
             if warning_type == '주의':
-                # 주의 추가
-                row = [
-                    datetime_str,  # 일시 (시분초 포함)
-                    target,
-                    target_id,
-                    '주의',
-                    reason,
-                    '',  # 경고일 (주의는 없음)
-                    '',  # 제한해제일 (주의는 없음)
-                    admin_display_name,
-                    ''
-                ]
+                # 주의는 경고일과 제한해제일 없이 기록한다
+                row = self._penalty_row({
+                    '날짜': datetime_str,
+                    '대상': target,
+                    '대상ID': target_id,
+                    '유형': '주의',
+                    '사유': reason,
+                    '관리자ID': admin_display_name,
+                })
                 await asyncio.to_thread(self.worksheet.append_row, row)
                 logger.info(f"[경고관리] 주의 부여 - 대상: {target}, 관리자: {admin_display_name}")
 
@@ -361,10 +411,10 @@ class WarningManager:
                     target=target,
                     date=caution_date,
                     restricted_until='',
-                    reason=reason
+                    reason=reason,
+                    target_id=target_id
                 )
 
-                # 캐시 무효화
                 self._invalidate_cache()
 
                 # 주의 2회 → 경고 1회 자동 환산 확인
@@ -376,17 +426,17 @@ class WarningManager:
                     detailed_reason_external = self._build_caution_detail_reason(converted_cautions, for_external=True)
 
                     # 자동 경고 추가 (내부 시트)
-                    auto_row = [
-                        datetime_str,  # 일시 (시분초 포함)
-                        auto_warning['target'],
-                        auto_warning['target_id'],
-                        auto_warning['type'],
-                        detailed_reason_internal,  # 내부용 상세 사유
-                        auto_warning['warning_date'],
-                        auto_warning['restricted_until'],
-                        auto_warning['admin_id'],
-                        auto_warning['note']
-                    ]
+                    auto_row = self._penalty_row({
+                        '날짜': datetime_str,
+                        '대상': auto_warning['target'],
+                        '대상ID': auto_warning['target_id'],
+                        '유형': auto_warning['type'],
+                        '사유': detailed_reason_internal,
+                        '경고일': auto_warning['warning_date'],
+                        '제한해제일': auto_warning['restricted_until'],
+                        '관리자ID': auto_warning['admin_id'],
+                        '비고': auto_warning['note'],
+                    })
                     await asyncio.to_thread(self.worksheet.append_row, auto_row)
                     logger.info(f"[경고관리] 주의 누적 → 경고 전환 - 대상: {target}, 제한해제: {auto_warning['restricted_until']}")
 
@@ -397,51 +447,72 @@ class WarningManager:
                         target=target,
                         date=auto_warning['warning_date'],
                         restricted_until=auto_warning['restricted_until'],
-                        reason=detailed_reason_external  # 외부용 상세 사유 (처리자 제외)
+                        reason=detailed_reason_external,  # 외부용 상세 사유 (처리자 제외)
+                        target_id=target_id
                     )
 
-                    # 캐시 무효화
                     self._invalidate_cache()
 
-                    return True, f"주의가 추가되었습니다. 주의 2회로 인해 경고 1회가 자동 부여되었습니다. (제한 해제일: {auto_warning['restricted_until']})", auto_warning, converted_cautions
+                    return True, (
+                        f"주의가 추가되었습니다. 주의 {self.CAUTION_TO_WARNING_COUNT}회로 인해 경고 1회가 자동 부여되었습니다. "
+                        f"(누적 {auto_warning['warning_count']}회, 제한 {auto_warning['duration_days']}일, "
+                        f"해제일: {auto_warning['restricted_until']})"
+                    ), auto_warning, converted_cautions
 
                 return True, "주의가 추가되었습니다.", None, []
             
             # 경고 추가인 경우
             elif warning_type == '경고':
-                warning_date, warning_datetime = self._get_warning_datetime(current_time)
-                restricted_until = self._calculate_restricted_until(warning_datetime).date()
+                terms = await asyncio.to_thread(
+                    self._compute_restriction_terms, target, target_id,
+                    fallback_on_failure=False,
+                )
+                if terms is None:
+                    # 시트 기록 전 단계라 중단해도 남는 부작용이 없다
+                    return False, "누적 경고 집계에 실패했습니다. 잠시 후 다시 시도해주세요.", None, []
 
-                row = [
-                    datetime_str,  # 일시 (시분초 포함)
-                    target,
-                    target_id,
-                    '경고',
-                    reason,
-                    warning_date.strftime('%Y-%m-%d'),
-                    restricted_until.strftime('%Y-%m-%d'),
-                    admin_display_name,
-                    ''
-                ]
+                warning_count = terms['warning_count']
+                duration_days = terms['duration_days']
+                warning_date_str = terms['warning_date'].strftime('%Y-%m-%d')
+                restricted_str = terms['restricted_until'].strftime('%Y-%m-%d')
+
+                row = self._penalty_row({
+                    '날짜': datetime_str,
+                    '대상': target,
+                    '대상ID': target_id,
+                    '유형': '경고',
+                    '사유': reason,
+                    '경고일': warning_date_str,
+                    '제한해제일': restricted_str,
+                    '관리자ID': admin_display_name,
+                })
                 await asyncio.to_thread(self.worksheet.append_row, row)
-                logger.info(f"[경고관리] 경고 부여 - 대상: {target}, 관리자: {admin_display_name}, 제한해제: {restricted_until.strftime('%Y-%m-%d')}")
+                logger.info(
+                    f"[경고관리] 경고 부여 - 대상: {target}, 관리자: {admin_display_name}, "
+                    f"누적: {warning_count}회, 제한 {duration_days}일, 제한해제: {restricted_str}"
+                )
 
                 # 패널티로그 시트에 추가 (외부용 - 영구 보관, 처리자 정보 제외)
                 await asyncio.to_thread(
                     self._add_to_warning_log,
                     warning_type='경고',
                     target=target,
-                    date=warning_date.strftime('%Y-%m-%d'),
-                    restricted_until=restricted_until.strftime('%Y-%m-%d'),
-                    reason=reason  # 사유만 (처리자 정보 없음)
+                    date=warning_date_str,
+                    restricted_until=restricted_str,
+                    reason=reason,  # 사유만 (처리자 정보 없음)
+                    target_id=target_id
                 )
 
-                # 캐시 무효화
                 self._invalidate_cache()
 
-                return True, f"경고가 추가되었습니다. (제한 해제일: {restricted_until.strftime('%Y-%m-%d')})", {
-                    'warning_date': warning_date.strftime('%Y-%m-%d'),
-                    'restricted_until': restricted_until.strftime('%Y-%m-%d')
+                return True, (
+                    f"경고가 추가되었습니다. (누적 {warning_count}회, 제한 {duration_days}일, "
+                    f"해제일: {restricted_str})"
+                ), {
+                    'warning_date': warning_date_str,
+                    'restricted_until': restricted_str,
+                    'warning_count': warning_count,
+                    'duration_days': duration_days
                 }, []
 
             else:
@@ -454,27 +525,22 @@ class WarningManager:
     def _get_warnings_cache(self) -> List[Dict]:
         """경고 데이터를 캐시에서 가져오거나 새로 로드합니다."""
         current_time = get_current_kst_time()
-        
-        # 캐시가 유효한지 확인
-        if (self._warnings_cache is not None and 
+
+        if (self._warnings_cache is not None and
             self._cache_timestamp is not None and
             (current_time - self._cache_timestamp).total_seconds() < self._cache_ttl):
             return self._warnings_cache
-        
-        # 캐시가 없거나 만료된 경우 새로 로드
+
         try:
             if not self.worksheet:
                 return []
             # expected_headers를 명시하여 빈 헤더 셀로 인한 중복 오류 방지
-            expected_headers = ['날짜', '대상', '대상ID', '유형', '사유', '경고일', '제한해제일', '관리자ID', '비고']
-            all_records = self.worksheet.get_all_records(expected_headers=expected_headers)
-            # 경고만 필터링
+            all_records = self.worksheet.get_all_records(expected_headers=self.PENALTY_HEADERS)
             warnings = [record for record in all_records if str(record.get('유형', '')).strip() == '경고']
-            
-            # 캐시 업데이트
+
             self._warnings_cache = warnings
             self._cache_timestamp = current_time
-            
+
             return warnings
             
         except Exception as e:
@@ -486,15 +552,15 @@ class WarningManager:
             return []
     
     def _invalidate_cache(self) -> None:
-        """캐시를 무효화합니다."""
         self._warnings_cache = None
         self._cache_timestamp = None
     
-    def _find_latest_restriction(
+    def _find_max_restriction(
         self, warnings: List[Dict], target_id: str = None, target_name: str = None
     ) -> Optional[Dict]:
         """
-        경고 목록에서 대상의 최신 제한 기록을 찾습니다.
+        경고 목록에서 대상의 가장 늦은 제한 해제일을 찾습니다.
+        행별로 ID 우선 매칭하고, ID가 없는 행은 정규화 닉네임으로 매칭합니다.
 
         Args:
             warnings: 경고 데이터 리스트
@@ -504,36 +570,24 @@ class WarningManager:
         Returns:
             {'restricted_until': date, 'target': str} 또는 None
         """
-        for record in reversed(warnings):
-            # Discord ID로 확인 (우선)
-            if target_id:
-                record_target_id = str(record.get('대상ID', '')).strip()
-                if record_target_id == str(target_id):
-                    restricted_until_str = str(record.get('제한해제일', '')).strip()
-                    if restricted_until_str:
-                        try:
-                            restricted_until = datetime.strptime(restricted_until_str, '%Y-%m-%d').date()
-                            return {
-                                'restricted_until': restricted_until,
-                                'target': str(record.get('대상', '')).strip()
-                            }
-                        except ValueError:
-                            continue
-            # 닉네임으로 확인 (ID가 없을 때)
-            elif target_name:
-                record_target = str(record.get('대상', '')).strip()
-                if record_target.lower() == target_name.lower():
-                    restricted_until_str = str(record.get('제한해제일', '')).strip()
-                    if restricted_until_str:
-                        try:
-                            restricted_until = datetime.strptime(restricted_until_str, '%Y-%m-%d').date()
-                            return {
-                                'restricted_until': restricted_until,
-                                'target': record_target
-                            }
-                        except ValueError:
-                            continue
-        return None
+        latest: Optional[Dict] = None
+        for record in warnings:
+            if not self._matches_target(
+                record.get('대상ID', ''), record.get('대상', ''),
+                target_id, target_name,
+            ):
+                continue
+
+            restricted_until = self._parse_sheet_date(record.get('제한해제일', ''))
+            if restricted_until is None:
+                continue
+
+            if latest is None or restricted_until > latest['restricted_until']:
+                latest = {
+                    'restricted_until': restricted_until,
+                    'target': str(record.get('대상', '')).strip()
+                }
+        return latest
 
     def is_restricted(self, target_id: str = None, target_name: str = None, check_date: Optional[datetime] = None) -> Tuple[bool, Optional[str]]:
         """
@@ -559,7 +613,7 @@ class WarningManager:
 
             # 캐시에서 경고 데이터 가져오기
             warnings = self._get_warnings_cache()
-            latest_warning = self._find_latest_restriction(warnings, target_id, target_name)
+            latest_warning = self._find_max_restriction(warnings, target_id, target_name)
 
             if latest_warning:
                 restricted_until = latest_warning['restricted_until']
@@ -569,26 +623,105 @@ class WarningManager:
             return False, None
 
         except Exception as e:
+            # _get_warnings_cache가 예외를 흡수하므로 사실상 도달하지 않는 방어선
             logger.error(f"[경고관리] 제한 상태 확인 실패: {e}")
-            # 오류 발생 시 캐시된 데이터로 재시도
-            if self._warnings_cache is not None:
-                logger.warning("[경고관리] API 오류 - 캐시 데이터로 재시도")
-                try:
-                    latest_warning = self._find_latest_restriction(
-                        self._warnings_cache, target_id, target_name
-                    )
-                    if latest_warning:
-                        restricted_until = latest_warning['restricted_until']
-                        if check_date.date() <= restricted_until:
-                            return True, restricted_until.strftime('%Y-%m-%d')
-                except Exception as e2:
-                    logger.error(f"[경고관리] 캐시 데이터로 재시도 실패: {e2}")
             return False, None
     
+    def _load_masters_state(self) -> Optional[date]:
+        try:
+            with open(self.MASTERS_STATE_FILE, 'r', encoding='utf-8') as f:
+                raw = json.load(f).get('last_processed', '')
+        except FileNotFoundError:
+            return None
+        except Exception as e:
+            logger.error(f"[경고관리] 마스터즈 상태 파일 읽기 실패: {e}")
+            return None
+        return self._parse_sheet_date(raw)
+
+    def _save_masters_state(self, last_processed: date) -> None:
+        try:
+            save_json_atomic(
+                self.MASTERS_STATE_FILE,
+                {'last_processed': last_processed.strftime('%Y-%m-%d')},
+            )
+        except Exception as e:
+            logger.error(f"[경고관리] 마스터즈 상태 파일 저장 실패: {e}")
+
+    def _extend_active_restrictions(self, masters_day: date) -> int:
+        """마스터즈 진행일 하루만큼 활성 제재의 제한해제일을 늘립니다.
+
+        제재 기간(경고일 다음날~해제일)에 마스터즈 날이 포함된 행만 대상입니다.
+        부분 적용으로 인한 이중 연장을 줄이기 위해 단일 batch_update로 보냅니다.
+        """
+        if not self.worksheet:
+            return 0
+
+        updates = []
+        for row_num, record in self._iter_penalty_rows():
+            restricted_until = self._parse_sheet_date(record['제한해제일'])
+            if restricted_until is None or restricted_until < masters_day:
+                continue
+
+            # 마스터즈 날 이후 부여된 제재는 그 날의 영향을 받지 않는다
+            warning_date = self._parse_sheet_date(record['경고일'])
+            if warning_date is not None and warning_date >= masters_day:
+                continue
+
+            new_value = (restricted_until + timedelta(days=1)).strftime('%Y-%m-%d')
+            cell = rowcol_to_a1(row_num, self.COL_RESTRICTED_UNTIL + 1)
+            updates.append({'range': cell, 'values': [[new_value]]})
+
+        if updates:
+            self.worksheet.batch_update(updates)
+        return len(updates)
+
+    async def process_masters_days(self) -> bool:
+        """마지막 처리일 이후의 마스터즈 진행일만큼 활성 제재를 연장합니다.
+
+        Returns:
+            오늘까지 처리를 마쳤는지 여부. False면 다음 주기에 같은 구간을 재시도합니다.
+        """
+        if not self.worksheet:
+            return False
+
+        today = get_current_kst_time().date()
+        last_processed = self._load_masters_state()
+        if last_processed is None:
+            # 첫 실행은 오늘 하루만 처리 대상으로 잡는다
+            last_processed = today - timedelta(days=1)
+        if last_processed >= today:
+            return True
+
+        from services.notion_api import get_masters_dates
+
+        try:
+            masters_days = await asyncio.to_thread(
+                get_masters_dates, last_processed + timedelta(days=1), today
+            )
+        except Exception as e:
+            logger.error(f"[경고관리] 마스터즈 일정 조회 실패: {e}")
+            return False
+
+        # 날짜별로 처리하고 즉시 상태를 저장해, 중간 실패 시 그 날부터만 재시도한다
+        day = last_processed + timedelta(days=1)
+        while day <= today:
+            if day in masters_days:
+                try:
+                    extended = await asyncio.to_thread(self._extend_active_restrictions, day)
+                except Exception as e:
+                    logger.error(f"[경고관리] 마스터즈 진행일({day}) 연장 실패: {e}")
+                    return False
+                if extended:
+                    self._invalidate_cache()
+                    logger.info(f"[경고관리] 마스터즈 진행일({day}) 제한 연장 - {extended}건 +1일")
+            self._save_masters_state(day)
+            day += timedelta(days=1)
+        return True
+
     def cleanup_expired_restrictions(self) -> int:
         """
         제한 해제일이 지난 항목을 삭제합니다.
-        종료일 18시 이후부터 삭제합니다.
+        해제일 당일 CLEANUP_HOUR 이후부터 삭제합니다.
         패널티 시트(내부용)만 정리합니다. 경고로그(외부용)는 영구 보관되어 삭제하지 않습니다.
 
         Returns:
@@ -599,13 +732,11 @@ class WarningManager:
 
         try:
             current_time = get_current_kst_time()
-            kst = pytz.timezone('Asia/Seoul')
 
             # 패널티 시트만 정리 (외부용 경고로그는 영구 보관)
-            deleted_count = self._cleanup_penalty_sheet(current_time, kst)
+            deleted_count = self._cleanup_penalty_sheet(current_time)
 
             if deleted_count > 0:
-                # 캐시 무효화
                 self._invalidate_cache()
                 logger.info(f"[경고관리] 패널티 시트 정리 완료 - {deleted_count}건 삭제")
 
@@ -615,61 +746,43 @@ class WarningManager:
             logger.error(f"[경고관리] 만료된 제한 항목 정리 실패: {e}")
             return 0
 
-    def _cleanup_penalty_sheet(self, current_time: datetime, kst) -> int:
+    def _cleanup_penalty_sheet(self, current_time: datetime) -> int:
         """패널티 시트에서 만료된 항목을 삭제합니다."""
         try:
-            all_values = self.worksheet.get_all_values()
-
-            if len(all_values) <= 1:  # 헤더만 있거나 비어있음
-                return 0
-
-            # 삭제할 행 번호 수집 (헤더 제외, 1-based)
             rows_to_delete = []
+            for row_num, record in self._iter_penalty_rows():
+                restricted_until_date = self._parse_sheet_date(record['제한해제일'])
+                if restricted_until_date is None:
+                    continue
+                cutoff = KST.localize(
+                    datetime.combine(restricted_until_date, datetime.min.time().replace(hour=self.CLEANUP_HOUR))
+                )
+                if current_time > cutoff:
+                    rows_to_delete.append(row_num)
 
-            # 헤더 제외하고 2번째 행부터 확인 (인덱스 1부터)
-            for i in range(1, len(all_values)):
-                row = all_values[i]
-                if len(row) > self.COL_RESTRICTED_UNTIL:
-                    # 문자열로 변환하여 안전하게 처리
-                    restricted_until_str = str(row[self.COL_RESTRICTED_UNTIL]).strip() if row[self.COL_RESTRICTED_UNTIL] else ''
-                    if restricted_until_str:
-                        try:
-                            restricted_until_date = datetime.strptime(restricted_until_str, '%Y-%m-%d').date()
-                            # 종료일 18시를 datetime으로 변환 (KST timezone 적용)
-                            restricted_until_datetime = kst.localize(
-                                datetime.combine(restricted_until_date, datetime.min.time().replace(hour=18))
-                            )
-                            # 현재 시간이 종료일 18시 이후인지 확인
-                            if current_time > restricted_until_datetime:
-                                rows_to_delete.append(i + 1)  # 1-based 행 번호
-                        except ValueError:
-                            continue
-
-            # 내림차순 정렬하여 아래 행부터 삭제 (행 번호가 바뀌지 않도록)
-            rows_to_delete.sort(reverse=True)
-
-            deleted_count = 0
-            for row_num in rows_to_delete:
-                try:
-                    self.worksheet.delete_rows(row_num)
-                    deleted_count += 1
-                except Exception as e:
-                    logger.error(f"[경고관리] 패널티 시트 행 삭제 실패 - 행: {row_num}: {e}")
-
-            return deleted_count
+            return self._delete_rows_desc(rows_to_delete, "패널티 시트")
 
         except Exception as e:
             logger.error(f"[경고관리] 패널티 시트 정리 실패: {e}")
             return 0
 
     async def cleanup_loop(self) -> None:
-        """주기적으로 만료된 제한 항목을 정리합니다."""
+        """주기적으로 마스터즈 진행일 연장과 만료 항목 정리를 수행합니다."""
         try:
-            # 봇 시작 시 즉시 정리 작업 실행
-            await asyncio.to_thread(self.cleanup_expired_restrictions)
+            # 봇 시작 시 즉시 1회 수행 후 주기적으로 반복
             while True:
-                await asyncio.sleep(3600)  # 1시간마다 체크
-                await asyncio.to_thread(self.cleanup_expired_restrictions)
+                try:
+                    caught_up = await self.process_masters_days()
+                except Exception as e:
+                    logger.error(f"[경고관리] 마스터즈 처리 실패: {e}")
+                    caught_up = False
+
+                # 오늘까지 연장이 끝나기 전에 만료 행을 지우면 연장 대상이 사라진다
+                if caught_up:
+                    await asyncio.to_thread(self.cleanup_expired_restrictions)
+                else:
+                    logger.warning("[경고관리] 마스터즈 처리 미완 - 만료 정리 보류")
+                await asyncio.sleep(3600)
         except asyncio.CancelledError:
             pass
         except Exception as e:
