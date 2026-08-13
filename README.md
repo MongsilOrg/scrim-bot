@@ -27,8 +27,6 @@ python main.py
 
 ## 설정
 
-`SCRIM_CHANNEL_ID`, `LOG_CHANNEL_ID`, `TEAM_BACKUP_PATH`, `NOTION_TOKEN`, `NOTION_DATABASE_ID`는 `.env.example`에 없으므로 필요하면 직접 추가한다.
-
 | 키 | 구분 | 설명 |
 |---|---|---|
 | DISCORD_TOKEN | 필수 | Discord 봇 토큰 |
@@ -42,13 +40,15 @@ python main.py
 | GOOGLE_SHEETS_CREDENTIALS_PATH | 선택 | 서비스 계정 인증 파일 경로. 기본값 `credentials/google_sheets_credentials.json` |
 | SCRIM_CHANNEL_ID | 선택 | 스크림 대시보드 채널 ID |
 | LOG_CHANNEL_ID | 선택 | 운영 로그 채널 ID |
+| SCHEDULE_CHANNEL_ID | 선택 | 주간 편성 일정 대시보드 채널 ID |
+| TEST_ACCOUNT_CONTACT_ID | 선택 | 테스트 계정 문의 안내에 표시할 사용자 ID |
 | GROUP_CATEGORY_PATTERN | 선택 | 조별 음성채널 카테고리 이름 패턴. `{letter}`가 조 문자로 대체된다 |
 | ANNOUNCEMENT_MESSAGE | 선택 | 대시보드에 표시할 공지 문구 |
 | EMBED_FOOTER_TEXT | 선택 | 메시지 푸터 텍스트 |
-| THUMBNAIL_URL | 선택 | 썸네일 이미지 URL |
 | LOG_LEVEL | 선택 | 로그 레벨. 기본값 INFO |
 | LOG_FILE | 선택 | 로그 파일 경로. 기본값 scrimbot.log |
 | TEAM_BACKUP_PATH | 선택 | 팀 데이터 백업 파일 경로. 기본값 `data/teams_backup.json` |
+| MASTERS_STATE_PATH | 선택 | 마스터즈 진행일 처리 상태 파일 경로. 기본값 `data/masters_state.json` |
 | SENTRY_DSN | 선택 | Sentry 에러 추적 DSN |
 | NOTION_TOKEN | 선택 | 서버 상태 조회용 Notion 토큰 |
 | NOTION_DATABASE_ID | 선택 | 일정 조회용 Notion 데이터베이스 ID |
