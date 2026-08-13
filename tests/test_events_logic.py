@@ -1,40 +1,26 @@
 import unittest
-from types import SimpleNamespace
 from unittest import mock
 
 import pandas as pd
 
-from bot import events
+from services import score_aggregation
+from utils.validators import normalize_team_name
 
 
 class EventsLogicTest(unittest.TestCase):
     def test_is_csv_filename(self):
-        self.assertTrue(events._is_csv_filename("result.csv"))
-        self.assertTrue(events._is_csv_filename("RESULT.CSV"))
-        self.assertFalse(events._is_csv_filename("result.txt"))
-
-    def test_should_process_message(self):
-        bot_author = SimpleNamespace(bot=True)
-        user_author = SimpleNamespace(bot=False)
-        csv_attachment = SimpleNamespace(filename="a.csv")
-        txt_attachment = SimpleNamespace(filename="a.txt")
-
-        msg_bot = SimpleNamespace(author=bot_author, attachments=[csv_attachment])
-        msg_no_csv = SimpleNamespace(author=user_author, attachments=[txt_attachment])
-        msg_ok = SimpleNamespace(author=user_author, attachments=[csv_attachment])
-
-        self.assertFalse(events._should_process_message(msg_bot))
-        self.assertFalse(events._should_process_message(msg_no_csv))
-        self.assertTrue(events._should_process_message(msg_ok))
+        self.assertTrue(score_aggregation.is_csv_filename("result.csv"))
+        self.assertTrue(score_aggregation.is_csv_filename("RESULT.CSV"))
+        self.assertFalse(score_aggregation.is_csv_filename("result.txt"))
 
     def test_extract_game_id(self):
         df_valid = pd.DataFrame({"gameId": ["12345"]})
         df_invalid = pd.DataFrame({"gameId": ["abc"]})
         df_empty = pd.DataFrame({"gameId": []})
 
-        self.assertEqual(events._extract_game_id(df_valid, "ok.csv"), 12345)
-        self.assertIsNone(events._extract_game_id(df_invalid, "invalid.csv"))
-        self.assertIsNone(events._extract_game_id(df_empty, "empty.csv"))
+        self.assertEqual(score_aggregation._extract_game_id(df_valid, "ok.csv"), 12345)
+        self.assertIsNone(score_aggregation._extract_game_id(df_invalid, "invalid.csv"))
+        self.assertIsNone(score_aggregation._extract_game_id(df_empty, "empty.csv"))
 
     def test_aggregate_team_scores(self):
         round1 = pd.DataFrame(
@@ -53,9 +39,8 @@ class EventsLogicTest(unittest.TestCase):
         )
 
         csv_rows = [(1001, round1, "r1.csv"), (1002, round2, "r2.csv")]
-        team_data, last_df = events._aggregate_team_scores(csv_rows)
+        team_data = score_aggregation.aggregate_team_scores(csv_rows)
 
-        self.assertIsNotNone(last_df)
         self.assertEqual(len(team_data), 2)
 
         # A: 12 + 8 = 20, kill 5 + 2 = 7
@@ -78,6 +63,7 @@ class EventsLogicTest(unittest.TestCase):
         self.assertEqual(ranks, [1, 2])
 
     def test_extract_ban_list(self):
+        """3회 이상 픽만 밴 대상이며 빈/NaN 값은 집계에서 제외합니다."""
         df = pd.DataFrame(
             {
                 "character": [
@@ -87,85 +73,29 @@ class EventsLogicTest(unittest.TestCase):
                     "Jackie",
                     "Jackie",
                     "Nadine",
+                    "",
+                    None,
                 ]
             }
         )
 
-        ban_list = events._extract_ban_list(df)
+        ban_list = score_aggregation._extract_ban_list(df)
         self.assertEqual(ban_list, ["Aya"])
-        self.assertEqual(events._extract_ban_list(None), [])
-
-    def test_extract_ban_list_strips_whitespace(self):
-        """앞뒤 공백이 섞여도 같은 캐릭터로 집계하고 첫 등장 원형으로 표시합니다."""
-        df = pd.DataFrame(
-            {"character": [" Sua", "Sua ", " Sua ", "Johann", "Hart"]}
-        )
-        self.assertEqual(events._extract_ban_list(df), ["Sua"])
-
-    def test_extract_ban_list_case_insensitive(self):
-        """대소문자가 달라도 같은 캐릭터로 집계합니다."""
-        df = pd.DataFrame(
-            {"character": ["Aya", "aya", "AYA", "Jackie"]}
-        )
-        self.assertEqual(events._extract_ban_list(df), ["Aya"])
-
-    def test_extract_ban_list_excludes_blank(self):
-        """빈/NaN 캐릭터 값은 밴 집계에서 제외합니다."""
-        df = pd.DataFrame(
-            {"character": ["", "", "", None, "Nadine"]}
-        )
-        self.assertEqual(events._extract_ban_list(df), [])
+        self.assertEqual(score_aggregation._extract_ban_list(None), [])
 
     def test_extract_ban_list_missing_column(self):
-        """character 컬럼이 없으면 빈 리스트를 반환합니다."""
         df = pd.DataFrame({"teamName": ["A", "B"]})
-        self.assertEqual(events._extract_ban_list(df), [])
+        self.assertEqual(score_aggregation._extract_ban_list(df), [])
 
-    def test_build_gameid_view(self):
-        rows = [
-            (111, pd.DataFrame({"gameId": [111]}), "r1.csv"),
-            (222, pd.DataFrame({"gameId": [222]}), "r2.csv"),
-        ]
-        view = events._build_gameid_view(rows, "A조", "02월 16일")
-        # LayoutView의 Container 내 TextDisplay에서 내용 확인
-        container = view.children[0]
-        texts = [c.content for c in container.children if hasattr(c, 'content')]
-        combined = "\n".join(texts)
-        self.assertIn("GameId 정보", combined)
-        self.assertIn("**1R**: `111`", combined)
-        self.assertIn("**2R**: `222`", combined)
+    def test_normalize_team_name(self):
+        """팀명 정규화: 대소문자 무시, 앞뒤 공백 제거, 중간 공백 축약."""
+        self.assertEqual(normalize_team_name(" DM "), normalize_team_name("dm"))
+        self.assertEqual(normalize_team_name("Team  Alpha"), normalize_team_name("team alpha"))
+        self.assertNotEqual(normalize_team_name("DM"), normalize_team_name("VGX"))
+        self.assertEqual(normalize_team_name(""), "")
 
-
-    def test_aggregate_team_scores_case_insensitive(self):
-        """대소문자가 다른 팀명을 같은 팀으로 집계합니다."""
-        round1 = pd.DataFrame(
-            {
-                "teamName": ["DM", "DM", "VGX"],
-                "tournament total score": [10, 12, 9],
-                "tournament kill score": [4, 5, 3],
-            }
-        )
-        round2 = pd.DataFrame(
-            {
-                "teamName": ["dm", "dm", "vgx"],
-                "tournament total score": [8, 7, 11],
-                "tournament kill score": [2, 1, 4],
-            }
-        )
-
-        csv_rows = [(1001, round1, "r1.csv"), (1002, round2, "r2.csv")]
-        team_data, _ = events._aggregate_team_scores(csv_rows)
-
-        self.assertEqual(len(team_data), 2)
-        score_map = {item["teamName"]: item for item in team_data}
-        # 최초 등장한 원본 팀명("DM", "VGX")이 표시명으로 유지
-        self.assertIn("DM", score_map)
-        self.assertIn("VGX", score_map)
-        self.assertEqual(score_map["DM"]["tournament total score"], 20.0)
-        self.assertEqual(score_map["VGX"]["tournament total score"], 20.0)
-
-    def test_aggregate_team_scores_trailing_space(self):
-        """trailing space가 있는 팀명을 같은 팀으로 집계합니다."""
+    def test_aggregate_team_scores_normalizes_team_names(self):
+        """대소문자/공백 표기가 달라도 같은 팀으로 집계하고 최초 등장 원형을 표시합니다."""
         round1 = pd.DataFrame(
             {
                 "teamName": ["DM ", "DM ", "VGX"],
@@ -175,19 +105,22 @@ class EventsLogicTest(unittest.TestCase):
         )
         round2 = pd.DataFrame(
             {
-                "teamName": ["DM", "DM", "VGX "],
+                "teamName": ["dm", "dm", "vgx "],
                 "tournament total score": [8, 7, 11],
                 "tournament kill score": [2, 1, 4],
             }
         )
 
         csv_rows = [(1001, round1, "r1.csv"), (1002, round2, "r2.csv")]
-        team_data, _ = events._aggregate_team_scores(csv_rows)
+        team_data = score_aggregation.aggregate_team_scores(csv_rows)
 
         self.assertEqual(len(team_data), 2)
         score_map = {item["teamName"]: item for item in team_data}
+        # 최초 등장한 원본 팀명이 표시명으로 유지 (teamName은 strip 후 저장)
         self.assertIn("DM", score_map)
+        self.assertIn("VGX", score_map)
         self.assertEqual(score_map["DM"]["tournament total score"], 20.0)
+        self.assertEqual(score_map["VGX"]["tournament total score"], 20.0)
 
     def test_aggregate_team_scores_default_team_name_resolved(self):
         """기본 팀명(Team 1)이 이전 라운드 닉네임 기반으로 실제 팀명으로 치환됩니다."""
@@ -209,7 +142,7 @@ class EventsLogicTest(unittest.TestCase):
         )
 
         csv_rows = [(1001, round1, "r1.csv"), (1002, round2, "r2.csv")]
-        team_data, _ = events._aggregate_team_scores(csv_rows)
+        team_data = score_aggregation.aggregate_team_scores(csv_rows)
 
         self.assertEqual(len(team_data), 2)
         team_names = {item["teamName"] for item in team_data}
@@ -237,7 +170,7 @@ class EventsLogicTest(unittest.TestCase):
         )
 
         csv_rows = [(1001, round1, "r1.csv"), (1002, round2, "r2.csv")]
-        team_data, _ = events._aggregate_team_scores(csv_rows)
+        team_data = score_aggregation.aggregate_team_scores(csv_rows)
 
         team_names = {item["teamName"] for item in team_data}
         # 1명만 일치하므로 치환되지 않아야 함
@@ -245,12 +178,12 @@ class EventsLogicTest(unittest.TestCase):
         self.assertIn("DM", team_names)
 
     def test_is_default_team_name(self):
-        self.assertTrue(events._is_default_team_name("Team 1"))
-        self.assertTrue(events._is_default_team_name("team 8"))
-        self.assertTrue(events._is_default_team_name("TEAM3"))
-        self.assertTrue(events._is_default_team_name(" Team 5 "))
-        self.assertFalse(events._is_default_team_name("DM"))
-        self.assertFalse(events._is_default_team_name("TeamAlpha"))
+        self.assertTrue(score_aggregation._is_default_team_name("Team 1"))
+        self.assertTrue(score_aggregation._is_default_team_name("team 8"))
+        self.assertTrue(score_aggregation._is_default_team_name("TEAM3"))
+        self.assertTrue(score_aggregation._is_default_team_name(" Team 5 "))
+        self.assertFalse(score_aggregation._is_default_team_name("DM"))
+        self.assertFalse(score_aggregation._is_default_team_name("TeamAlpha"))
 
 
 class ComputeBanListForChannelTest(unittest.IsolatedAsyncioTestCase):
@@ -259,8 +192,8 @@ class ComputeBanListForChannelTest(unittest.IsolatedAsyncioTestCase):
         async def fake_collect(channel, start_utc, limit=200):
             return []
 
-        with mock.patch.object(events, "_collect_today_csv_data", fake_collect):
-            result = await events.compute_ban_list_for_channel(object())
+        with mock.patch.object(score_aggregation, "collect_today_csv_data", fake_collect):
+            result = await score_aggregation.compute_ban_list_for_channel(object())
         self.assertEqual(result, [])
 
     async def test_uses_latest_round_by_game_id(self):
@@ -273,8 +206,8 @@ class ComputeBanListForChannelTest(unittest.IsolatedAsyncioTestCase):
         async def fake_collect(channel, start_utc, limit=200):
             return rows
 
-        with mock.patch.object(events, "_collect_today_csv_data", fake_collect):
-            result = await events.compute_ban_list_for_channel(object())
+        with mock.patch.object(score_aggregation, "collect_today_csv_data", fake_collect):
+            result = await score_aggregation.compute_ban_list_for_channel(object())
         self.assertEqual(result, ["Hart"])
 
 

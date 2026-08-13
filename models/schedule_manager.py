@@ -10,21 +10,19 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set, Tuple
 
-import pytz
-
 from config.logging_config import get_logger
-from utils.helpers import get_current_kst_time
+from config.settings import settings
+from utils.helpers import KST, get_current_kst_time, save_json_atomic
 
 logger = get_logger('schedule_manager')
 
 # 요일 상수
 WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일']
-WEEKDAY_FULL = ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일']
 ACTIVE_DAYS = [0, 1, 2, 3, 4, 5]  # 월~토 (일요일 제외)
 POOL_SIZE = 6  # 요일별 후보 풀 크기
 
 # 일정 관리 대상에서 제외할 사용자 ID
-EXCLUDED_USER_IDS: Set[int] = {602522819594551306}
+EXCLUDED_USER_IDS: Set[int] = {settings.TEST_ACCOUNT_CONTACT_ID}
 
 BACKUP_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -84,7 +82,7 @@ class ScheduleManager:
         self.assignments.clear()
         self.actual_deployments.clear()
 
-        self._save_backup()
+        self.save_backup()
         return self.week_label
 
     # ------------------------------------------------------------------
@@ -114,20 +112,7 @@ class ScheduleManager:
             self.availability[user_id] = available_days
             self.absence_reasons.pop(user_id, None)
 
-        self._save_backup()
-
-    def remove_response(self, user_id: str) -> bool:
-        """관리자의 응답을 삭제합니다."""
-        removed = False
-        if user_id in self.availability:
-            del self.availability[user_id]
-            removed = True
-        if user_id in self.absence_reasons:
-            del self.absence_reasons[user_id]
-            removed = True
-        if removed:
-            self._save_backup()
-        return removed
+        self.save_backup()
 
     # ------------------------------------------------------------------
     # 현황 조회
@@ -166,25 +151,7 @@ class ScheduleManager:
                     lines.append(f'> ❌ {name} - 불참 ({reasons[-1]})')
                 elif avail:
                     day_labels = ', '.join(WEEKDAYS[d] for d in sorted(avail))
-                    # 아래 로직은 레거시 백업 호환용 (현재 UI에서는 부분 불참 미지원)
-                    absence_parts = []
-                    for d in ACTIVE_DAYS:
-                        if d not in avail and d in reasons:
-                            absence_parts.append(f"{WEEKDAYS[d]}({reasons[d]})")
-                    suffix = ''
-                    if absence_parts:
-                        suffix = f' | 불참: {", ".join(absence_parts)}'
-                    lines.append(f'> ✅ {name} - {day_labels}{suffix}')
-                elif reasons:
-                    # 레거시 백업 호환: 부분 불참만 등록된 경우 (현재 UI에서 발생하지 않음)
-                    absence_parts = [
-                        f"{WEEKDAYS[d]}({reasons[d]})"
-                        for d in sorted(reasons) if d >= 0
-                    ]
-                    if absence_parts:
-                        lines.append(f'> ⚠️ {name} - 불참: {", ".join(absence_parts)}')
-                    else:
-                        lines.append(f'> ❌ {name} - 가용일 없음')
+                    lines.append(f'> ✅ {name} - {day_labels}')
                 else:
                     lines.append(f'> ❌ {name} - 가용일 없음')
 
@@ -297,7 +264,7 @@ class ScheduleManager:
                 assignments[day] = []
 
         self.assignments = assignments
-        self._save_backup()
+        self.save_backup()
         logger.info("[일정] 편성 완료")
         return assignments
 
@@ -323,37 +290,12 @@ class ScheduleManager:
             deployed.append(user_id)
             self.admin_names.setdefault(user_id, user_id)
 
-        self._readjust_remaining_all()
-        self._save_backup()
+        self._readjust_remaining()
+        self.save_backup()
         return user_id in self.actual_deployments.get(day_index, [])
 
-    def record_actual_deployment(self, day_index: int, deployed_ids: List[str]) -> List[int]:
-        """실투입 결과를 기록하고 남은 요일의 편성을 재조정합니다.
-
-        Returns:
-            재조정된 요일 인덱스 목록 (빈 리스트면 재조정 없음)
-        """
-        self.actual_deployments[day_index] = deployed_ids
-        # 재조정 전 편성 상태 저장
-        remaining_before = {
-            d: list(members) for d, members in self.assignments.items()
-            if d > day_index and not self.actual_deployments.get(d)
-        }
-        self._readjust_remaining(day_index)
-        # 재조정된 요일 파악
-        readjusted_days = [
-            d for d, old_members in remaining_before.items()
-            if self.assignments.get(d, []) != old_members
-        ]
-        self._save_backup()
-        return sorted(readjusted_days)
-
-    def _readjust_remaining_all(self) -> None:
-        """투입 기록이 없는 모든 요일의 편성을 재조정합니다."""
-        self._readjust_remaining(-1)
-
-    def _readjust_remaining(self, completed_day: int) -> None:
-        """completed_day 이후 투입 미완료 요일의 편성을 재조정합니다.
+    def _readjust_remaining(self) -> None:
+        """투입 기록이 없는 요일의 편성을 재조정합니다.
 
         정렬 기준 (오름차순):
           1. 투입 횟수: 실제 투입이 많을수록 후순위
@@ -369,8 +311,8 @@ class ScheduleManager:
 
         # 실제 투입자가 없는 요일만 재조정 (빈 리스트는 미투입 취급)
         remaining_days = sorted(
-            d for d in self.assignments if d > completed_day
-            and not self.actual_deployments.get(d)
+            d for d in self.assignments
+            if not self.actual_deployments.get(d)
         )
 
         if not remaining_days:
@@ -421,10 +363,9 @@ class ScheduleManager:
     # 백업 / 복구
     # ------------------------------------------------------------------
 
-    def _save_backup(self) -> None:
+    def save_backup(self) -> None:
         """현재 상태를 JSON 파일로 백업합니다."""
         try:
-            os.makedirs(os.path.dirname(BACKUP_PATH), exist_ok=True)
             data = {
                 'week_label': self.week_label,
                 'week_start': self.week_start.isoformat() if self.week_start else None,
@@ -445,10 +386,7 @@ class ScheduleManager:
                 'status_message_id': self.status_message_id,
                 'status_channel_id': self.status_channel_id,
             }
-            tmp_path = BACKUP_PATH + '.tmp'
-            with open(tmp_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            os.replace(tmp_path, BACKUP_PATH)
+            save_json_atomic(BACKUP_PATH, data, indent=2)
         except Exception as e:
             logger.error(f"[일정] 백업 저장 실패: {e}", exc_info=True)
 
@@ -463,8 +401,10 @@ class ScheduleManager:
             self.week_label = data.get('week_label', '')
             ws = data.get('week_start')
             if ws:
-                kst = pytz.timezone('Asia/Seoul')
-                self.week_start = datetime.fromisoformat(ws).replace(tzinfo=kst)
+                dt = datetime.fromisoformat(ws)
+                self.week_start = (
+                    KST.localize(dt) if dt.tzinfo is None else dt.astimezone(KST)
+                )
             else:
                 self.week_start = None
 
@@ -495,7 +435,6 @@ class ScheduleManager:
             return False
 
     def clear_backup(self) -> None:
-        """백업 파일을 삭제합니다."""
         try:
             if os.path.exists(BACKUP_PATH):
                 os.remove(BACKUP_PATH)

@@ -7,12 +7,10 @@ from typing import Set
 
 from dotenv import load_dotenv
 
-# 환경변수 로드
 load_dotenv()
 
 
 def _parse_int(value: str, default: int = 0) -> int:
-    """문자열을 int로 변환합니다. 빈 문자열이면 기본값을 반환합니다."""
     value = value.strip()
     if not value:
         return default
@@ -61,6 +59,7 @@ class Settings:
     BACKUP_ANALYSIS_CHANNEL_ID: int = _parse_int(os.getenv('BACKUP_ANALYSIS_CHANNEL_ID', ''))
     SCRIM_CHANNEL_ID: int = _parse_int(os.getenv('SCRIM_CHANNEL_ID', '1212383364258992128'))
     LOG_CHANNEL_ID: int = _parse_int(os.getenv('LOG_CHANNEL_ID', '1487384132035022961'))
+    SCHEDULE_CHANNEL_ID: int = _parse_int(os.getenv('SCHEDULE_CHANNEL_ID', '1485653533637476512'))
 
     # 조별 채널 ID
     GROUP_CHANNEL_IDS: dict = _parse_group_channel_ids(os.getenv('GROUP_CHANNEL_IDS', ''))
@@ -76,7 +75,9 @@ class Settings:
 
     # 스크림 일정 (시간)
     TEAM_REGISTRATION_DEADLINE_HOUR: int = 17
+    SCRIM_START_HOUR: int = 20
     NEXT_SCRIM_OPEN_HOUR: int = 22
+    TOTAL_ROUNDS: int = 4
 
     # MMR 갱신 간격 (초)
     MMR_UPDATE_INTERVAL_SECONDS: int = 300
@@ -88,6 +89,11 @@ class Settings:
 
     # 공지사항 설정
     ANNOUNCEMENT_MESSAGE: str = os.getenv('ANNOUNCEMENT_MESSAGE', '')
+    # 공휴일 사용자 설정 대전 가이드 링크 (공지사항 하단에 표시)
+    CUSTOM_GAME_GUIDE_LINK: str = (
+        "[사용자 설정 대전 가이드]"
+        "(https://www.notion.so/mongsildev/30125b3fe9fb8082b0e4f286d2f45512?source=copy_link)"
+    )
 
     # 구글 시트 설정
     GOOGLE_SHEETS_CREDENTIALS_PATH: str = os.getenv(
@@ -105,10 +111,11 @@ class Settings:
     GOOGLE_SHEETS_SEEDS_WORKSHEET_NAME: str = '시드팀'
     # 테스트 계정 시트 설정
     GOOGLE_SHEETS_TEST_ACCOUNTS_WORKSHEET_NAME: str = '테스트'
+    # 마스터즈 진행일 처리 상태 파일 (마지막 처리 날짜 기록)
+    MASTERS_STATE_PATH: str = os.getenv('MASTERS_STATE_PATH', 'data/masters_state.json')
 
     @classmethod
     def validate(cls) -> tuple[bool, list[str]]:
-        """필수 설정값 검증. (성공 여부, 누락 항목 리스트)를 반환합니다."""
         errors: list[str] = []
 
         # 문자열 필수 항목

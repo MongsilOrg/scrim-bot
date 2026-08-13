@@ -7,19 +7,16 @@ import os
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
-import pytz
+from config.settings import settings
 
 
 class KSTFormatter(logging.Formatter):
     """KST 시간대를 사용하는 커스텀 포맷터"""
-    
-    def __init__(self, fmt=None, datefmt=None):
-        super().__init__(fmt, datefmt)
-        self.kst = pytz.timezone('Asia/Seoul')
-    
+
     def formatTime(self, record, datefmt=None):
-        """KST 시간으로 포맷팅"""
-        dt = datetime.fromtimestamp(record.created, tz=self.kst)
+        # helpers→validators→logging_config 순환 때문에 top-level import 불가
+        from utils.helpers import KST
+        dt = datetime.fromtimestamp(record.created, tz=KST)
         if datefmt:
             return dt.strftime(datefmt)
         return dt.strftime('%Y-%m-%d %H:%M:%S')
@@ -27,17 +24,14 @@ class KSTFormatter(logging.Formatter):
 
 class ScrimbotLogger:
     """스크림봇 전용 로거 클래스"""
-    
-    _loggers = {}
+
     _initialized = False
-    
+
     @classmethod
-    def setup_logging(cls, log_level: str = "INFO", log_file: str = "scrimbot.log") -> None:
-        """로깅 시스템 초기화"""
+    def setup_logging(cls, log_level: str = settings.LOG_LEVEL, log_file: str = settings.LOG_FILE) -> None:
         if cls._initialized:
             return
-            
-        # 로그 레벨 설정
+
         level = getattr(logging, log_level.upper(), logging.INFO)
         
         # 로그 포맷 설정 (KST 시간대 사용)
@@ -59,13 +53,11 @@ class ScrimbotLogger:
         )
         file_handler.setFormatter(formatter)
         file_handler.setLevel(level)
-        
-        # 콘솔 핸들러 설정
+
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
         console_handler.setLevel(level)
-        
-        # 루트 로거 설정
+
         root_logger = logging.getLogger()
         root_logger.setLevel(level)
         root_logger.addHandler(file_handler)
@@ -76,20 +68,13 @@ class ScrimbotLogger:
             logging.getLogger(lib_logger_name).setLevel(logging.ERROR)
 
         cls._initialized = True
-    
+
     @classmethod
     def get_logger(cls, name: str) -> logging.Logger:
-        """모듈별 로거 반환"""
         if not cls._initialized:
             cls.setup_logging()
-        
-        if name not in cls._loggers:
-            logger = logging.getLogger(f'scrimbot.{name}')
-            cls._loggers[name] = logger
-        
-        return cls._loggers[name]
+        return logging.getLogger(f'scrimbot.{name}')
 
 
 def get_logger(name: str) -> logging.Logger:
-    """모듈별 로거를 반환합니다."""
     return ScrimbotLogger.get_logger(name)

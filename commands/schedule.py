@@ -8,18 +8,14 @@
 import asyncio
 from datetime import timedelta
 
-import discord
-
 from bot.client import ScrimBot
 from bot.manager import BotManager
-from commands.ui.schedule_views import ScheduleView
+from commands.ui.schedule_views import refresh_dashboard
 from config.logging_config import get_logger
 from config.settings import settings
-from utils.helpers import get_current_kst_time, is_admin
+from utils.helpers import get_current_kst_time
 
 logger = get_logger('schedule')
-
-SCHEDULE_CHANNEL_ID = 1485653533637476512
 
 _weekly_reset_task: asyncio.Task | None = None
 
@@ -29,34 +25,8 @@ def _should_auto_reset(schedule_mgr) -> bool:
     if not schedule_mgr.week_start:
         return False
     now = get_current_kst_time()
-    deadline = schedule_mgr.week_start + timedelta(days=5, hours=22)
+    deadline = schedule_mgr.week_start + timedelta(days=5, hours=settings.NEXT_SCRIM_OPEN_HOUR)
     return now >= deadline
-
-
-async def _refresh_dashboard(guild: discord.Guild, channel, schedule_mgr) -> None:
-    """대시보드 메시지를 현재 상태로 갱신합니다."""
-    from models.schedule_manager import EXCLUDED_USER_IDS
-    all_admins: list[tuple[str, str]] = []
-    for member in guild.members:
-        if is_admin(member) and not member.bot and member.id not in EXCLUDED_USER_IDS:
-            all_admins.append((str(member.id), member.display_name))
-
-    status_text = schedule_mgr.get_status_text(all_admins)
-    has_assignments = bool(schedule_mgr.assignments)
-    view = ScheduleView(status_text, has_assignments=has_assignments)
-
-    if schedule_mgr.status_message_id:
-        try:
-            msg = await channel.fetch_message(schedule_mgr.status_message_id)
-            await msg.edit(view=view, content=None, embed=None)
-            return
-        except (discord.NotFound, discord.HTTPException):
-            pass
-
-    msg = await channel.send(view=view)
-    schedule_mgr.status_message_id = msg.id
-    schedule_mgr.status_channel_id = SCHEDULE_CHANNEL_ID
-    schedule_mgr._save_backup()
 
 
 async def _weekly_reset_loop(client: ScrimBot) -> None:
@@ -69,7 +39,7 @@ async def _weekly_reset_loop(client: ScrimBot) -> None:
             days_until_saturday = 7
 
         next_saturday_22 = now.replace(
-            hour=22, minute=0, second=0, microsecond=0
+            hour=settings.NEXT_SCRIM_OPEN_HOUR, minute=0, second=0, microsecond=0
         ) + timedelta(days=days_until_saturday)
 
         wait_seconds = (next_saturday_22 - now).total_seconds()
@@ -81,9 +51,9 @@ async def _weekly_reset_loop(client: ScrimBot) -> None:
 
             guild = client.guilds[0] if client.guilds else None
             if guild:
-                channel = guild.get_channel(SCHEDULE_CHANNEL_ID)
+                channel = guild.get_channel(settings.SCHEDULE_CHANNEL_ID)
                 if channel:
-                    await _refresh_dashboard(guild, channel, schedule_mgr)
+                    await refresh_dashboard(guild, channel=channel, schedule_mgr=schedule_mgr)
         except Exception as e:
             logger.error(f"[일정] 자동 주차 전환 실패: {e}", exc_info=True)
 
@@ -99,7 +69,7 @@ async def setup_schedule_dashboard(client: ScrimBot) -> None:
         logger.warning("[일정] 서버를 찾을 수 없습니다.")
         return
 
-    channel = guild.get_channel(SCHEDULE_CHANNEL_ID)
+    channel = guild.get_channel(settings.SCHEDULE_CHANNEL_ID)
     if not channel:
         logger.warning("[일정] 대시보드 채널을 찾을 수 없습니다.")
         return
@@ -111,8 +81,8 @@ async def setup_schedule_dashboard(client: ScrimBot) -> None:
     elif _should_auto_reset(schedule_mgr):
         schedule_mgr.initialize_week()
 
-    schedule_mgr.status_channel_id = SCHEDULE_CHANNEL_ID
-    await _refresh_dashboard(guild, channel, schedule_mgr)
+    schedule_mgr.status_channel_id = settings.SCHEDULE_CHANNEL_ID
+    await refresh_dashboard(guild, channel=channel, schedule_mgr=schedule_mgr)
 
     if _weekly_reset_task is not None:
         _weekly_reset_task.cancel()

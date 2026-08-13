@@ -43,19 +43,16 @@ def create_gspread_client(
             logger.warning(f"{prefix}인증 정보 경로가 설정되지 않음")
             return None, None
 
-        # 파일 존재 확인
         if not os.path.exists(credentials_path):
             logger.warning(f"{prefix}인증 정보 파일을 찾을 수 없음 - 경로: {credentials_path}")
             return None, None
 
-        # 서비스 계정 인증
         creds = Credentials.from_service_account_file(
             credentials_path,
             scopes=GSHEET_SCOPES
         )
         client = gspread.authorize(creds)
 
-        # 스프레드시트 열기
         spreadsheet = None
         if settings.GOOGLE_SHEETS_MAIN_SPREADSHEET_ID:
             spreadsheet = client.open_by_key(

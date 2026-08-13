@@ -1,34 +1,123 @@
 """봇 이벤트 핸들러"""
 
-import io
-import re
-from datetime import datetime
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+import asyncio
+from typing import TYPE_CHECKING, List
 
 import discord
-import pandas as pd
-import pytz
+from discord import app_commands
 
-from commands.ui.layout_helpers import image_response_view, custom_view
+from bot.manager import BotManager
+from commands.schedule import setup_schedule_dashboard
+from commands.scrim import setup_scrim_dashboard
+from utils.layout_helpers import error_view, image_response_view, custom_view, send_response
 from config.logging_config import get_logger
 from config.settings import settings
 from services.image_generator import ImageGenerator
-from utils.helpers import get_current_kst_time
-from utils.validators import normalize_team_name
+from services.score_aggregation import (
+    CSVRow,
+    aggregate_team_scores,
+    collect_today_csv_data,
+    is_csv_filename,
+)
+from utils.helpers import get_current_kst_time, get_group_letter, get_start_of_day_utc
 
 if TYPE_CHECKING:
+    from bot.client import ScrimBot
     from discord.ui import LayoutView
 
 logger = get_logger('events')
 
-CSVRow = Tuple[int, pd.DataFrame, str]
-REQUIRED_SCORE_COLUMNS = ['teamName', 'tournament total score', 'tournament kill score', 'gameId']
-DEFAULT_TEAM_PATTERN = re.compile(r'^team\s*\d+$', re.IGNORECASE)
+# 점수표 첨부 이미지 파일명 (attachment:// 참조와 일치해야 함)
+SCORE_IMAGE_FILENAME = 'score_table.png'
+
+# on_ready는 재-IDENTIFY 시 재발화하므로 부트스트랩은 1회만 실행한다
+_bootstrap_done = False
+
+
+async def bootstrap_on_ready(client: "ScrimBot") -> None:
+    """봇 준비 완료 시 초기 상태를 복구하고 명령어를 동기화합니다."""
+    global _bootstrap_done
+    logger.info(f"[시작] 봇 준비 완료 - {client.user} 온라인")
+
+    if _bootstrap_done:
+        logger.info("[시작] 재연결로 인한 on_ready 재발화 - 부트스트랩 건너뜀")
+        return
+    _bootstrap_done = True
+
+    bot_manager = BotManager.get_instance()
+    bot_manager.set_client(client)
+
+    team_data_manager = bot_manager.get_team_data_manager()
+    if team_data_manager.should_restore_backup():
+        if team_data_manager.load_backup():
+            logger.info(
+                f"[시작] 백업 복구 완료 - {len(team_data_manager.teams)}개 팀, "
+                f"스크림 날짜: {team_data_manager.scrim_month}/{team_data_manager.scrim_day}"
+            )
+            if not team_data_manager.is_team_assignment_started:
+                current_time = get_current_kst_time()
+                if (team_data_manager.is_scrim_date_today()
+                        and current_time.hour >= settings.TEAM_REGISTRATION_DEADLINE_HOUR):
+                    # 스크림 당일 마감 시각 이후 재시작: 조편성이 미완료면 즉시 실행
+                    logger.info(f"[시작] {settings.TEAM_REGISTRATION_DEADLINE_HOUR}시 이후 재시작 - 조편성 미완료, 즉시 실행")
+                    asyncio.create_task(team_data_manager.start_team_assignment())
+                else:
+                    # 태스크 재시작 (당일 마감 시각 전 또는 전날 밤)
+                    team_data_manager.auto_assignment_task = asyncio.create_task(
+                        team_data_manager.check_and_auto_assign()
+                    )
+                    team_data_manager.mmr_update_task = asyncio.create_task(
+                        team_data_manager.mmr_update_loop()
+                    )
+                    logger.info("[시작] 조편성/MMR 태스크 재시작")
+            else:
+                # 조편성 후 복구: GroupRosterView 재등록
+                await team_data_manager.restore_group_roster_views(client)
+                logger.info("[시작] 조편성 후 복구 완료")
+        else:
+            logger.warning("[시작] 백업 복구 실패")
+    else:
+        team_data_manager.clear_backup()
+
+    warning_manager = bot_manager.get_warning_manager()
+    if warning_manager.worksheet:
+        warning_manager.start_cleanup_task()
+        logger.info("[시작] 경고 관리 시스템 초기화 완료")
+
+    try:
+        await setup_scrim_dashboard(client)
+    except Exception as e:
+        logger.error(f"[시작] 스크림 대시보드 연동 실패: {e}", exc_info=True)
+
+    try:
+        await setup_schedule_dashboard(client)
+    except Exception as e:
+        logger.error(f"[시작] 일정 대시보드 연동 실패: {e}", exc_info=True)
+
+    try:
+        synced = await client.tree.sync(guild=discord.Object(id=settings.GUILD_ID))
+        logger.info(f"[시작] 명령어 동기화 완료 - {len(synced)}개 명령어 등록됨")
+    except Exception as e:
+        logger.error(f"[시작] 명령어 동기화 실패: {e}", exc_info=True)
+
+
+async def on_app_command_error(
+    interaction: discord.Interaction,
+    error: app_commands.AppCommandError,
+) -> None:
+    """앱 명령어 전역 에러 핸들러"""
+    logger.error(f"[명령어] 앱 명령어 오류: {error}", exc_info=True)
+    try:
+        await send_response(interaction, error_view("명령어 처리 중 오류가 발생했습니다."))
+    except Exception:
+        pass
 
 
 async def on_message(message: discord.Message) -> None:
     """메시지 이벤트 핸들러 (CSV 업로드 시 점수 합산 이미지 생성)"""
-    if not _should_process_message(message):
+    if message.author.bot:
+        return
+    if not any(is_csv_filename(att.filename) for att in message.attachments):
         return
 
     try:
@@ -37,61 +126,38 @@ async def on_message(message: discord.Message) -> None:
         logger.error(f"[이벤트] CSV 처리 실패: {e}", exc_info=True)
 
 
-def _should_process_message(message: discord.Message) -> bool:
-    """메시지 이벤트 처리 대상인지 확인합니다."""
-    return (not message.author.bot) and _has_csv_attachment(message)
-
-
-def _has_csv_attachment(message: discord.Message) -> bool:
-    """메시지에 CSV 첨부가 있는지 확인합니다."""
-    return any(_is_csv_filename(att.filename) for att in message.attachments)
-
-
-def _is_csv_filename(filename: str) -> bool:
-    return filename.lower().endswith('.csv')
-
-
-def _get_start_of_day_utc(now_kst: datetime) -> datetime:
-    """KST 자정 기준 UTC 시간을 반환합니다."""
-    start_of_day_kst = now_kst.replace(hour=0, minute=0, second=0, microsecond=0)
-    return start_of_day_kst.astimezone(pytz.utc)
-
-
-from utils.helpers import get_group_letter as _get_group_letter
-
-
 async def _process_csv_attachments(message: discord.Message) -> None:
     """오늘 업로드된 모든 CSV를 스캔해 점수를 합산하고 이미지를 전송합니다."""
     channel = message.channel
     now_kst = get_current_kst_time()
-    start_utc = _get_start_of_day_utc(now_kst)
+    start_utc = get_start_of_day_utc(now_kst)
 
-    csv_data_list = await _collect_today_csv_data(channel, start_utc)
+    csv_data_list = await collect_today_csv_data(channel, start_utc)
     if not csv_data_list:
         return
 
     csv_data_list.sort(key=lambda x: x[0])
     current_round_count = len(csv_data_list)
 
-    group_letter = _get_group_letter(channel.id)
+    group_letter = get_group_letter(channel.id)
     group_info = f"{group_letter}조" if group_letter else "알 수 없음"
     date_str = now_kst.strftime('%m월 %d일')
 
-    team_data, _ = _aggregate_team_scores(csv_data_list)
+    team_data = aggregate_team_scores(csv_data_list)
     if not team_data:
         logger.warning("[이벤트] 처리할 팀 데이터 없음")
         return
 
-    img_buf = ImageGenerator.generate_score_table_image(team_data)
+    img_buf = await ImageGenerator.generate_score_table_image_async(team_data)
     if not img_buf:
-        logger.error("[이벤트] 점수표 이미지 생성 실패", exc_info=True)
+        logger.error("[이벤트] 점수표 이미지 생성 실패")
         return
 
     score_view = _build_score_view(current_round_count, group_info, date_str)
-    score_file = discord.File(img_buf, filename='score_table.png')
+    score_file = discord.File(img_buf, filename=SCORE_IMAGE_FILENAME)
     await channel.send(view=score_view, file=score_file)
 
-    if current_round_count == 4:
+    if current_round_count == settings.TOTAL_ROUNDS:
         gameid_view = _build_gameid_view(csv_data_list, group_info, date_str)
         await channel.send(view=gameid_view)
         # 백업 채널에는 별도 LayoutView 인스턴스 생성 (View는 상태를 가지므로 재사용 불가)
@@ -99,202 +165,9 @@ async def _process_csv_attachments(message: discord.Message) -> None:
         await _send_gameid_to_backup_channel(backup_gameid_view)
 
 
-async def _collect_today_csv_data(channel, start_utc: datetime, limit: int = 200) -> List[CSVRow]:
-    """해당 채널의 오늘 CSV 데이터 목록을 수집합니다."""
-    csv_data_list: List[CSVRow] = []
-    async for msg in channel.history(after=start_utc, oldest_first=True, limit=limit):
-        for attachment in msg.attachments:
-            if not _is_csv_filename(attachment.filename):
-                continue
-            parsed = await _read_and_parse_csv_attachment(attachment)
-            if parsed is not None:
-                csv_data_list.append(parsed)
-    return csv_data_list
-
-
-async def _read_and_parse_csv_attachment(attachment) -> Optional[CSVRow]:
-    """CSV 첨부 파일을 읽어 (game_id, dataframe, filename) 형태로 반환합니다."""
-    try:
-        content = await attachment.read()
-        df = pd.read_csv(io.BytesIO(content))
-        df.columns = [c.strip() for c in df.columns]
-
-        missing_cols = [col for col in REQUIRED_SCORE_COLUMNS if col not in df.columns]
-        if missing_cols:
-            logger.warning(f"[이벤트] CSV 필수 컬럼 누락 - 파일: {attachment.filename}, 누락된 컬럼: {missing_cols}")
-            return None
-
-        game_id = _extract_game_id(df, attachment.filename)
-        if game_id is None:
-            return None
-        return game_id, df, attachment.filename
-    except Exception as e:
-        logger.error(f"[이벤트] CSV 읽기 실패 - 파일: {attachment.filename}: {e}", exc_info=True)
-        return None
-
-
-def _extract_game_id(df: pd.DataFrame, filename: str) -> Optional[int]:
-    """CSV DataFrame에서 gameId를 파싱합니다."""
-    if len(df) == 0:
-        logger.warning(f"[이벤트] gameId를 찾을 수 없음 - 파일: {filename}")
-        return None
-    game_id_str = str(df.iloc[0]['gameId']).strip()
-    try:
-        return int(game_id_str)
-    except (ValueError, TypeError):
-        logger.warning(f"[이벤트] gameId 파싱 실패 - 파일: {filename}, gameId: {game_id_str}")
-        return None
-
-
-def _is_default_team_name(name: str) -> bool:
-    """기본 팀명(Team 1~8) 여부를 판별합니다."""
-    return bool(DEFAULT_TEAM_PATTERN.match(name.strip()))
-
-
-def _build_team_nickname_map(df: pd.DataFrame) -> dict:
-    """DataFrame에서 팀명 → 닉네임 set 매핑을 구축합니다."""
-    team_nicknames = {}
-    if 'nickname' not in df.columns:
-        return team_nicknames
-    for _, row in df.iterrows():
-        team = str(row['teamName']).strip()
-        nick = str(row.get('nickname', '')).strip()
-        if nick:
-            team_nicknames.setdefault(team, set()).add(nick.lower())
-    return team_nicknames
-
-
-def _resolve_default_team_names(current_df: pd.DataFrame, previous_rounds_nicknames: list) -> pd.DataFrame:
-    """기본 팀명(Team N)을 이전 라운드 닉네임 기반으로 실제 팀명으로 치환합니다."""
-    if 'nickname' not in current_df.columns or not previous_rounds_nicknames:
-        return current_df
-
-    current_team_nicks = _build_team_nickname_map(current_df)
-
-    for team_name, nicks in current_team_nicks.items():
-        if not _is_default_team_name(team_name):
-            continue
-
-        best_match = None
-        best_count = 0
-
-        for prev_nick_map in previous_rounds_nicknames:
-            for prev_team, prev_nicks in prev_nick_map.items():
-                if _is_default_team_name(prev_team):
-                    continue
-                overlap = len(nicks & prev_nicks)
-                if overlap >= 2 and overlap > best_count:
-                    best_count = overlap
-                    best_match = prev_team
-
-        if best_match:
-            current_df.loc[current_df['teamName'].str.strip() == team_name, 'teamName'] = best_match
-
-    return current_df
-
-
-def _aggregate_team_scores(csv_data_list: List[CSVRow]) -> Tuple[List[dict], Optional[pd.DataFrame]]:
-    """라운드별 CSV를 누적 집계해 팀 점수표 데이터로 변환합니다."""
-    team_max_scores = {}
-    display_names = {}  # 정규화 키 → 최초 등장 원본 팀명
-    last_csv_df: Optional[pd.DataFrame] = None
-    previous_rounds_nicknames = []
-
-    for _, df, _ in csv_data_list:
-        round_df = df.copy()
-        round_df['teamName'] = round_df['teamName'].astype(str).str.strip()
-
-        # 기본 팀명(Team N)을 이전 라운드 닉네임 기반으로 치환
-        round_df = _resolve_default_team_names(round_df, previous_rounds_nicknames)
-
-        # 현재 라운드 닉네임 맵 저장 (다음 라운드 매칭용)
-        previous_rounds_nicknames.append(_build_team_nickname_map(round_df))
-
-        for num_col in ['tournament total score', 'tournament kill score']:
-            round_df[num_col] = pd.to_numeric(round_df[num_col], errors='coerce').fillna(0)
-
-        round_team_max = round_df.groupby('teamName', as_index=False).agg({
-            'tournament total score': 'max',
-            'tournament kill score': 'max',
-        })
-
-        for _, row in round_team_max.iterrows():
-            team_name = str(row['teamName'])
-            normalized_key = normalize_team_name(team_name)
-            total_score = float(row['tournament total score'])
-            kill_score = float(row['tournament kill score'])
-
-            if normalized_key not in display_names:
-                display_names[normalized_key] = team_name
-
-            if normalized_key not in team_max_scores:
-                team_max_scores[normalized_key] = {'total_score': 0.0, 'kill_score': 0.0}
-            team_max_scores[normalized_key]['total_score'] += total_score
-            team_max_scores[normalized_key]['kill_score'] += kill_score
-
-        last_csv_df = round_df
-
-    team_data: List[dict] = []
-    for normalized_key, scores in team_max_scores.items():
-        team_data.append({
-            'teamName': display_names[normalized_key],
-            'tournament total score': scores['total_score'],
-            'tournament kill score': scores['kill_score'],
-        })
-
-    team_data.sort(
-        key=lambda x: (x['tournament total score'], x['tournament kill score']),
-        reverse=True,
-    )
-    for idx, team in enumerate(team_data):
-        team['rank'] = idx + 1
-
-    return team_data, last_csv_df
-
-
-async def compute_ban_list_for_channel(channel) -> List[str]:
-    """채널의 당일 CSV를 스캔해 직전(가장 최근) 라운드 기준 밴 리스트를 즉석 계산합니다.
-
-    저장된 상태에 의존하지 않으므로 전날 밴이 이월되지 않으며, 1라운드처럼
-    당일 업로드된 CSV가 없으면 빈 리스트를 반환합니다.
-    """
-    now_kst = get_current_kst_time()
-    start_utc = _get_start_of_day_utc(now_kst)
-    csv_data_list = await _collect_today_csv_data(channel, start_utc)
-    if not csv_data_list:
-        return []
-    csv_data_list.sort(key=lambda x: x[0])
-    last_csv_df = csv_data_list[-1][1]  # (game_id, df, filename)
-    return _extract_ban_list(last_csv_df)
-
-
-def _extract_ban_list(last_csv_df: Optional[pd.DataFrame]) -> List[str]:
-    """마지막 라운드 기준 밴 리스트를 추출합니다.
-
-    같은 캐릭터를 3회 이상 픽한 경우 밴 대상입니다. 캐릭터명은 앞뒤/중간 공백과
-    대소문자 차이를 무시하고 집계하며, 표시는 첫 등장한 원본 표기를 사용합니다.
-    빈 값은 집계에서 제외합니다.
-    """
-    if last_csv_df is None or 'character' not in last_csv_df.columns:
-        return []
-
-    counts: Dict[str, int] = {}
-    display_names: Dict[str, str] = {}  # 정규화 키 → 첫 등장 원본 캐릭터명
-    for raw in last_csv_df['character'].fillna('').astype(str):
-        name = raw.strip()
-        if not name:
-            continue
-        key = normalize_team_name(name)
-        if key not in display_names:
-            display_names[key] = name
-        counts[key] = counts.get(key, 0) + 1
-
-    return [display_names[key] for key, count in counts.items() if count >= 3]
-
-
 def _build_score_view(current_round_count: int, group_info: str, date_str: str) -> 'LayoutView':
     title = f"📊 스크림 결과 - {current_round_count}R - {group_info} {date_str}"
-    return image_response_view(title, "", "attachment://score_table.png", discord.Color.blue())
+    return image_response_view(title, "", f"attachment://{SCORE_IMAGE_FILENAME}", discord.Color.blue())
 
 
 def _build_gameid_view(csv_data_list: List[CSVRow], group_info: str, date_str: str) -> 'LayoutView':
@@ -307,9 +180,7 @@ def _build_gameid_view(csv_data_list: List[CSVRow], group_info: str, date_str: s
 
 
 async def _send_gameid_to_backup_channel(gameid_view) -> None:
-    """백업 채널로 gameId LayoutView를 전송합니다."""
     try:
-        from bot.manager import BotManager
         client = BotManager.get_instance().get_client()
         if not client:
             return

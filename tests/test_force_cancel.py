@@ -1,8 +1,7 @@
-"""강제취소 기능 테스트: 로그 타입 + 강제취소 선택 뷰."""
+"""강제취소 기능 테스트: 강제취소 선택 뷰."""
 import unittest
 
 from models.team_data import TeamData
-from models.team_data_manager import ACTION_EMOJI
 
 
 def _collect_labels(component):
@@ -36,14 +35,20 @@ def _collect_select_values(component):
     return values
 
 
-class ForceCancelLogTest(unittest.TestCase):
-    def test_force_cancel_emoji_registered(self):
-        self.assertEqual(ACTION_EMOJI["강제취소"], "🔨")
+def _collect_text_contents(component):
+    """LayoutView 트리에서 모든 TextDisplay content를 모은다."""
+    texts = []
 
-    def test_existing_log_types_unchanged(self):
-        self.assertEqual(ACTION_EMOJI["신청"], "📝")
-        self.assertEqual(ACTION_EMOJI["취소"], "❌")
-        self.assertEqual(ACTION_EMOJI["수정"], "✏️")
+    def walk(item):
+        content = getattr(item, "content", None)
+        if isinstance(content, str):
+            texts.append(content)
+        for child in getattr(item, "children", []) or []:
+            walk(child)
+
+    for item in component.children:
+        walk(item)
+    return texts
 
 
 class ManageButtonTest(unittest.TestCase):
@@ -119,7 +124,8 @@ class ForceCancelSelectIdentifyTest(unittest.IsolatedAsyncioTestCase):
         view = ForceCancelSelectView(parent_view=None, teams=teams)
         # 두 번째 청크(>25)에 속한 팀을 선택해도 정확히 식별되어야 함
         await view.team_select_callback(_FakeInteraction("T27"))
-        self.assertEqual(captured["confirm_view"].team_name, "T27")
+        confirm_texts = _collect_text_contents(captured["confirm_view"])
+        self.assertTrue(any("T27" in text for text in confirm_texts))
 
 
 if __name__ == "__main__":

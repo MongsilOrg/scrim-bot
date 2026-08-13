@@ -3,18 +3,96 @@
 """
 import discord
 from discord import ButtonStyle, Color
-from discord.ui import ActionRow, Button, Container, LayoutView, Separator, TextDisplay
+from discord.components import CheckboxGroupOption
+from discord.ui import (
+    ActionRow, Button, CheckboxGroup, Container, Label, LayoutView,
+    Modal, Separator, TextDisplay, TextInput,
+)
 
 from bot.manager import BotManager
 from config.logging_config import get_logger
-from commands.ui.layout_helpers import (
+from config.settings import settings
+from models.schedule_manager import ACTIVE_DAYS, EXCLUDED_USER_IDS, WEEKDAYS
+from utils.layout_helpers import (
+    check_cooldown,
     error_view, success_view,
     permission_error_view,
     send_response, FOOTER_TEXT,
+    upsert_persistent_message,
 )
 from utils.helpers import is_admin
 
 logger = get_logger('schedule_views')
+
+
+class AvailabilityModal(Modal):
+    """참가 요일 선택 모달"""
+
+    def __init__(self, current_days: set):
+        super().__init__(title="참가 등록")
+        options = [
+            CheckboxGroupOption(
+                label=f"{WEEKDAYS[i]}요일",
+                value=str(i),
+                default=i in current_days,
+            )
+            for i in ACTIVE_DAYS
+        ]
+        self.days_checkbox = CheckboxGroup(
+            options=options,
+            min_values=1,
+            max_values=len(ACTIVE_DAYS),
+        )
+        self.add_item(Label(text="참가 가능한 요일", component=self.days_checkbox))
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            selected_days = {int(v) for v in self.days_checkbox.values}
+            schedule_mgr = BotManager.get_instance().get_schedule_manager()
+            schedule_mgr.register_schedule(
+                str(interaction.user.id), interaction.user.display_name, selected_days,
+            )
+            day_str = ', '.join(WEEKDAYS[d] for d in sorted(selected_days))
+            await send_response(
+                interaction,
+                success_view(f"{day_str} ({len(selected_days)}일) 참가 등록되었습니다.", title="✅ 참가 등록"),
+            )
+            await _refresh_schedule_status(interaction)
+        except Exception as e:
+            logger.error(f"[모달] 참가 등록 실패: {e}", exc_info=True)
+            await send_response(interaction, error_view("참가 등록 중 오류가 발생했습니다."))
+
+
+class AbsenceReasonModal(Modal):
+    """전체 불참 사유 입력 모달"""
+
+    def __init__(self, current_reason: str = ''):
+        super().__init__(title="불참 등록")
+        self.reason_input = TextInput(
+            label="불참 사유",
+            placeholder="예: 개인 일정, 출장 등",
+            default=current_reason,
+            min_length=1,
+            max_length=100,
+            required=True,
+        )
+        self.add_item(self.reason_input)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            reason = self.reason_input.value.strip()
+            schedule_mgr = BotManager.get_instance().get_schedule_manager()
+            schedule_mgr.register_schedule(
+                str(interaction.user.id), interaction.user.display_name, set(), reason,
+            )
+            await send_response(
+                interaction,
+                success_view(f"전체 불참으로 등록되었습니다.\n사유: {reason}", title="🚫 불참 등록"),
+            )
+            await _refresh_schedule_status(interaction)
+        except Exception as e:
+            logger.error(f"[모달] 불참 등록 실패: {e}", exc_info=True)
+            await send_response(interaction, error_view("불참 등록 중 오류가 발생했습니다."))
 
 
 class ScheduleView(LayoutView):
@@ -57,8 +135,7 @@ class ScheduleView(LayoutView):
 
     async def register_callback(self, interaction: discord.Interaction) -> None:
         """참가 버튼: 요일 선택 모달"""
-        from .views import _check_cooldown
-        if await _check_cooldown(interaction):
+        if await check_cooldown(interaction):
             return
         if not is_admin(interaction.user):
             await send_response(interaction, permission_error_view())
@@ -75,13 +152,11 @@ class ScheduleView(LayoutView):
         user_id = str(interaction.user.id)
         current_days = schedule_mgr.availability.get(user_id, set())
 
-        from .warning_modals import AvailabilityModal
         await interaction.response.send_modal(AvailabilityModal(current_days))
 
     async def absence_callback(self, interaction: discord.Interaction) -> None:
         """불참 버튼: 사유 입력 모달"""
-        from .views import _check_cooldown
-        if await _check_cooldown(interaction):
+        if await check_cooldown(interaction):
             return
         if not is_admin(interaction.user):
             await send_response(interaction, permission_error_view())
@@ -99,13 +174,11 @@ class ScheduleView(LayoutView):
         reasons = schedule_mgr.absence_reasons.get(user_id, {})
         current_reason = reasons.get(-1, '') if reasons else ''
 
-        from .warning_modals import AbsenceReasonModal
         await interaction.response.send_modal(AbsenceReasonModal(current_reason))
 
     async def assign_callback(self, interaction: discord.Interaction) -> None:
         """편성 버튼: 상태에 따라 편성/재편성/편성취소 분기"""
-        from .views import _check_cooldown
-        if await _check_cooldown(interaction):
+        if await check_cooldown(interaction):
             return
         if not is_admin(interaction.user):
             await send_response(interaction, permission_error_view())
@@ -165,7 +238,7 @@ class ScheduleView(LayoutView):
         async def do_cancel(btn_interaction: discord.Interaction):
             schedule_mgr.assignments.clear()
             schedule_mgr.actual_deployments.clear()
-            schedule_mgr._save_backup()
+            schedule_mgr.save_backup()
             await send_response(
                 btn_interaction,
                 success_view("주간 일정 편성과 투입 기록이 초기화되었습니다.", title="↩️ 편성 취소"),
@@ -196,8 +269,7 @@ class ScheduleView(LayoutView):
 
     async def deploy_callback(self, interaction: discord.Interaction) -> None:
         """투입 기록 버튼: 요일별 버튼으로 본인 투입 토글"""
-        from .views import _check_cooldown
-        if await _check_cooldown(interaction):
+        if await check_cooldown(interaction):
             return
         if not is_admin(interaction.user):
             await send_response(interaction, permission_error_view())
@@ -218,8 +290,6 @@ def _build_deploy_view(schedule_mgr, user_id: str) -> LayoutView:
 
     배정된 요일은 눈에 띄게, 미배정 요일은 구분하여 표시합니다.
     """
-    from models.schedule_manager import WEEKDAYS, ACTIVE_DAYS
-
     # 본인 배정 요일 파악
     assigned_days = {
         d for d in ACTIVE_DAYS
@@ -297,15 +367,19 @@ def _build_deploy_view(schedule_mgr, user_id: str) -> LayoutView:
     return deploy_view
 
 
-async def _refresh_schedule_status(interaction: discord.Interaction) -> None:
-    """일정 대시보드 메시지를 갱신합니다."""
-    schedule_mgr = BotManager.get_instance().get_schedule_manager()
-    guild = interaction.guild
-    if not guild:
-        return
+async def refresh_dashboard(
+    guild: discord.Guild,
+    channel=None,
+    schedule_mgr=None,
+) -> None:
+    """일정 대시보드 메시지를 갱신합니다.
 
-    # 관리자 목록 수집
-    from models.schedule_manager import EXCLUDED_USER_IDS
+    channel이 주어지면 그 채널에서 수정/생성하고,
+    없으면 저장된 status_channel_id → 기본 대시보드 채널 순으로 사용합니다.
+    """
+    if schedule_mgr is None:
+        schedule_mgr = BotManager.get_instance().get_schedule_manager()
+
     all_admins: list[tuple[str, str]] = []
     for member in guild.members:
         if is_admin(member) and not member.bot and member.id not in EXCLUDED_USER_IDS:
@@ -313,24 +387,28 @@ async def _refresh_schedule_status(interaction: discord.Interaction) -> None:
 
     status_text = schedule_mgr.get_status_text(all_admins)
     has_assignments = bool(schedule_mgr.assignments)
-    new_view = ScheduleView(status_text, has_assignments=has_assignments)
+    view = ScheduleView(status_text, has_assignments=has_assignments)
 
-    # 기존 대시보드 메시지 업데이트
-    if schedule_mgr.status_message_id and schedule_mgr.status_channel_id:
-        try:
-            channel = guild.get_channel(schedule_mgr.status_channel_id)
-            if channel:
-                msg = await channel.fetch_message(schedule_mgr.status_message_id)
-                await msg.edit(view=new_view, content=None, embed=None)
-                return
-        except (discord.NotFound, discord.HTTPException):
-            pass
+    # 대상 채널: 명시 채널 → 저장된 채널 → 기본 대시보드 채널
+    target_channel = channel
+    if target_channel is None and schedule_mgr.status_channel_id:
+        target_channel = guild.get_channel(schedule_mgr.status_channel_id)
+    if target_channel is None:
+        target_channel = guild.get_channel(settings.SCHEDULE_CHANNEL_ID)
+    if target_channel is None:
+        return
 
-    # 대시보드 채널에 새 메시지 생성
-    from commands.schedule import SCHEDULE_CHANNEL_ID
-    channel = guild.get_channel(SCHEDULE_CHANNEL_ID)
-    if channel:
-        msg = await channel.send(view=new_view)
-        schedule_mgr.status_message_id = msg.id
-        schedule_mgr.status_channel_id = SCHEDULE_CHANNEL_ID
-        schedule_mgr._save_backup()
+    new_id = await upsert_persistent_message(target_channel, schedule_mgr.status_message_id, view)
+    if (new_id != schedule_mgr.status_message_id
+            or schedule_mgr.status_channel_id != target_channel.id):
+        schedule_mgr.status_message_id = new_id
+        schedule_mgr.status_channel_id = target_channel.id
+        schedule_mgr.save_backup()
+
+
+async def _refresh_schedule_status(interaction: discord.Interaction) -> None:
+    """인터랙션이 발생한 서버의 일정 대시보드를 갱신합니다."""
+    guild = interaction.guild
+    if not guild:
+        return
+    await refresh_dashboard(guild)

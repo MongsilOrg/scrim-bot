@@ -57,17 +57,34 @@ async def fetch_holidays(
     return data
 
 
-async def is_holiday(target_date: Optional[Union[date, datetime]] = None) -> bool:
-    target = _to_date(target_date)
-    holidays = await fetch_holidays(target.year)
-    return target.isoformat() in holidays
-
-
 async def get_holiday_names(
     target_date: Optional[Union[date, datetime]] = None,
 ) -> List[str]:
     target = _to_date(target_date)
     holidays = await fetch_holidays(target.year)
     return holidays.get(target.isoformat(), [])
+
+
+async def get_rest_day_info(target_date: Optional[Union[date, datetime]] = None) -> dict:
+    """휴무일(토/일/공휴일) 정보를 반환합니다."""
+    target = _to_date(target_date)
+
+    is_saturday = target.weekday() == 5
+    is_sunday = target.weekday() == 6
+    holiday_names = await get_holiday_names(target)
+    is_holiday = bool(holiday_names)
+
+    labels = (["토요일"] if is_saturday else []) + (["일요일"] if is_sunday else []) + holiday_names
+
+    return {
+        "date": target,
+        "is_rest_day": is_saturday or is_sunday or is_holiday,
+        "is_saturday": is_saturday,
+        "is_sunday": is_sunday,
+        "is_holiday": is_holiday,
+        "holiday_names": holiday_names,
+        "labels": labels,
+        "label": " / ".join(labels),
+    }
 
 

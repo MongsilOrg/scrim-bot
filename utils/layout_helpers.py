@@ -8,6 +8,8 @@
   - 푸터: 모든 응답에 포함
   - 구조: ## 타이틀 → 본문 → Separator → 푸터
 """
+import time
+
 import discord
 from discord.ui import (
     Container,
@@ -30,7 +32,6 @@ FOOTER_TEXT = f"-# {settings.EMBED_FOOTER_TEXT}"
 # ---------------------------------------------------------------------------
 
 def _build_view(title: str, description: str, accent_color: discord.Color) -> LayoutView:
-    """기본 LayoutView를 생성합니다."""
     view = LayoutView()
     container = Container(
         TextDisplay(content=f"## {title}\n{description}"),
@@ -43,37 +44,30 @@ def _build_view(title: str, description: str, accent_color: discord.Color) -> La
 
 
 def error_view(description: str, title: str = "❌ 오류") -> LayoutView:
-    """에러 응답 LayoutView를 생성합니다."""
     return _build_view(title, description, discord.Color.red())
 
 
 def success_view(description: str, title: str = "✅ 완료") -> LayoutView:
-    """성공 응답 LayoutView를 생성합니다."""
     return _build_view(title, description, discord.Color.green())
 
 
 def warning_view(description: str, title: str = "⚠️ 확인") -> LayoutView:
-    """경고 응답 LayoutView를 생성합니다."""
     return _build_view(title, description, discord.Color.orange())
 
 
 def info_view(description: str, title: str = "스크림 안내") -> LayoutView:
-    """정보 응답 LayoutView를 생성합니다."""
     return _build_view(title, description, discord.Color.blue())
 
 
 def processing_view(description: str = "잠시만 기다려주세요.") -> LayoutView:
-    """처리 중 응답 LayoutView를 생성합니다."""
     return _build_view("⏳ 처리 중...", description, discord.Color.blue())
 
 
 def timeout_view(description: str = "시간이 초과되었습니다. 다시 시도해주세요.") -> LayoutView:
-    """타임아웃 응답 LayoutView를 생성합니다."""
     return _build_view("⏳ 시간 초과", description, discord.Color.greyple())
 
 
 def permission_error_view(description: str = "관리자 권한이 없습니다.") -> LayoutView:
-    """권한 에러 응답 LayoutView를 생성합니다."""
     return _build_view("❌ 권한 없음", description, discord.Color.red())
 
 
@@ -215,6 +209,51 @@ async def send_error_message(interaction: discord.Interaction, message: str) -> 
             pass
 
 
+async def upsert_persistent_message(
+    channel: discord.abc.Messageable,
+    message_id: int | None,
+    view: LayoutView,
+    *,
+    files: list[discord.File] | None = None,
+) -> int:
+    """상시 메시지(대시보드 등)를 기존 메시지 편집으로 갱신하고, 불가하면 재생성합니다.
+
+    편집이 일시 오류(HTTPException)로 실패하면 옛 메시지를 삭제 시도한 뒤
+    새로 보내, 옛 대시보드가 방치되어 이중으로 남는 것을 막습니다.
+
+    Returns:
+        갱신(또는 재생성)된 메시지 id
+    """
+    old_message: discord.Message | None = None
+    if message_id:
+        try:
+            old_message = await channel.fetch_message(message_id)
+        except (discord.NotFound, discord.HTTPException):
+            old_message = None
+
+    if old_message:
+        edit_kwargs: dict = {"view": view, "content": None, "embed": None}
+        if files:
+            edit_kwargs["attachments"] = files
+        try:
+            await old_message.edit(**edit_kwargs)
+            return old_message.id
+        except discord.NotFound:
+            pass
+        except discord.HTTPException as e:
+            logger.warning(f"[레이아웃] 상시 메시지 편집 실패 - 재생성: {e}")
+            try:
+                await old_message.delete()
+            except Exception:
+                pass
+
+    send_kwargs: dict = {"view": view}
+    if files:
+        send_kwargs["files"] = files
+    new_message = await channel.send(**send_kwargs)
+    return new_message.id
+
+
 async def edit_to_layout(
     message: discord.Message,
     view: LayoutView,
@@ -232,3 +271,26 @@ async def edit_to_layout(
         await message.edit(**kwargs)
     except Exception as e:
         logger.error(f"[레이아웃] 메시지 편집 실패: {e}", exc_info=True)
+
+
+# 버튼 cooldown 관리 (사용자별 마지막 클릭 시간)
+_button_cooldowns: dict = {}
+BUTTON_COOLDOWN_SECONDS = 1
+_COOLDOWN_CLEANUP_THRESHOLD = 100  # 이 크기 초과 시 만료 항목 정리
+
+
+async def check_cooldown(interaction: discord.Interaction, cooldown_seconds: float = BUTTON_COOLDOWN_SECONDS) -> bool:
+    """버튼 cooldown을 확인합니다. True면 cooldown 중이므로 무시해야 합니다."""
+    user_id = interaction.user.id
+    now = time.monotonic()
+    last_click = _button_cooldowns.get(user_id, 0)
+    if now - last_click < cooldown_seconds:
+        await send_response(interaction, info_view("요청 처리 중입니다. 잠시 기다려주세요.", title="⏳ 대기"))
+        return True
+    _button_cooldowns[user_id] = now
+    # 만료된 쿨다운 항목 주기적 정리
+    if len(_button_cooldowns) > _COOLDOWN_CLEANUP_THRESHOLD:
+        expired = [uid for uid, t in _button_cooldowns.items() if now - t > cooldown_seconds]
+        for uid in expired:
+            del _button_cooldowns[uid]
+    return False
