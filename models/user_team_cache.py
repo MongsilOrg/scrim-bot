@@ -6,14 +6,13 @@ user_id당 최근 1건만 유지 (덮어쓰기).
 """
 import json
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from typing import Optional, Dict
 
 from config.logging_config import get_logger
+from utils.helpers import KST, save_json_atomic
 
 logger = get_logger('user_team_cache')
-
-KST = timezone(timedelta(hours=9))
 
 
 class UserTeamCache:
@@ -48,11 +47,7 @@ class UserTeamCache:
     def _save(self) -> None:
         """캐시를 파일에 원자적으로 저장 (tmp → rename)."""
         try:
-            os.makedirs(os.path.dirname(self._cache_path), exist_ok=True)
-            tmp_path = self._cache_path + ".tmp"
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(self._data, f, ensure_ascii=False, indent=2)
-            os.replace(tmp_path, self._cache_path)
+            save_json_atomic(self._cache_path, self._data, indent=2)
         except OSError as e:
             logger.error(f"[캐시] 캐시 파일 저장 실패: {e}")
 

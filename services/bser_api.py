@@ -1,10 +1,11 @@
 """
 BSER API 클라이언트 서비스
 
-캐시 전략:
-- 닉네임 → 유저ID 매칭: 24시간 장기 캐시 (변경되지 않는 데이터)
-- 유저ID → MMR 조회: 60초 단기 캐시 (5분 주기 갱신 시 API 부하 감소)
+캐시 전략 (클래스 속성으로 일회용 인스턴스 간 공유):
+- 닉네임 → 유저ID 매칭: 장기 캐시 (변경되지 않는 데이터)
+- 유저ID → MMR 조회: 단기 캐시 (주기 갱신 시 API 부하 감소)
   조편성 시에는 MMR 캐시를 클리어하여 실시간 데이터 사용
+- 캐시가 상한을 초과하면 저장 시점에 만료 항목을 청소
 """
 import asyncio
 import random
@@ -24,32 +25,26 @@ class BSERAPIClient:
     """
     BSER API 클라이언트
     
-    BSER API와의 통신을 담당하며, 닉네임-유저ID 매칭을 캐싱합니다.
-    MMR 조회는 실시간 데이터를 사용합니다.
-    
-    Attributes:
-        api_key: BSER API 키
-        base_url: API 기본 URL
-        session: aiohttp 클라이언트 세션
-        _headers: API 요청 헤더
-        _nickname_cache: 닉네임-유저ID 매칭 캐시
-    
-    Constants:
-        MAX_RETRIES: 최대 재시도 횟수 (기본값: 3)
-        INITIAL_WAIT: 초기 대기 시간 (초, 기본값: 1)
-        MAX_WAIT: 최대 대기 시간 (초, 기본값: 8)
-        NICKNAME_CACHE_TTL: 닉네임 캐시 TTL (초, 기본값: 86400 = 24시간)
+    BSER API와의 통신을 담당하며, 닉네임-유저ID 매칭과 MMR을 캐싱합니다.
+    캐시는 클래스 속성이라 매번 새로 만드는 일회용 인스턴스 간에도 공유됩니다.
     """
-    
+
     # API 관련 상수
     MAX_RETRIES = 4  # 과도한 백오프 방지
     INITIAL_WAIT = 1  # 초기 대기 시간 (초)
     MAX_WAIT = 30  # 최대 대기 시간 (초)
-    
+
     # 캐시 TTL 설정
     NICKNAME_CACHE_TTL = 86400  # 닉네임-유저ID 매칭: 24시간 (장기 캐시)
     MMR_CACHE_TTL = 60  # MMR 캐시: 60초 (단기 캐시)
-    
+    CACHE_MAX_ENTRIES = 2000  # 초과 시 만료 항목 청소
+
+    # 공유 캐시 (클래스 속성, 인스턴스에서 재바인딩 금지: 항목 변경만 할 것)
+    _nickname_cache: Dict[str, Dict[str, Any]] = {}
+    _mmr_cache: Dict[str, Dict[str, Any]] = {}
+    # 404 에러 로깅 추적 (같은 닉네임에 대한 반복 로그 방지, 닉네임 -> 마지막 로그 시간)
+    _failed_nicknames: Dict[str, float] = {}
+
     def __init__(self):
         self.api_key = settings.BSER_API_KEY
         self.base_url = "https://open-api.bser.io/v1"
@@ -59,33 +54,23 @@ class BSERAPIClient:
             "x-api-key": self.api_key,
             "Content-Type": "application/json"
         }
-        # 닉네임-유저ID 매칭 캐시 (장기 캐시)
-        self._nickname_cache: Dict[str, Dict[str, Any]] = {}
-        # MMR 캐시 (단기 캐시)
-        self._mmr_cache: Dict[str, Dict[str, Any]] = {}
-        # 404 에러 로깅 추적 (같은 닉네임에 대한 반복 로그 방지)
-        self._failed_nicknames: Dict[str, float] = {}  # 닉네임 -> 마지막 로그 시간
-    
+
     async def __aenter__(self):
-        """비동기 컨텍스트 매니저 진입"""
         await self.initialize_session()
         return self
-    
-    async def __aexit__(self, exc_type: Optional[type[BaseException]], 
-                       exc_val: Optional[BaseException], 
+
+    async def __aexit__(self, exc_type: Optional[type[BaseException]],
+                       exc_val: Optional[BaseException],
                        exc_tb: Optional[TracebackType]) -> None:
-        """비동기 컨텍스트 매니저 종료"""
         await self.close_session()
-    
+
     async def initialize_session(self) -> None:
-        """세션을 초기화합니다."""
         if self.session is None:
             self.session = aiohttp.ClientSession(headers=self._headers, timeout=self.request_timeout)
         elif self.session.closed:
             self.session = aiohttp.ClientSession(headers=self._headers, timeout=self.request_timeout)
 
     async def close_session(self) -> None:
-        """세션을 종료합니다."""
         if self.session is not None:
             await self.session.close()
             self.session = None
@@ -96,18 +81,16 @@ class BSERAPIClient:
             logger.warning("[API] 클라이언트가 적절히 종료되지 않음")
     
     def _get_cache_key(self, endpoint: str, params: Dict[str, Any] = None) -> str:
-        """캐시 키 생성"""
         if params:
             param_str = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
             return f"{endpoint}?{param_str}"
         return endpoint
     
     def _is_nickname_cache_valid(self, cache_entry: Dict[str, Any]) -> bool:
-        """닉네임 캐시 유효성 검사 (24시간)"""
+        """닉네임 캐시 유효성 검사"""
         return time.time() - cache_entry.get('timestamp', 0) < self.NICKNAME_CACHE_TTL
     
     def _get_from_nickname_cache(self, cache_key: str) -> Optional[Any]:
-        """닉네임 캐시에서 데이터 조회"""
         if cache_key in self._nickname_cache:
             cache_entry = self._nickname_cache[cache_key]
             if self._is_nickname_cache_valid(cache_entry):
@@ -117,8 +100,17 @@ class BSERAPIClient:
                 del self._nickname_cache[cache_key]
         return None
     
+    @classmethod
+    def _prune_expired(cls, cache: Dict[str, Dict[str, Any]], ttl: float) -> None:
+        """캐시가 상한을 넘으면 만료 항목을 제거합니다 (장수 클래스 캐시의 무한 성장 방지)."""
+        if len(cache) <= cls.CACHE_MAX_ENTRIES:
+            return
+        now = time.time()
+        for key in [k for k, v in cache.items() if now - v.get('timestamp', 0) >= ttl]:
+            del cache[key]
+
     def _set_nickname_cache(self, cache_key: str, data: Any) -> None:
-        """닉네임 캐시에 데이터 저장"""
+        self._prune_expired(self._nickname_cache, self.NICKNAME_CACHE_TTL)
         self._nickname_cache[cache_key] = {
             'data': data,
             'timestamp': time.time()
@@ -183,9 +175,14 @@ class BSERAPIClient:
 
         return None
     
-    def clear_mmr_cache(self) -> None:
-        """MMR 캐시만 클리어"""
-        self._mmr_cache.clear()
+    def _set_mmr_cache(self, cache_key: str, mmr: float) -> None:
+        self._prune_expired(self._mmr_cache, self.MMR_CACHE_TTL)
+        self._mmr_cache[cache_key] = {'data': mmr, 'timestamp': time.time()}
+
+    @classmethod
+    def clear_mmr_cache(cls) -> None:
+        """공유 MMR 캐시만 클리어 (조편성 직전 실시간 데이터 보장용)"""
+        cls._mmr_cache.clear()
 
     async def check_server_maintenance(self) -> bool:
         """BSER 서버 점검 여부를 확인합니다.
@@ -206,15 +203,12 @@ class BSERAPIClient:
 
     async def get_user_uid(self, user_nickname: str) -> Optional[str]:
         """사용자 닉네임으로 사용자 UID를 조회합니다."""
-        # 닉네임 캐시 확인 (24시간 장기 캐시)
+        # 닉네임 캐시 확인 (장기 캐시)
         # 원본 닉네임 그대로 사용 (대소문자 구분)
         cache_key = self._get_cache_key("user/nickname", {"query": user_nickname})
         cached_result = self._get_from_nickname_cache(cache_key)
         if cached_result is not None:
             return cached_result
-        
-        if not self.session:
-            await self.initialize_session()
 
         url = f"{self.base_url}/user/nickname"
         data = await self._request("GET", url, params={"query": user_nickname})
@@ -233,6 +227,9 @@ class BSERAPIClient:
             last_log_time = self._failed_nicknames.get(user_nickname, 0)
             if current_time - last_log_time > 300:
                 logger.warning(f"[API] 닉네임 조회 실패 (404) - 닉네임: '{user_nickname}'")
+                if len(self._failed_nicknames) > self.CACHE_MAX_ENTRIES:
+                    for k in [k for k, t in self._failed_nicknames.items() if current_time - t > 300]:
+                        del self._failed_nicknames[k]
                 self._failed_nicknames[user_nickname] = current_time
         else:
             logger.warning(f"[API] 닉네임 조회 API 응답 코드 오류 - 닉네임: '{user_nickname}', 코드: {data.get('code')}, 메시지: {data.get('message')}")
@@ -261,7 +258,7 @@ class BSERAPIClient:
         return None
     
     async def get_user_mmr(self, uid: str) -> Optional[float]:
-        """사용자 MMR 조회 (60초 캐시 적용)
+        """사용자 MMR 조회 (단기 캐시 적용)
 
         Returns:
             float: MMR 값 (0.0 포함, 랭크 데이터가 없는 정상 케이스)
@@ -281,18 +278,8 @@ class BSERAPIClient:
             if rank_data is None:
                 # API 오류 또는 네트워크 오류 → None 반환
                 return None
-            if isinstance(rank_data, dict) and rank_data.get("userRank"):
-                user_rank = rank_data["userRank"]
-                if isinstance(user_rank, dict):
-                    mmr = user_rank.get("mmr", 0.0)
-                else:
-                    mmr = getattr(user_rank, "mmr", 0.0) if hasattr(user_rank, "mmr") else 0.0
-                # 캐시에 저장
-                self._mmr_cache[cache_key] = {'data': mmr, 'timestamp': time.time()}
-                return mmr
-            logger.warning(f"[API] rank_data에 userRank가 없음 - UID: {uid}")
-            mmr = 0.0
-            self._mmr_cache[cache_key] = {'data': mmr, 'timestamp': time.time()}
+            mmr = rank_data["userRank"].get("mmr", 0.0)
+            self._set_mmr_cache(cache_key, mmr)
             return mmr
 
         except Exception as e:

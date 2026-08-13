@@ -40,6 +40,8 @@ class TeamData:
             'staff': self.staff,
             'user_id': self.user_id,
             'mmr': self.mmr,
+            'is_seed': self.is_seed,
+            'seed_name': self.seed_name,
         }
         if self.mmr_updated_at:
             result['mmr_updated_at'] = self.mmr_updated_at.isoformat()
@@ -51,7 +53,6 @@ class TeamData:
 
     @classmethod
     def from_dict(cls, name: str, data: Dict) -> 'TeamData':
-        """딕셔너리에서 생성"""
         team = cls(
             name=name,
             players=data.get('players', []),
@@ -59,6 +60,8 @@ class TeamData:
             user_id=data.get('user_id')
         )
         team.mmr = data.get('mmr', 0.0)
+        team.is_seed = data.get('is_seed', False)
+        team.seed_name = data.get('seed_name')
         for attr in ('mmr_updated_at', 'created_at', 'updated_at'):
             val = data.get(attr)
             if val:

@@ -1,7 +1,7 @@
 """테스트 계정 캐시 갱신 회귀 테스트.
 
 버그: TeamProcessor.test_accounts_data 가 __init__ 에서 한 번만 로드되고
-이후 갱신되지 않음. 봇 실행 중 '테스트' 시트에 계정을 추가하면 _is_test_account
+이후 갱신되지 않음. 봇 실행 중 '테스트' 시트에 계정을 추가하면 is_test_account
 가 인식하지 못해 실계정 API 경로로 새고, 조회 실패 → 해당 멤버가 MMR 평균에서
 탈락 → 팀 MMR 이 2인/1인 평균으로 잘못 계산됨.
 
@@ -17,7 +17,7 @@ from models.team_processor import TeamProcessor
 def _bare_processor():
     """__init__(네트워크/시트) 우회한 최소 인스턴스."""
     tp = TeamProcessor.__new__(TeamProcessor)
-    tp.test_accounts_data = {}
+    tp._set_test_accounts({})
     tp._test_accounts_loaded_at = 0.0
     tp._test_accounts_attempted_at = 0.0
     return tp
@@ -27,17 +27,17 @@ class TestEnsureTestAccountsLoaded(unittest.IsolatedAsyncioTestCase):
     async def test_reloads_when_stale_and_recognizes_new_account(self):
         """캐시가 스테일(loaded_at=0)이면 시트를 다시 읽어 새 테스트 계정을 인식해야 함."""
         tp = _bare_processor()
-        self.assertFalse(tp._is_test_account("신규테스트"))  # 아직 미인식
+        self.assertFalse(tp.is_test_account("신규테스트"))  # 아직 미인식
 
         def fake_load():
-            tp.test_accounts_data = {"신규테스트": 6000.0}
+            tp._set_test_accounts({"신규테스트": 6000.0})
             return True
 
         with patch.object(tp, "_load_test_accounts_data_sync", side_effect=fake_load) as loader:
             await tp.ensure_test_accounts_loaded()
 
         loader.assert_called_once()
-        self.assertTrue(tp._is_test_account("신규테스트"))
+        self.assertTrue(tp.is_test_account("신규테스트"))
         self.assertEqual(tp._get_test_account_mmr("신규테스트"), 6000.0)
 
     async def test_ttl_cache_skips_reload_when_fresh(self):
@@ -67,12 +67,13 @@ class TestLoadFailureKeepsCache(unittest.IsolatedAsyncioTestCase):
 
     def test_sheet_error_keeps_previous_accounts(self):
         tp = _bare_processor()
-        tp.test_accounts_data = {"TEST1": 6000.0}
+        tp._set_test_accounts({"TEST1": 6000.0})
         tp.gspread_spreadsheet = MagicMock()
         tp.gspread_spreadsheet.worksheet.side_effect = RuntimeError("503")
 
         self.assertFalse(tp._load_test_accounts_data_sync())
         self.assertEqual(tp.test_accounts_data, {"TEST1": 6000.0})
+        self.assertTrue(tp.is_test_account("test1"))
 
     async def test_failure_does_not_mark_cache_fresh(self):
         """실패 시 loaded_at 을 갱신하면 안 됨(쿨다운 후 재시도 가능해야 함)."""

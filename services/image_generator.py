@@ -1,18 +1,31 @@
 """
 이미지 생성 서비스
+
+wkhtmltoimage 렌더는 blocking이라 async 컨텍스트에서는 *_async 래퍼로 호출한다.
 """
+import asyncio
 import os
 import platform
 from io import BytesIO
 from typing import Dict, List, Optional
 
 from services.notion_api import get_server_info
+from services.score_aggregation import (
+    COL_KILL_SCORE,
+    COL_TEAM_NAME,
+    COL_TOTAL_SCORE,
+    KEY_RANK,
+)
 
 import imgkit
 
 from config.logging_config import get_logger
+from config.settings import settings
+from utils.helpers import get_current_kst_time
 
 logger = get_logger('image_generator')
+
+TOURNAMENT_COLOR = '#FB9206'
 
 # wkhtmltoimage 공통 설정
 if platform.system() == 'Windows':
@@ -60,12 +73,23 @@ class ImageGenerator:
     """이미지 생성 클래스"""
 
     @staticmethod
-    def generate_mmr_image(teams_data: dict, *, sort_by_mmr: bool = True, unverified_teams: set = None) -> Optional[BytesIO]:
+    async def generate_mmr_image_async(teams_data: dict, *, sort_by_mmr: bool = True,
+                                       unverified_teams: set = None, server_info: dict = None) -> Optional[BytesIO]:
+        """generate_mmr_image의 async 래퍼. 렌더와 Notion 조회를 스레드로 오프로딩합니다."""
+        return await asyncio.to_thread(
+            ImageGenerator.generate_mmr_image, teams_data,
+            sort_by_mmr=sort_by_mmr, unverified_teams=unverified_teams, server_info=server_info,
+        )
+
+    @staticmethod
+    def generate_mmr_image(teams_data: dict, *, sort_by_mmr: bool = True,
+                           unverified_teams: set = None, server_info: dict = None) -> Optional[BytesIO]:
         """MMR 이미지를 HTML/CSS 기반으로 생성하는 함수
 
         Args:
             teams_data: {team_name: TeamData} 딕셔너리
             sort_by_mmr: True면 MMR 내림차순 정렬, False면 딕셔너리 삽입 순서 유지
+            server_info: 미리 조회한 get_server_info() 결과. None이면 내부에서 조회
         """
         try:
             if unverified_teams is None:
@@ -75,7 +99,7 @@ class ImageGenerator:
                 # 검증된 팀과 미검증 팀 분리
                 verified = sorted(
                     [(n, d) for n, d in teams_data.items() if n not in unverified_teams],
-                    key=lambda x: x[1].mmr if hasattr(x[1], 'mmr') else 0,
+                    key=lambda x: x[1].mmr,
                     reverse=True
                 )
                 unverified = [(n, d) for n, d in teams_data.items() if n in unverified_teams]
@@ -83,10 +107,9 @@ class ImageGenerator:
             else:
                 ordered_teams = list(teams_data.items())
 
-            from utils.helpers import get_current_kst_time
             current_time = get_current_kst_time().strftime('%H:%M')
 
-            html_str = ImageGenerator._create_mmr_html_template(ordered_teams, current_time, unverified_teams)
+            html_str = ImageGenerator._create_mmr_html_template(ordered_teams, current_time, unverified_teams, server_info=server_info)
             return _render_html_to_image(html_str, width=1000)
 
         except Exception as e:
@@ -94,13 +117,16 @@ class ImageGenerator:
             return None
 
     @staticmethod
-    def _create_mmr_html_template(sorted_teams: list, current_time: str, unverified_teams: set = None) -> str:
+    def _create_mmr_html_template(sorted_teams: list, current_time: str, unverified_teams: set = None,
+                                  server_info: dict = None) -> str:
         """MMR 테이블 HTML 템플릿 생성"""
-        is_tournament = get_server_info()['is_tournament']
+        if server_info is None:
+            server_info = get_server_info()
+        is_tournament = server_info['is_tournament']
         num_teams = len(sorted_teams)
 
-        accent_color = '#FB9206' if is_tournament else '#4a9eff'
-        border_color = '#FB9206' if is_tournament else '#3a8ee0'
+        accent_color = TOURNAMENT_COLOR if is_tournament else '#4a9eff'
+        border_color = TOURNAMENT_COLOR if is_tournament else '#3a8ee0'
 
         if unverified_teams is None:
             unverified_teams = set()
@@ -114,14 +140,14 @@ class ImageGenerator:
         # 검증된 팀 수 계산 (미검증 팀 앞의 구분선 위치용)
         verified_count = sum(1 for name, _ in sorted_teams if name not in unverified_teams)
 
-        # 8팀 구분선 + 미검증 팀 구분선 적용
+        # 조 단위 구분선 + 미검증 팀 구분선 적용
         body_html = ''
         for i, row_html in enumerate(rows_html):
             actual_rank = i + 1
             # 미검증 팀 시작 직전에 빨간 구분선
             if i == verified_count and verified_count > 0 and verified_count < num_teams:
                 body_html += row_html.replace('class="row', 'class="row divider-top', 1)
-            elif actual_rank % 8 == 0 and i < num_teams - 1:
+            elif actual_rank % settings.TEAMS_PER_GROUP == 0 and i < num_teams - 1:
                 body_html += row_html.replace('class="row', 'class="row divider-bottom', 1)
             else:
                 body_html += row_html
@@ -188,6 +214,11 @@ class ImageGenerator:
 """
 
     @staticmethod
+    async def generate_score_table_image_async(team_data: List[Dict]) -> Optional[BytesIO]:
+        """generate_score_table_image의 async 래퍼. 렌더를 스레드로 오프로딩합니다."""
+        return await asyncio.to_thread(ImageGenerator.generate_score_table_image, team_data)
+
+    @staticmethod
     def generate_score_table_image(team_data: List[Dict]) -> Optional[BytesIO]:
         """점수표 이미지 생성 (BytesIO 반환)"""
         if not team_data:
@@ -200,14 +231,14 @@ class ImageGenerator:
     def _build_score_html(team_data: List[Dict]) -> str:
         """점수표 HTML 생성"""
         is_tournament = get_server_info()['is_tournament']
-        accent_color = '#FB9206' if is_tournament else '#4a9eff'
+        accent_color = TOURNAMENT_COLOR if is_tournament else '#4a9eff'
 
         rows_html = ''
         for team in team_data:
-            rank = team.get('rank', 0)
-            team_name = team.get('teamName', 'Unknown')
-            kill_score = team.get('tournament kill score', 0)
-            total_score = team.get('tournament total score', 0)
+            rank = team.get(KEY_RANK, 0)
+            team_name = team.get(COL_TEAM_NAME, 'Unknown')
+            kill_score = team.get(COL_KILL_SCORE, 0)
+            total_score = team.get(COL_TOTAL_SCORE, 0)
 
             rank_class = ''
             if rank == 1:

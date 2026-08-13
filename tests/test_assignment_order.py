@@ -15,7 +15,7 @@ from services.discord_service import DiscordService
 
 class AssignmentOrderTest(unittest.IsolatedAsyncioTestCase):
     async def test_roles_assigned_before_group_announcements(self):
-        service = DiscordService(processor=SimpleNamespace())
+        service = DiscordService(processor=SimpleNamespace(), team_data_manager=SimpleNamespace())
         order = []
 
         async def _rec(name):
@@ -39,7 +39,7 @@ class AssignmentOrderTest(unittest.IsolatedAsyncioTestCase):
         groups = [[("TeamA", SimpleNamespace(), 1500.0)]]
 
         # 휴무일 조회는 외부 HTTP 호출이므로 테스트에서는 스텁 처리
-        with patch("utils.helpers.get_rest_day_info", new=AsyncMock(return_value={"is_rest_day": False})):
+        with patch("services.discord_service.get_rest_day_info", new=AsyncMock(return_value={"is_rest_day": False})):
             await service.send_notices(guild, groups)
 
         self.assertIn("roles", order)

@@ -4,15 +4,47 @@
 """
 import json
 import os
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from config.logging_config import get_logger
+from utils.helpers import save_json_atomic
 from .team_data import TeamData
 
 if TYPE_CHECKING:
     from .team_data_manager import TeamDataManager
 
 logger = get_logger('team_backup')
+
+
+def _iso(dt):
+    return dt.isoformat() if dt else None
+
+
+def _from_iso(raw):
+    return datetime.fromisoformat(raw) if raw else None
+
+
+# 백업 대상 필드 명세의 단일 출처: (저장 키, 매니저 속성, to_json, from_json, 로드 기본값).
+# save와 load가 같은 목록을 순회하므로 필드 추가 시 여기 한 줄이면 된다.
+# teams/groups는 인덱스 재구축과 중첩 구조 때문에 별도 처리한다.
+_META_FIELDS = [
+    ('scrim_day', 'scrim_day', None, None, None),
+    ('scrim_month', 'scrim_month', None, None, None),
+    ('scrim_channel_id', 'scrim_channel_id', None, None, None),
+    ('is_team_assignment_started', 'is_team_assignment_started', None, None, False),
+    ('last_auto_assignment', 'last_auto_assignment', _iso, _from_iso, None),
+    ('is_maintenance', 'is_maintenance', None, None, False),
+    ('last_success_time', '_last_success_time', None, None, ''),
+]
+_TOP_FIELDS = [
+    ('group_message_ids', 'group_message_ids', None, None, dict),
+    ('group_message_texts', 'group_message_texts', None, None, dict),
+    ('dashboard_message_id', 'dashboard_message_id', None, None, None),
+    ('mmr_message_id', 'mmr_message_id', None, None, None),
+    ('selected_weathers', '_selected_weathers', None, None, dict),
+    ('unverified_teams', 'unverified_teams', list, set, set),
+]
 
 
 class TeamBackup:
@@ -28,13 +60,6 @@ class TeamBackup:
     def save(self) -> None:
         """팀 데이터를 JSON 파일로 백업합니다 (날짜 메타데이터 포함)."""
         try:
-            backup_dir = os.path.dirname(self.backup_file)
-            if backup_dir:
-                os.makedirs(backup_dir, exist_ok=True)
-            # BotManager에서 밴/날씨 데이터 가져오기
-            from bot.manager import BotManager
-            bot_manager = BotManager.get_instance()
-
             # groups 직렬화
             serialized_groups = None
             if self._manager.groups is not None:
@@ -45,30 +70,24 @@ class TeamBackup:
                         serialized_group.append([team_name, team_data.to_dict(), mmr])
                     serialized_groups.append(serialized_group)
 
+            meta = {}
+            for key, attr, to_json, _, _ in _META_FIELDS:
+                value = getattr(self._manager, attr)
+                meta[key] = to_json(value) if to_json else value
+
             data = {
-                '_meta': {
-                    'scrim_day': self._manager.scrim_day,
-                    'scrim_month': self._manager.scrim_month,
-                    'scrim_channel_id': self._manager.scrim_channel_id,
-                    'is_team_assignment_started': self._manager.is_team_assignment_started,
-                    'last_auto_assignment': self._manager.last_auto_assignment.isoformat() if self._manager.last_auto_assignment else None,
-                },
+                '_meta': meta,
                 'teams': {
                     name: team.to_dict()
                     for name, team in self._manager.teams.items()
                 },
                 'groups': serialized_groups,
-                'group_message_ids': self._manager.group_message_ids,
-                'group_message_texts': self._manager.group_message_texts,
-                'dashboard_message_id': self._manager.dashboard_message_id,
-                'mmr_message_id': self._manager.mmr_message_id,
-                'selected_weathers': bot_manager._selected_weathers,
-                'unverified_teams': list(self._manager.unverified_teams),
             }
-            tmp_path = self.backup_file + '.tmp'
-            with open(tmp_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            os.replace(tmp_path, self.backup_file)
+            for key, attr, to_json, _, _ in _TOP_FIELDS:
+                value = getattr(self._manager, attr)
+                data[key] = to_json(value) if to_json else value
+
+            save_json_atomic(self.backup_file, data, indent=2)
         except Exception as e:
             logger.error(f"[팀데이터] 백업 저장 실패: {e}", exc_info=True)
 
@@ -83,30 +102,26 @@ class TeamBackup:
                 return False
 
             mgr = self._manager
-            from datetime import datetime
 
-            # 메타데이터가 있는 새 형식과 레거시 형식 모두 지원
-            if '_meta' in data:
-                meta = data['_meta']
-                teams_data = data.get('teams', {})
-                mgr.scrim_day = meta.get('scrim_day')
-                mgr.scrim_month = meta.get('scrim_month')
-                mgr.scrim_channel_id = meta.get('scrim_channel_id')
-                mgr.is_team_assignment_started = meta.get('is_team_assignment_started', False)
-                last_assign = meta.get('last_auto_assignment')
-                mgr.last_auto_assignment = datetime.fromisoformat(last_assign) if last_assign else None
-            else:
-                # 레거시 형식: 메타데이터 없이 팀 데이터만 저장
-                teams_data = data
+            if '_meta' not in data:
+                return False
+
+            meta = data['_meta']
+            teams_data = data.get('teams', {})
+
+            for section, fields in ((meta, _META_FIELDS), (data, _TOP_FIELDS)):
+                for key, attr, _, from_json, default in fields:
+                    raw = section.get(key)
+                    if raw is None:
+                        value = default() if callable(default) else default
+                    else:
+                        value = from_json(raw) if from_json else raw
+                    setattr(mgr, attr, value)
 
             for name, team_dict in teams_data.items():
                 team = TeamData.from_dict(name, team_dict)
                 mgr.teams[name] = team
                 mgr._add_member_index(name, team)
-                mgr._update_mmr_index(name, 0.0, team.mmr)
-                for member in team.all_members:
-                    key = mgr._normalize_member_key(member)
-                    mgr.user_teams[key] = name
             # groups 복구
             saved_groups = data.get('groups')
             if saved_groups is not None:
@@ -116,25 +131,6 @@ class TeamBackup:
                     for team_name, team_dict, mmr in group:
                         restored_group.append((team_name, TeamData.from_dict(team_name, team_dict), mmr))
                     mgr.groups.append(restored_group)
-
-            # group_message_ids / texts 복구
-            saved_msg_ids = data.get('group_message_ids')
-            if saved_msg_ids:
-                mgr.group_message_ids = saved_msg_ids
-            saved_msg_texts = data.get('group_message_texts')
-            if saved_msg_texts:
-                mgr.group_message_texts = saved_msg_texts
-
-            mgr.dashboard_message_id = data.get('dashboard_message_id')
-            mgr.mmr_message_id = data.get('mmr_message_id')
-            mgr.unverified_teams = set(data.get('unverified_teams', []))
-
-            # BotManager에 날씨 데이터 주입
-            from bot.manager import BotManager
-            bot_manager = BotManager.get_instance()
-            saved_weathers = data.get('selected_weathers')
-            if saved_weathers:
-                bot_manager._selected_weathers = saved_weathers
 
             logger.info(
                 f"[팀데이터] 백업에서 {len(teams_data)}개 팀 복구 완료 "
@@ -149,7 +145,8 @@ class TeamBackup:
         """백업 파일이 유효한지 확인합니다.
 
         백업 파일이 존재하고 메타데이터가 있으면 항상 유효합니다.
-        초기화는 오직 /스크림 명령어(reset_team_data())로만 수행됩니다.
+        초기화는 다음 스크림 자동 전환(transition_to_next_scrim)이
+        수행하는 reset_team_data()로만 이루어집니다.
         """
         try:
             if not os.path.exists(self.backup_file):
@@ -165,7 +162,6 @@ class TeamBackup:
             return False
 
     def clear(self) -> None:
-        """백업 파일을 삭제합니다."""
         try:
             if os.path.exists(self.backup_file):
                 os.remove(self.backup_file)
