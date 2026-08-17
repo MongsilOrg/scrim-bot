@@ -179,8 +179,11 @@ class TeamInputView(LayoutView):
             )
             
             if not user_team:
+                logger.info(f"[팀취소시도] 팀 없음 | 요청자: {interaction.user}")
                 await send_error_message(interaction, "등록한 팀이 없습니다.")
                 return
+
+            logger.info(f"[팀취소시도] {user_team} | 요청자: {interaction.user}")
 
             team_data = team_data_manager.get_team_data(user_team)
             team_mmr = team_data_manager.get_team_mmr(user_team) or 0.0
@@ -254,6 +257,7 @@ class TeamInputView(LayoutView):
 
             # 조편성 시작 이후인지 확인
             if team_data_manager.is_team_assignment_started:
+                logger.info(f"[팀취소거부] {team_name} | 사유: 조편성 완료")
                 await send_error_message(interaction, ASSIGNMENT_CLOSED_CANCEL_MSG)
                 return
 
@@ -266,6 +270,7 @@ class TeamInputView(LayoutView):
 
             success, failure_reason = await team_data_manager.remove_team(team_name)
             if not success:
+                logger.warning(f"[팀취소거부] {team_name} | 사유: {failure_reason or '(사유 없음)'}")
                 # 실패 사유가 있으면 그대로 표시, 없으면 기본 메시지
                 error_message = failure_reason if failure_reason else (
                     "팀 취소가 실패했습니다.\n\n"
@@ -337,6 +342,7 @@ class TeamInputView(LayoutView):
 
             team_info = team_data_manager.get_team_data(team_name)
             if team_info is None:
+                logger.info(f"[강제취소거부] {team_name} | 사유: 팀 없음")
                 await send_error_message(interaction, "이미 취소되었거나 존재하지 않는 팀입니다.")
                 return
 
@@ -345,6 +351,7 @@ class TeamInputView(LayoutView):
 
             success, failure_reason = await team_data_manager.remove_team(team_name)
             if not success:
+                logger.warning(f"[강제취소거부] {team_name} | 사유: {failure_reason or '(사유 없음)'}")
                 await send_response(interaction, error_view(failure_reason or "강제취소에 실패했습니다."))
                 return
 
@@ -406,6 +413,7 @@ class ConfirmView(_TimeoutEditView):
         super().__init__()
         self._on_confirm = on_confirm
         self._error_text = error_text
+        self._title = title
 
         # Container (안내 텍스트 + 필드)
         children: list = [TextDisplay(content=f"## {title}\n{body}" if body else f"## {title}")]
@@ -439,9 +447,14 @@ class ConfirmView(_TimeoutEditView):
 
     async def back_callback(self, interaction: discord.Interaction) -> None:
         try:
+            logger.info(f"[뷰] 확인 돌아가기 - {self._title} | 사용자: {interaction.user}")
             await interaction.response.edit_message(view=info_view("이전 화면으로 돌아갔습니다."), embed=None, content=None)
         except Exception as e:
             logger.error(f"[뷰] 돌아가기 콜백 실패: {e}", exc_info=True)
+
+    async def on_timeout(self) -> None:
+        logger.info(f"[뷰] 확인 시간 만료 - {self._title}")
+        await super().on_timeout()
 
 
 _SELECT_OPTION_LIMIT = 25  # Discord Select 옵션 최대 개수
