@@ -279,14 +279,16 @@ class TeamProcessor:
                 mmr = self._get_test_account_mmr(player)
                 if mmr and mmr > 0:
                     mmr_list.append(mmr)
-        
-        if mmr_list:
-            # 상위 3명의 MMR 추출
-            top_3_mmr = heapq.nlargest(3, mmr_list)
-            avg_mmr = sum(top_3_mmr) / len(top_3_mmr)
-            return avg_mmr
-        
-        return 0.0
+
+        return self._average_top_three(mmr_list, len(players))
+
+    @staticmethod
+    def _average_top_three(mmr_list: List[float], expected_count: int) -> float:
+        """상위 3명 평균. 빠진 사람이 최고 MMR일 수 있어 전원 조회 시에만 확정한다."""
+        if not mmr_list or len(mmr_list) < expected_count:
+            return 0.0
+        top_3_mmr = heapq.nlargest(3, mmr_list)
+        return sum(top_3_mmr) / len(top_3_mmr)
     
     def _extract_players_only(self, team_data: TeamData) -> List[str]:
         """팀 데이터에서 플레이어만 추출합니다 (스태프 제외, MMR 조회용이라 원본 대소문자 유지)."""
@@ -406,14 +408,10 @@ class TeamProcessor:
                     results = await asyncio.gather(*[_fetch_player_mmr(p) for p in players])
                     mmr_list = [m for m in results if m is not None]
 
-                    if mmr_list:
-                        # 상위 3명의 MMR 추출
-                        top_3_mmr = heapq.nlargest(3, mmr_list)
-                        avg_mmr = sum(top_3_mmr) / len(top_3_mmr)
-                    else:
-                        logger.warning(f"[MMR조회] 팀의 모든 플레이어 MMR 조회 실패 - 팀명: {team_name}, 플레이어: {players}")
-                        # 실패 시 0 반환으로 호출처에 실패 알림
-                        return team_name, team_data, 0.0
+                    avg_mmr = self._average_top_three(mmr_list, len(players))
+                    if avg_mmr == 0.0:
+                        missing = [p for p, m in zip(players, results) if m is None]
+                        logger.warning(f"[MMR조회] 일부 플레이어 MMR 조회 실패로 팀 MMR 미확정 - 팀명: {team_name}, 대상: {missing}")
 
                     return team_name, team_data, avg_mmr
             except Exception as e:
@@ -461,7 +459,14 @@ class TeamProcessor:
             for team_name, team_data in teams.items()
         ]
 
-        team_info = await asyncio.gather(*tasks)
+        # 조회 실패 팀을 0.0으로 두면 최하위로 밀려 엉뚱한 조에 배정된다
+        team_info = []
+        for team_name, team_data, mmr in await asyncio.gather(*tasks):
+            if mmr <= 0 and team_data.mmr > 0:
+                logger.warning(f"[조편성] MMR 조회 실패, 마지막 확정값 사용 - 팀명: {team_name}, MMR: {team_data.mmr:.2f}")
+                mmr = team_data.mmr
+            team_info.append((team_name, team_data, mmr))
+
         team_info.sort(key=lambda x: x[2], reverse=True)
 
         return team_info
