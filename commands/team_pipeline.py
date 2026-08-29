@@ -101,11 +101,12 @@ async def _validate_team_rules(
     *,
     is_edit: bool,
     original_team_name: Optional[str] = None,
+    original_members: Optional[List[str]] = None,
 ) -> Tuple[bool, bool]:
     """등록/수정 공통 제한 검사와 닉네임 검증.
 
-    순서: 조편성/시간 제한 → 경고 제한(등록만) → 봇 팀 중복 → 길드 존재 → 게임 API.
-    수정 경로는 팀명이 바뀐 경우에만 봇 팀 중복을 검사합니다.
+    순서: 조편성/시간 제한 → 경고 제한 → 봇 팀 중복 → 길드 존재 → 게임 API.
+    수정 경로는 팀명이 바뀐 경우에만 봇 팀 중복을, 경고 제한은 새 팀원만 검사합니다.
 
     Returns:
         (통과 여부, 서버 점검 여부)
@@ -119,8 +120,10 @@ async def _validate_team_rules(
     if not is_allowed:
         local_error = err
 
-    if local_error is None and not is_edit:
-        is_allowed, err = await team_data_manager.check_member_restrictions(current_time, new_team=team_data)
+    if local_error is None:
+        is_allowed, err = await team_data_manager.check_member_restrictions(
+            current_time, new_team=team_data, previous_members=original_members
+        )
         if not is_allowed:
             local_error = err
 
@@ -349,6 +352,7 @@ async def process_team_edit(
             passed, is_maintenance = await _validate_team_rules(
                 team_data_manager, team_processor, new_team_data, temp_message,
                 is_edit=True, original_team_name=original_team_name,
+                original_members=original_team_data.all_members,
             )
             if not passed:
                 return

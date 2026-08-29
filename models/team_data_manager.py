@@ -323,16 +323,24 @@ class TeamDataManager:
     async def check_member_restrictions(
         self,
         current_time: datetime,
-        new_team: Optional[TeamData] = None
+        new_team: Optional[TeamData] = None,
+        previous_members: Optional[List[str]] = None,
     ) -> Tuple[bool, str]:
-        """신규 팀과 등록된 전체 팀원의 경고 제한 여부를 확인합니다."""
+        """새로 들어오는 팀원의 경고 제한 여부를 확인합니다.
+
+        previous_members 를 주면 그 목록에 없는 팀원만 검사합니다.
+        """
         warning_manager = BotManager.get_instance().get_warning_manager()
         if not (warning_manager and warning_manager.worksheet):
             return True, ""
 
         member_names = list(new_team.all_members) if new_team else []
-        for team_data in self.teams.values():
-            member_names.extend(team_data.all_members)
+        if previous_members is not None:
+            known = {normalize_nickname_for_comparison(name) for name in previous_members}
+            member_names = [
+                name for name in member_names
+                if normalize_nickname_for_comparison(name) not in known
+            ]
         member_names = list(dict.fromkeys(member_names))
         if not member_names:
             return True, ""
