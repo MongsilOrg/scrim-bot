@@ -151,7 +151,7 @@ class DiscordService:
             team_data_manager.group_message_texts[group_letter] = full_message
             team_data_manager.save_backup()
 
-            # 공휴일/일요일: 1시드 팀 신청자 태그 + 자율 진행 안내 추가 뷰
+            # 공휴일/주말: 1시드 팀 신청자 태그 + 자율 진행 안내 추가 뷰
             # (추가 뷰 실패가 본 공지 성공을 가리지 않도록 별도 예외 처리)
             if is_rest_day and group:
                 try:
@@ -231,7 +231,7 @@ class DiscordService:
             # 역할 핑과 채널 가시성이 '새 조 멤버'에게 올바로 가도록 공지보다 먼저 재배정한다.
             await self.handle_discord_roles(guild, groups)
 
-            # 공휴일/일요일 여부 (자율 진행 안내 표시용)
+            # 공휴일/주말 여부 (자율 진행 안내 표시용)
             # 휴무일 조회 실패가 공지와 역할 흐름 전체를 막지 않게 한다
             try:
                 is_rest_day = (await get_rest_day_info())["is_rest_day"]

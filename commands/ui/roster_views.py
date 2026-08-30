@@ -2,7 +2,7 @@
 로스터 계열 Discord View 컴포넌트들
 
 조편성 후 조별 공지에 붙는 로스터 관리 뷰(GroupRosterView, TeamSelectionView)와
-공휴일/일요일 자율 진행 안내 뷰를 담당합니다.
+공휴일/주말 자율 진행 안내 뷰를 담당합니다.
 대시보드 계열 뷰(TeamInputView 등)는 commands/ui/views.py에 있습니다.
 """
 from typing import TYPE_CHECKING, List, Optional, Tuple
@@ -106,8 +106,8 @@ def build_rest_day_guide_view(team_name: str, user_id: Optional[str] = None) -> 
     mention = f"<@{user_id}>\n" if user_id else ""
     notice = (
         f"{mention}"
-        "📢 **공휴일/일요일 스크림 자율 진행 안내**\n"
-        "공휴일 및 일요일 스크림의 경우 레이팅컷에 따른 조 편성만 제공합니다.\n"
+        "📢 **공휴일/주말 스크림 자율 진행 안내**\n"
+        "공휴일 및 주말 스크림의 경우 레이팅컷에 따른 조 편성만 제공합니다.\n"
         "아래 링크를 확인한 뒤 참여해주세요.\n\n"
         f"`{team_name}` 팀은 사설방 개설 후 양식에 맞춰 업로드해주세요.\n"
         f"{settings.CUSTOM_GAME_GUIDE_LINK}"
