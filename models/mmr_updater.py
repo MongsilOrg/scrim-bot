@@ -145,7 +145,6 @@ class MmrUpdater:
                         and current_time.hour >= settings.TEAM_REGISTRATION_DEADLINE_HOUR
                     )
 
-                    # 팀이 있는 경우 MMR 갱신
                     if team_data_manager.teams:
                         success, fail = await self.update_all_team_mmr()
 
@@ -207,7 +206,6 @@ class MmrUpdater:
             # 태스크 참조만 정리 (재시작은 외부에서 관리)
             team_data_manager.mmr_update_task = None
 
-    # 팀별 MMR 재조회 최소 간격 (초)
     TEAM_MMR_TTL_SECONDS = 600
 
     async def update_all_team_mmr(self, force: bool = False) -> Tuple[int, int]:
@@ -232,7 +230,6 @@ class MmrUpdater:
             current_time = get_current_kst_time()
             skipped = 0
 
-            # 딕셔너리 순회 중 변경을 방지하기 위해 복사본 사용
             teams_copy = dict(mgr.teams)
             for team_name, team_data in teams_copy.items():
                 try:
@@ -305,7 +302,6 @@ class MmrUpdater:
 
                 await self._send_verification_dm(team_name, team_data, invalid_members)
 
-                # 검증 완료 (성공/실패 모두 unverified에서 제거)
                 mgr.clear_unverified(team_name)
 
             except Exception as e:
@@ -335,7 +331,6 @@ class MmrUpdater:
             view = LayoutView()
 
             if not invalid_members:
-                # 성공 DM
                 mmr_val = f"{team_data.mmr:.0f}" if team_data.mmr else "0"
                 content = (
                     f"## ✅ 닉네임 확인 완료\n"
@@ -351,7 +346,6 @@ class MmrUpdater:
                     accent_colour=discord.Color.green(),
                 ))
             else:
-                # 실패 DM
                 invalid_str = ', '.join(invalid_members)
                 content = (
                     f"## ⚠️ 닉네임 확인 실패\n"

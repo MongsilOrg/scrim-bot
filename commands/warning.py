@@ -24,7 +24,6 @@ async def 제재부여(interaction: discord.Interaction, user: discord.Member) -
             await send_response(interaction, permission_error_view())
             return
 
-        # 통합 모달 표시
         modal = WarningReasonModal(user)
         await interaction.response.send_modal(modal)
         logger.debug(f"[명령어] 제재 부여 모달 표시 완료 - 대상: {target_name}")

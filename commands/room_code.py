@@ -55,7 +55,6 @@ def calculate_round_start_time(current_time: datetime) -> datetime:
 
 def _is_scrim_notice_message(message: discord.Message) -> bool:
     """메시지가 스크림 공지(방코드)인지 판별합니다."""
-    # LayoutView 메시지 확인 (Components V2)
     try:
         for component in message.components:
             for child in getattr(component, 'children', []):
@@ -64,7 +63,6 @@ def _is_scrim_notice_message(message: discord.Message) -> bool:
                     return True
     except Exception:
         pass
-    # 레거시 Embed 메시지 확인
     if message.embeds:
         title = message.embeds[0].title or ""
         if "스크림 공지" in title:
@@ -116,7 +114,6 @@ class RoomCodeView(LayoutView):
         self.role_mention = role_mention
         self.group_letter = group_letter
 
-        # 콘텐츠 구성
         title = f"📢 스크림 공지 - {round_number}라운드"
         header = f"## {title}"
         if role_mention:
@@ -136,7 +133,6 @@ class RoomCodeView(LayoutView):
 
         self.add_item(Container(*children, accent_colour=discord.Color.blue()))
 
-        # 서브 날씨 선택 버튼 (View 내부에서 생성)
         if weather_options:
             buttons = []
             for weather_name in weather_options:
@@ -157,7 +153,6 @@ class RoomCodeView(LayoutView):
             main_weather = MAIN_WEATHERS.get(self.round_number, "알 수 없음")
             new_weather = f"`{main_weather}` / `{weather_name}`"
 
-            # 버튼 없는 확정 View로 교체
             new_view = RoomCodeView(
                 round_number=self.round_number,
                 cleaned_room_code=self.cleaned_room_code,
@@ -177,7 +172,6 @@ class RoomCodeView(LayoutView):
 async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
     """방 코드를 공지합니다"""
     try:
-        # 채널 타입 검증
         if not isinstance(interaction.channel, discord.TextChannel):
             try:
                 await send_response(interaction, error_view("이 명령어는 텍스트 채널에서만 사용할 수 있습니다."))
@@ -185,7 +179,6 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                 logger.warning("[명령어] Interaction 만료됨")
             return
 
-        # 방코드 검증
         if not validate_room_code(room_code):
             try:
                 await send_response(interaction, error_view("방코드는 6자리 숫자여야 합니다.\n\n💡 예시: `123456`"))
@@ -200,7 +193,6 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
 
         round_number = await get_round_number(interaction.channel)
 
-        # 날씨 정보 준비
         group_letter = get_group_letter(interaction.channel.id)
         main_weather = MAIN_WEATHERS.get(round_number, "알 수 없음")
         weather_options = None
@@ -211,14 +203,13 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
             selected = team_data_manager.get_selected_weathers(group_letter)
             available = [w for w in SUB_WEATHERS if w not in selected]
 
-            # 이전 라운드 서브 날씨 미선택 체크
             expected_selected = round_number - 1
             if len(selected) < expected_selected:
                 missed = expected_selected - len(selected)
                 weather_warning = f"이전 라운드의 서브 날씨가 {missed}개 미선택 상태입니다."
 
             if len(available) == 1:
-                # 마지막 라운드: 자동 확정
+                # 마지막 라운드는 후보가 하나뿐이라 자동 확정
                 sub_weather = available[0]
                 team_data_manager.add_selected_weather(group_letter, sub_weather)
                 weather_value = f"`{main_weather}` / `{sub_weather}`"
@@ -240,7 +231,6 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
             if ban_list:
                 ban_display = " ".join(f"`{char}`" for char in ban_list)
 
-        # 조별 역할 멘션
         role_mention = ""
         if group_letter:
             role_mention = get_group_role_mention(interaction.guild, group_letter)
@@ -260,12 +250,11 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
             weather_options=weather_options,
         )
 
-        # 메시지 전송 공통 kwargs
         send_kwargs = {"view": room_code_view}
         if role_mention:
             send_kwargs["allowed_mentions"] = discord.AllowedMentions(roles=True)
 
-        # Interaction 응답 전송 (만료 처리 및 네트워크 오류 재시도)
+        # 만료 처리 및 네트워크 오류 재시도
         max_retries = 3
 
         for attempt in range(max_retries):

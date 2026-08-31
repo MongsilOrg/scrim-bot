@@ -52,24 +52,18 @@ class TeamProcessor:
 
         self.seeds_data = None
         self._seeds_loaded_at: float = 0.0
-        # 테스트 계정 데이터 (닉네임 -> MMR 매핑, _by_key는 정규화 키 인덱스)
         self.test_accounts_data: Dict[str, float] = {}
         self._test_accounts_by_key: Dict[str, float] = {}
         self._test_accounts_loaded_at: float = 0.0
         self._test_accounts_attempted_at: float = 0.0
-        # 구글 시트 클라이언트
         self.gspread_client: Optional[gspread.Client] = None
         self.gspread_spreadsheet: Optional[gspread.Spreadsheet] = None
-        # 조별 이미지 캐시
         self.group_image_cache: Dict[str, bytes] = {}
 
-        # 구글 시트 클라이언트 초기화
         self._initialize_gspread_client()
 
-        # 테스트 계정 데이터 로드 (동기적으로)
         self._load_test_accounts_data_sync()
 
-        # Discord 서비스 위임
         self._discord_service = DiscordService(self, team_data_manager)
     
     def update_client(self, client: Optional[commands.Bot]) -> None:
@@ -131,13 +125,11 @@ class TeamProcessor:
         """
         try:
             if not self.gspread_spreadsheet:
-                # 클라이언트가 없으면 다시 초기화 시도
                 self._initialize_gspread_client()
                 if not self.gspread_spreadsheet:
                     logger.warning("[구글시트] 스프레드시트를 열 수 없음")
                     return False
 
-            # 시드팀 시트 열기
             try:
                 worksheet = self.gspread_spreadsheet.worksheet(settings.GOOGLE_SHEETS_SEEDS_WORKSHEET_NAME)
             except gspread.exceptions.WorksheetNotFound:
@@ -146,20 +138,18 @@ class TeamProcessor:
 
             all_values = worksheet.get_all_records()
             
-            # 모든 시드팀을 하나의 리스트로 처리 (토너먼트 타입 구분 없음)
             all_seeds = []
             
             for row in all_values:
                 team_name = str(row.get('team_name', '')).strip()
                 
-                # 플레이어 목록 생성 (빈 값 제외)
                 players = []
-                for i in range(1, 5):  # player1 ~ player4
+                for i in range(1, 5):
                     player_col = f'player{i}'
                     if player_col in row and row[player_col] and str(row[player_col]).strip():
                         players.append(str(row[player_col]).strip())
                 
-                if team_name and players:  # 팀명과 최소 1명의 플레이어가 있는 경우만 처리
+                if team_name and players:
                     team_data = {
                         "team_name": team_name,
                         "players": players
@@ -326,29 +316,23 @@ class TeamProcessor:
         """
         team_priorities = {}
 
-        # 이전 식별 결과 초기화 (시드 데이터 갱신 또는 팀 변경 반영)
         for team_data in teams.values():
             team_data.is_seed = False
             team_data.seed_name = None
 
         if not self.seeds_data or not self.seeds_data.get("seeds"):
-            # 시드 데이터가 없으면 모든 팀을 2순위로 설정
             for team_name in teams.keys():
                 team_priorities[team_name] = 2
             return team_priorities
 
-        # 모든 시드팀을 하나의 리스트로 처리
         all_seeds = self.seeds_data.get("seeds", [])
 
-        # 모든 팀을 먼저 2순위로 초기화
         for team_name in teams.keys():
             team_priorities[team_name] = 2
 
-        # 각 팀에 대해 시드 매칭 확인
         for team_name, team_data in teams.items():
             team_players = self._extract_players_only(team_data)
 
-            # 시드팀 확인 (시드 데이터에 있는 팀을 1순위로 처리)
             for seed_team in all_seeds:
                 seed_players = seed_team.get("players", [])
                 if self._are_players_matching(team_players, seed_players):
@@ -357,7 +341,6 @@ class TeamProcessor:
                     team_data.seed_name = seed_team.get("team_name") or None
                     break
         
-        # 우선순위별 통계
         priority_1_count = sum(1 for priority in team_priorities.values() if priority == 1)
         priority_2_count = sum(1 for priority in team_priorities.values() if priority == 2)
         
@@ -376,15 +359,12 @@ class TeamProcessor:
 
             has_test_account = any(self.is_test_account(player) for player in players)
 
-            # 테스트 계정만 있는 경우 구글시트에서 MMR 가져오기
             if has_test_account and all(self.is_test_account(player) for player in players):
                 avg_mmr = self._calculate_test_team_mmr(players)
                 return team_name, team_data, avg_mmr
             
-            # 일반 계정과 테스트 계정이 섞인 경우 또는 일반 계정만 있는 경우
             try:
                 async with BSERAPIClient() as api_client:
-                    # 플레이어별 MMR 조회를 병렬로 수행
                     async def _fetch_player_mmr(player: str) -> Optional[float]:
                         try:
                             if self.is_test_account(player):
@@ -474,52 +454,44 @@ class TeamProcessor:
             if team_priorities is None:
                 team_priorities = {}
             
-            # 1. 모든 팀을 MMR 순으로 정렬 (조편성은 MMR 기준)
+            # 조편성은 MMR 기준
             all_teams = sorted(team_info, key=lambda x: x[2], reverse=True)
             
-            # 우선순위별 통계
             priority_1_count = sum(1 for team in all_teams if team_priorities.get(team[0], 2) == 1)
             priority_2_count = sum(1 for team in all_teams if team_priorities.get(team[0], 2) == 2)
             
             logger.info(f"[조편성] 우선순위 통계 - 시드팀: {priority_1_count}개, 비시드팀: {priority_2_count}개, 전체: {len(all_teams)}개")
             
-            # 2. 조 정원 배수 제한 적용 시 우선순위에 따른 제외
+            # 정원 배수를 넘으면 시드팀부터 채우고 나머지를 예비로 돌린다
             per_group = settings.TEAMS_PER_GROUP
             max_teams = (len(all_teams) // per_group) * per_group
             excluded_teams = []
 
             if len(all_teams) > max_teams:
-                # 우선순위별로 팀 분류
-                priority_1_teams = [team for team in all_teams if team_priorities.get(team[0], 2) == 1]  # 시드팀
-                priority_2_teams = [team for team in all_teams if team_priorities.get(team[0], 2) == 2]  # 비시드팀
+                priority_1_teams = [team for team in all_teams if team_priorities.get(team[0], 2) == 1]
+                priority_2_teams = [team for team in all_teams if team_priorities.get(team[0], 2) == 2]
 
-                # 각 우선순위 그룹 내에서 MMR 순으로 정렬
                 priority_1_teams.sort(key=lambda x: x[2], reverse=True)
                 priority_2_teams.sort(key=lambda x: x[2], reverse=True)
 
                 final_teams = []
                 priority_2_selected = []
 
-                # 시드팀부터 처리
                 if len(priority_1_teams) <= max_teams:
-                    # 시드팀이 정원 배수 이하면 모두 포함
                     final_teams.extend(priority_1_teams)
                     remaining_slots = max_teams - len(priority_1_teams)
 
-                    # 비시드팀 처리
                     if remaining_slots > 0 and priority_2_teams:
                         priority_2_selected = priority_2_teams[:remaining_slots]
                         final_teams.extend(priority_2_selected)
 
-                    # 제외된 팀들
                     excluded_teams.extend(priority_2_teams[len(priority_2_selected):])
                 else:
                     # 시드팀이 정원 배수보다 많으면 시드팀 내에서 MMR 순으로 선별
                     final_teams = priority_1_teams[:max_teams]
-                    excluded_teams.extend(priority_1_teams[max_teams:])  # 제외된 시드팀들
-                    excluded_teams.extend(priority_2_teams)  # 모든 비시드팀 제외
+                    excluded_teams.extend(priority_1_teams[max_teams:])
+                    excluded_teams.extend(priority_2_teams)
 
-                # MMR 순으로 다시 정렬 (조편성을 위해)
                 final_teams.sort(key=lambda x: x[2], reverse=True)
 
                 if excluded_teams:
@@ -530,7 +502,6 @@ class TeamProcessor:
 
             groups, unmatched_teams = self._distribute_teams_to_groups(final_teams)
 
-            # 제외된 팀(예비팀)을 unmatched_teams에 합침
             unmatched_teams.extend(excluded_teams)
 
             if len(groups) >= 2:
@@ -559,10 +530,9 @@ class TeamProcessor:
         num_groups = len(groups)
         
         if num_groups == 1:
-            # 1개 그룹: MMR 순서대로 배정 (스네이크 없음)
+            # 1개 그룹은 스네이크 없이 MMR 순
             return groups
         
-        # 모든 팀을 하나의 리스트로 합치고 MMR 순으로 정렬
         all_teams = []
         for group in groups:
             all_teams.extend(group)
@@ -575,17 +545,15 @@ class TeamProcessor:
     def _apply_grouped_snake_pattern(self, teams: List[Tuple[str, TeamData, float]], groups: List[List], num_groups: int) -> None:
         """2개씩 묶어서 스네이크 드래프트 패턴을 적용합니다."""
         team_idx = 0
-        pair_size = 2 * settings.TEAMS_PER_GROUP  # 2그룹 분량
+        pair_size = 2 * settings.TEAMS_PER_GROUP
 
-        # 2개씩 묶어서 처리
         for group_pair in range(0, num_groups, 2):
             if group_pair + 1 < num_groups:
-                # 2개 그룹 쌍: 스네이크 드래프트
                 pair_teams = teams[team_idx:team_idx + pair_size]
                 self._apply_snake_pattern(pair_teams, groups[group_pair:group_pair + 2], 2)
                 team_idx += pair_size
             else:
-                # 마지막 1개 그룹 (홀수인 경우): MMR 순
+                # 홀수로 남은 마지막 조는 MMR 순
                 remaining_teams = teams[team_idx:]
                 groups[group_pair] = remaining_teams
     
@@ -593,9 +561,9 @@ class TeamProcessor:
         """2개 그룹에 스네이크 드래프트 패턴을 적용합니다."""
         for i, team in enumerate(teams):
             # 스네이크 패턴: 1조는 0,3,4,7 / 2조는 1,2,5,6
-            if i in [0, 3, 4, 7, 8, 11, 12, 15]:  # 1조
+            if i in [0, 3, 4, 7, 8, 11, 12, 15]:
                 groups[0].append(team)
-            else:  # 2조
+            else:
                 groups[1].append(team)
     
     

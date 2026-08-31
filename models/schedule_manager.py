@@ -16,12 +16,10 @@ from utils.helpers import KST, get_current_kst_time, save_json_atomic
 
 logger = get_logger('schedule_manager')
 
-# 요일 상수
 WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일']
 ACTIVE_DAYS = [0, 1, 2, 3, 4, 5]  # 월~토 (일요일 제외)
 POOL_SIZE = 6  # 요일별 후보 풀 크기
 
-# 일정 관리 대상에서 제외할 사용자 ID
 EXCLUDED_USER_IDS: Set[int] = {settings.TEST_ACCOUNT_CONTACT_ID}
 
 BACKUP_PATH = os.path.join(
@@ -50,7 +48,6 @@ class ScheduleManager:
         # 실투입 기록: {day_index: [user_id, ...]}
         self.actual_deployments: Dict[int, List[str]] = {}
 
-        # 상태 메시지 참조
         self.status_message_id: Optional[int] = None
         self.status_channel_id: Optional[int] = None
 
@@ -61,7 +58,6 @@ class ScheduleManager:
     def initialize_week(self) -> str:
         """다음 주 월~토 기간을 자동으로 설정합니다."""
         now = get_current_kst_time()
-        # 다음 주 월요일 계산
         days_until_monday = (7 - now.weekday()) % 7
         if days_until_monday == 0:
             days_until_monday = 7
@@ -104,11 +100,9 @@ class ScheduleManager:
         self.admin_names[user_id] = display_name
 
         if not available_days:
-            # 전체 불참
             self.availability[user_id] = set()
             self.absence_reasons[user_id] = {-1: absence_reason or '사유 없음'}
         else:
-            # 참가 등록
             self.availability[user_id] = available_days
             self.absence_reasons.pop(user_id, None)
 
@@ -136,7 +130,6 @@ class ScheduleManager:
 
         lines = [f"## 📅 주간 일정 ({self.week_label})"]
 
-        # 응답 현황
         lines.append('')
         lines.append(f'**📋 응답 현황** ({resp_count}/{total}명)')
         if not responded:
@@ -155,7 +148,6 @@ class ScheduleManager:
                 else:
                     lines.append(f'> ❌ {name} - 가용일 없음')
 
-        # 미응답 관리자
         not_responded = [
             (uid, name) for uid, name in all_admin_ids if uid not in responded
         ]
@@ -168,7 +160,6 @@ class ScheduleManager:
             lines.append('')
             lines.append('> ✅ 모든 관리자가 응답 완료')
 
-        # 주간 편성
         if self.assignments:
             total_assigned = sum(len(v) for v in self.assignments.values())
             lines.append('')
@@ -214,15 +205,12 @@ class ScheduleManager:
         2. 배정 횟수가 적은 관리자 우선
         3. 동점 시 가용일이 적은 관리자 우선
         """
-        # 요일별 가용 관리자 목록 구축
         day_candidates: Dict[int, List[str]] = defaultdict(list)
         for uid, days in self.availability.items():
             for day in days:
                 day_candidates[day].append(uid)
 
-        # 배정 횟수 카운터
         assign_count: Dict[str, int] = defaultdict(int)
-        # 관리자별 가용일 수
         avail_count: Dict[str, int] = {
             uid: len(days) for uid, days in self.availability.items()
         }
@@ -251,7 +239,6 @@ class ScheduleManager:
                 ),
             )
 
-            # 최대 POOL_SIZE명 선발
             selected = ranked[:POOL_SIZE]
             assignments[day] = selected
 
@@ -303,7 +290,6 @@ class ScheduleManager:
           3. 가용일 수: 가용일이 적을수록 우선 (선택지가 적으니 먼저 배정)
           4. user_id: 안정 정렬
         """
-        # 실투입 횟수 계산
         deploy_count: Dict[str, int] = defaultdict(int)
         for day_idx, deployed in self.actual_deployments.items():
             for uid in deployed:
@@ -318,7 +304,6 @@ class ScheduleManager:
         if not remaining_days:
             return
 
-        # 요일별 가용 관리자 재구축
         day_candidates: Dict[int, List[str]] = defaultdict(list)
         for uid, days in self.availability.items():
             for day in days:
@@ -423,7 +408,7 @@ class ScheduleManager:
             self.actual_deployments = {
                 int(k): v
                 for k, v in data.get('actual_deployments', {}).items()
-                if v  # 빈 리스트 제거
+                if v
             }
             self.status_message_id = data.get('status_message_id')
             self.status_channel_id = data.get('status_channel_id')

@@ -240,16 +240,7 @@ class WarningManager:
         return count
 
     def _build_caution_detail_reason(self, converted_cautions: List[Dict], for_external: bool = False) -> str:
-        """
-        주의 2회 누적으로 인한 경고 시, 두 주의의 상세 사유를 생성합니다.
-
-        Args:
-            converted_cautions: 변환된 주의 내역 리스트
-            for_external: 패널티로그용이면 True, 처리자 정보를 뺀다
-
-        Returns:
-            포맷팅된 상세 사유 문자열
-        """
+        """두 주의의 상세 사유. for_external 이면 처리자 정보를 뺀다."""
         if not converted_cautions or len(converted_cautions) < self.CAUTION_TO_WARNING_COUNT:
             return "주의 누적"
 
@@ -317,14 +308,7 @@ class WarningManager:
         }
 
     def _check_and_convert_cautions(self, target: str, target_id: str) -> Tuple[Optional[Dict], List[Dict]]:
-        """
-        주의 2회 → 경고 1회 자동 환산
-        주의가 2회가 되면 경고 1회로 자동 변환하고 제한 날짜를 계산합니다.
-        기존 주의 2개 행을 삭제하고 경고 1개를 추가합니다.
-
-        Returns:
-            (자동 경고 정보, 변환된 주의 내역 2개 리스트)
-        """
+        """주의 2회를 경고 1회로 환산. 주의 2행을 지우고 경고 1행을 넣는다."""
         cautions = self._find_cautions(target_id, target)
 
         # 주의가 전환 임계 이상인 경우
@@ -360,19 +344,7 @@ class WarningManager:
         reason: str,
         admin_display_name: str
     ) -> Tuple[bool, str, Optional[Dict], List[Dict]]:
-        """
-        경고 또는 주의를 추가합니다.
-
-        Args:
-            target: 대상 닉네임
-            target_id: 대상 Discord ID
-            warning_type: '주의' 또는 '경고'
-            reason: 사유
-            admin_display_name: 관리자 Discord 디스플레이 네임
-
-        Returns:
-            (성공 여부, 메시지, 자동 생성된 경고 정보, 변환된 주의 내역 리스트)
-        """
+        """반환 (성공 여부, 메시지, 자동 생성된 경고 정보, 변환된 주의 내역)."""
         if not self.worksheet:
             return False, "구글 시트 연결이 설정되지 않았습니다.", None, []
         
@@ -516,7 +488,6 @@ class WarningManager:
             return False, f"경고 추가 중 오류가 발생했습니다: {str(e)}", None, []
     
     def _get_warnings_cache(self) -> List[Dict]:
-        """경고 데이터를 캐시에서 가져오거나 새로 로드합니다."""
         current_time = get_current_kst_time()
 
         if (self._warnings_cache is not None and
@@ -551,18 +522,7 @@ class WarningManager:
     def _find_max_restriction(
         self, warnings: List[Dict], target_id: str = None, target_name: str = None
     ) -> Optional[Dict]:
-        """
-        경고 목록에서 대상의 가장 늦은 제한 해제일을 찾습니다.
-        행별로 ID 우선 매칭하고, ID가 없는 행은 정규화 닉네임으로 매칭합니다.
-
-        Args:
-            warnings: 경고 데이터 리스트
-            target_id: 대상 Discord ID (선택)
-            target_name: 대상 닉네임 (선택)
-
-        Returns:
-            {'restricted_until': date, 'target': str} 또는 None
-        """
+        """가장 늦은 제한 해제일. 행별로 ID 우선 매칭하고, ID 없는 행은 정규화 닉네임으로 매칭한다."""
         latest: Optional[Dict] = None
         for record in warnings:
             if not self._matches_target(
@@ -583,17 +543,7 @@ class WarningManager:
         return latest
 
     def is_restricted(self, target_id: str = None, target_name: str = None, check_date: Optional[datetime] = None) -> Tuple[bool, Optional[str]]:
-        """
-        대상이 현재 제한 상태인지 확인합니다.
-
-        Args:
-            target_id: 대상 Discord ID (선택)
-            target_name: 대상 닉네임 (선택, target_id가 없을 때 사용)
-            check_date: 확인할 날짜 (None이면 현재 날짜)
-
-        Returns:
-            (제한 여부, 제한 해제일)
-        """
+        """target_name 은 target_id 가 없을 때만 쓴다. 반환 (제한 여부, 제한 해제일)."""
         if not self.worksheet:
             return False, None
 
@@ -669,11 +619,7 @@ class WarningManager:
         return len(updates)
 
     async def process_masters_days(self) -> bool:
-        """마지막 처리일 이후의 마스터즈 진행일만큼 활성 제재를 연장합니다.
-
-        Returns:
-            오늘까지 처리를 마쳤는지 여부. False면 다음 주기에 같은 구간을 재시도합니다.
-        """
+        """마지막 처리일 이후의 마스터즈 진행일만큼 연장. False면 다음 주기에 같은 구간을 재시도한다."""
         if not self.worksheet:
             return False
 
@@ -712,14 +658,7 @@ class WarningManager:
         return True
 
     def cleanup_expired_restrictions(self) -> int:
-        """
-        제한 해제일이 지난 항목을 삭제합니다.
-        해제일 당일 CLEANUP_HOUR 이후부터 삭제합니다.
-        패널티 시트(내부용)만 정리합니다. 경고로그(외부용)는 영구 보관되어 삭제하지 않습니다.
-
-        Returns:
-            삭제된 행 수
-        """
+        """해제일 당일 CLEANUP_HOUR 이후부터 삭제. 경고로그는 영구 보관이라 건드리지 않는다."""
         if not self.worksheet:
             return 0
 
@@ -740,7 +679,6 @@ class WarningManager:
             return 0
 
     def _cleanup_penalty_sheet(self, current_time: datetime) -> int:
-        """패널티 시트에서 만료된 항목을 삭제합니다."""
         try:
             rows_to_delete = []
             for row_num, record in self._iter_penalty_rows():
@@ -782,7 +720,6 @@ class WarningManager:
             logger.error(f"[경고관리] 정리 루프 실패: {e}")
     
     def start_cleanup_task(self) -> None:
-        """정리 태스크를 시작합니다."""
         if self.cleanup_task and not self.cleanup_task.done():
             return
 

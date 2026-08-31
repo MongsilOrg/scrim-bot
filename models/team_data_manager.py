@@ -44,9 +44,9 @@ class TeamDataManager:
 
     def __init__(self, client=None):
         self.client = client
-        self._teams_lock = asyncio.Lock()  # 팀 데이터 동시 수정 방지
+        self._teams_lock = asyncio.Lock()
         self.teams: Dict[str, TeamData] = {}
-        self.team_by_member: Dict[str, str] = {}  # 멤버명 -> 팀명 매핑 (O(1) 탐색)
+        self.team_by_member: Dict[str, str] = {}
         self.scrim_day: Optional[int] = None
         self.scrim_month: Optional[int] = None
         self.auto_assignment_task: Optional[asyncio.Task] = None
@@ -55,20 +55,19 @@ class TeamDataManager:
         self.LOG_CHANNEL_ID: int = settings.LOG_CHANNEL_ID
         self.is_team_assignment_started: bool = False
         self.mmr_message: Optional[discord.Message] = None
-        self.mmr_message_id: Optional[int] = None  # 백업용 MMR 메시지 ID
-        self.scrim_channel_id: Optional[int] = None  # 스크림 명령어가 실행된 채널 ID
-        self._pending_tasks: set = set()  # fire-and-forget 태스크 추적
+        self.mmr_message_id: Optional[int] = None
+        self.scrim_channel_id: Optional[int] = None
+        self._pending_tasks: set = set()
         self.groups: Optional[List[List[Tuple[str, TeamData, float]]]] = None
         self.group_message_ids: Dict[str, int] = {}  # "A" → message_id
         self.group_message_texts: Dict[str, str] = {}  # "A" → message_text
-        self.dashboard_message_id: Optional[int] = None  # 스크림 대시보드 메시지 ID
-        self.unverified_teams: set = set()  # 점검 중 신청/수정된 팀 (BSER 닉네임 미검증)
-        self.is_maintenance: bool = False  # 현재 점검 상태
-        self._last_success_time: str = ""  # 마지막 성공 갱신 시각 (HH:MM)
-        self._selected_weathers: Dict[str, List[str]] = {}  # 조별 선택된 서브 날씨
+        self.dashboard_message_id: Optional[int] = None
+        self.unverified_teams: set = set()
+        self.is_maintenance: bool = False
+        self._last_success_time: str = ""
+        self._selected_weathers: Dict[str, List[str]] = {}
         self._mmr_dirty: bool = True  # MMR 메시지 재렌더 필요 여부 (기동 직후 첫 사이클은 무조건 갱신)
 
-        # 위임 모듈 초기화
         self._backup = TeamBackup(self)
         self._orchestrator = ScrimOrchestrator(self)
         self._mmr_updater = MmrUpdater(self)
@@ -201,7 +200,6 @@ class TeamDataManager:
             await self._cancel_task_and_wait(self.auto_assignment_task, "auto_assignment_task")
             await self._cancel_task_and_wait(self.mmr_update_task, "mmr_update_task")
 
-            # fire-and-forget 태스크 취소
             for task in self._pending_tasks:
                 if not task.done():
                     task.cancel()
@@ -273,27 +271,20 @@ class TeamDataManager:
             logger.info(f"{label}: 태스크 취소 요청됨, 종료 대기 중...")
 
             try:
-                # 태스크가 완전히 종료될 때까지 대기 (타임아웃 적용)
                 await asyncio.wait_for(task, timeout=timeout)
             except asyncio.CancelledError:
-                # 정상적인 취소
                 logger.info(f"{label}: 태스크가 정상적으로 취소됨")
             except asyncio.TimeoutError:
-                # 타임아웃 - 강제 종료 시도
                 logger.warning(f"{label}: 태스크 취소 타임아웃 ({timeout}초), 강제 종료 시도")
-                # 태스크가 여전히 실행 중이면 다시 취소 요청
                 if not task.done():
                     task.cancel()
-                    # 추가 대기 시간
                     try:
                         await asyncio.wait_for(task, timeout=2.0)
                     except (asyncio.CancelledError, asyncio.TimeoutError):
                         pass
             except Exception as e:
-                # 태스크 내부에서 발생한 예외
                 logger.warning(f"{label}: 태스크 종료 중 예외 발생: {e}")
 
-            # 최종 확인: 태스크가 완전히 종료되었는지 확인
             if not task.done():
                 logger.warning(f"{label}: 태스크가 완전히 종료되지 않았지만 계속 진행합니다.")
         except Exception as exc:
@@ -308,7 +299,6 @@ class TeamDataManager:
         if self.is_team_assignment_started:
             return False, ASSIGNMENT_CLOSED_EDIT_MSG if is_edit else ASSIGNMENT_CLOSED_REGISTER_MSG
 
-        # 스크림 날짜가 다른 경우 마감 제한 없음
         if not self.is_scrim_date_today(current_time):
             return True, ""
 
@@ -586,7 +576,6 @@ class TeamDataManager:
     def check_duplicate_with_bot_teams(self, team_name: str, team_members: List[str], exclude_team: str = None) -> Tuple[bool, str]:
         """봇 신청 팀이 이미 봇으로 등록된 팀들과 중복되는지 검사합니다. (대소문자 구별 없이)"""
         try:
-            # 새 팀원들을 정규화된 형태로 변환
             normalized_new_members = [normalize_nickname_for_comparison(member) for member in team_members]
             normalized_new_team_name = normalize_team_name(team_name)
             normalized_exclude = normalize_team_name(exclude_team) if exclude_team else None
@@ -596,7 +585,6 @@ class TeamDataManager:
                 if exclude_team and normalize_team_name(existing_team_name) == normalized_exclude:
                     continue
 
-                # 팀명 중복 검사 (정규화)
                 if normalize_team_name(existing_team_name) == normalized_new_team_name:
                     return False, f"이미 등록된 팀명입니다: {team_name}"
 
@@ -604,10 +592,8 @@ class TeamDataManager:
 
                 normalized_existing_members = [normalize_nickname_for_comparison(member) for member in existing_members]
 
-                # 팀원 중복 검사 (대소문자 구별 없이)
                 duplicate_members = set(normalized_new_members) & set(normalized_existing_members)
                 if duplicate_members:
-                    # 원본 닉네임 + 소속 팀명으로 중복 상세 표시
                     duplicate_details = []
                     for new_member in team_members:
                         if normalize_nickname_for_comparison(new_member) in duplicate_members:
@@ -615,8 +601,8 @@ class TeamDataManager:
                     detail_str = "\n".join(duplicate_details)
                     return False, f"❌ 이미 등록된 팀원이 있습니다.\n{detail_str}"
 
-            return True, ""  # 중복 없음
+            return True, ""
 
         except Exception as e:
             logger.error(f"[팀데이터] 봇 팀 중복 검사 실패: {e}", exc_info=True)
-            return True, ""  # 오류 발생 시 중복 없음으로 처리
+            return True, ""

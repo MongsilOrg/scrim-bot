@@ -60,7 +60,6 @@ class TeamBackup:
     def save(self) -> None:
         """팀 데이터를 JSON 파일로 백업합니다 (날짜 메타데이터 포함)."""
         try:
-            # groups 직렬화
             serialized_groups = None
             if self._manager.groups is not None:
                 serialized_groups = []
@@ -122,7 +121,6 @@ class TeamBackup:
                 team = TeamData.from_dict(name, team_dict)
                 mgr.teams[name] = team
                 mgr._add_member_index(name, team)
-            # groups 복구
             saved_groups = data.get('groups')
             if saved_groups is not None:
                 mgr.groups = []
