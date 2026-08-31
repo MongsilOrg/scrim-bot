@@ -17,6 +17,7 @@ from utils.helpers import build_member_lookup, get_current_kst_time
 from utils.validators import member_name_keys, normalize_nickname_for_comparison, normalize_team_name
 
 from .team_data import TeamData
+from .warning_manager import MASTERS_NOT_DEDUCTED
 from .team_backup import TeamBackup
 from .scrim_orchestrator import ScrimOrchestrator
 from .mmr_updater import MmrUpdater
@@ -364,7 +365,8 @@ class TeamDataManager:
             member, restricted_until = blocked
             return False, (
                 f"⚠️ 팀원 '{member}'이(가) 경고로 인해 스크림 참가가 제한되었습니다.\n"
-                f"{restricted_until}까지 참여가 제한됩니다."
+                f"{restricted_until}까지 참여가 제한됩니다.\n"
+                f"💡 {MASTERS_NOT_DEDUCTED}"
             )
         return True, ""
 

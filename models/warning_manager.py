@@ -20,6 +20,9 @@ from utils.validators import normalize_nickname_for_comparison
 
 logger = get_logger('warning_manager')
 
+# 경고 DM과 신청 차단 안내가 같은 문구를 쓴다
+MASTERS_NOT_DEDUCTED = "마스터즈 진행일은 제한 일수에서 차감되지 않습니다."
+
 
 class WarningManager:
     """경고 관리 클래스"""

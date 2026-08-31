@@ -6,7 +6,7 @@ from discord.components import RadioGroupOption
 from discord.ui import Label, Modal, RadioGroup, TextDisplay, TextInput
 
 from bot.manager import BotManager
-from models.warning_manager import WarningManager
+from models.warning_manager import MASTERS_NOT_DEDUCTED, WarningManager
 from utils.layout_helpers import (
     error_view, custom_view,
     send_response,
@@ -26,7 +26,7 @@ REASON_TYPE = {
 # 주의(caution) 알림 강조색
 CAUTION_COLOR = discord.Color.from_str('#FEE75C')
 
-MASTERS_NOTE = ("💡 안내", "마스터즈 진행일은 제한 일수에서 차감되지 않습니다.")
+MASTERS_NOTE = ("💡 안내", MASTERS_NOT_DEDUCTED)
 
 
 def _caution_history(cautions: list, detailed: bool) -> str:
