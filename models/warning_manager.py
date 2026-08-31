@@ -456,7 +456,7 @@ class WarningManager:
                     return True, (
                         f"주의가 추가되었습니다. 주의 {self.CAUTION_TO_WARNING_COUNT}회로 인해 경고 1회가 자동 부여되었습니다. "
                         f"(누적 {auto_warning['warning_count']}회, 제한 {auto_warning['duration_days']}일, "
-                        f"해제일: {auto_warning['restricted_until']})"
+                        f"{auto_warning['restricted_until']}까지 제한)"
                     ), auto_warning, converted_cautions
 
                 return True, "주의가 추가되었습니다.", None, []
@@ -507,7 +507,7 @@ class WarningManager:
 
                 return True, (
                     f"경고가 추가되었습니다. (누적 {warning_count}회, 제한 {duration_days}일, "
-                    f"해제일: {restricted_str})"
+                    f"{restricted_str}까지 제한)"
                 ), {
                     'warning_date': warning_date_str,
                     'restricted_until': restricted_str,

@@ -285,7 +285,7 @@ class TeamProcessor:
 
     @staticmethod
     def _average_top_three(mmr_list: List[float], expected_count: int) -> float:
-        """상위 3명 평균. 빠진 사람이 최고 MMR일 수 있어 전원 조회 시에만 확정한다."""
+        """상위 3명 평균. 값을 모르는 인원이 있으면 0.0."""
         if not mmr_list or len(mmr_list) < expected_count:
             return 0.0
         top_3_mmr = heapq.nlargest(3, mmr_list)
@@ -458,7 +458,6 @@ class TeamProcessor:
             for team_name, team_data in teams.items()
         ]
 
-        # 조회 실패 팀을 0.0으로 두면 최하위로 밀려 엉뚱한 조에 배정된다
         team_info = []
         for team_name, team_data, mmr in await asyncio.gather(*tasks):
             if mmr <= 0 and team_data.mmr > 0:

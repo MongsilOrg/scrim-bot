@@ -326,10 +326,7 @@ class TeamDataManager:
         new_team: Optional[TeamData] = None,
         previous_members: Optional[List[str]] = None,
     ) -> Tuple[bool, str]:
-        """새로 들어오는 팀원의 경고 제한 여부를 확인합니다.
-
-        previous_members 를 주면 그 목록에 없는 팀원만 검사합니다.
-        """
+        """새로 들어오는 팀원의 경고 제한 여부를 확인합니다 (previous_members 는 검사 제외)."""
         warning_manager = BotManager.get_instance().get_warning_manager()
         if not (warning_manager and warning_manager.worksheet):
             return True, ""
@@ -367,7 +364,7 @@ class TeamDataManager:
             member, restricted_until = blocked
             return False, (
                 f"⚠️ 팀원 '{member}'이(가) 경고로 인해 스크림 참가가 제한되었습니다.\n"
-                f"제한 해제일: {restricted_until}"
+                f"{restricted_until}까지 참여가 제한됩니다."
             )
         return True, ""
 

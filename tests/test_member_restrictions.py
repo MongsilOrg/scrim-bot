@@ -1,8 +1,4 @@
-"""제재 검사 범위 테스트.
-
-이미 등록된 남의 팀에 제재 대상이 있으면 무관한 신규 신청까지 전부 막히는
-사고가 있었다. 검사는 이번에 새로 들어오는 팀원에게만 걸려야 한다.
-"""
+"""제재 검사 범위 테스트."""
 import asyncio
 import unittest
 from datetime import datetime
@@ -13,7 +9,7 @@ from models.team_data_manager import TeamDataManager
 
 
 class FakeWarningManager:
-    """restricted 목록에 든 닉네임만 제한 상태로 응답하는 대역."""
+    """restricted 목록만 제한으로 응답하는 대역."""
 
     def __init__(self, restricted):
         self.worksheet = object()
@@ -55,7 +51,6 @@ class MemberRestrictionScopeTest(unittest.TestCase):
         return allowed, msg, wm
 
     def test_other_team_restriction_does_not_block_new_application(self):
-        """남의 팀에 제재자가 있어도 내 신청은 통과한다."""
         existing = {'피어리스': TeamData(name='피어리스', players=['Horrific', '준라가스', '할수있다'])}
         new_team = TeamData(name='ㅌㅈㅇ', players=['서르', '물냉파', '무뇌의화신고이솔'])
 
@@ -65,7 +60,6 @@ class MemberRestrictionScopeTest(unittest.TestCase):
         self.assertNotIn('Horrific', wm.checked)
 
     def test_restricted_new_member_is_blocked(self):
-        """신청 팀원 본인이 제재 대상이면 차단한다."""
         new_team = TeamData(name='피어리스', players=['Horrific', '준라가스', '할수있다'])
 
         allowed, msg, _ = self._check(existing_teams={}, new_team=new_team)
@@ -75,7 +69,6 @@ class MemberRestrictionScopeTest(unittest.TestCase):
         self.assertIn('2026-08-31', msg)
 
     def test_edit_checks_only_newly_added_member(self):
-        """수정으로 제재자를 끼워 넣는 것은 막고, 원래 있던 팀원은 다시 묻지 않는다."""
         new_team = TeamData(name='기체', players=['할수있다', '준라가스'], staff=['horrific'])
 
         allowed, msg, wm = self._check(

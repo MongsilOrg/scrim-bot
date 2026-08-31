@@ -183,7 +183,7 @@ class WarningReasonModal(Modal):
                 if auto_warning and converted_cautions:
                     fields = [
                         ("📌 대상", f"{self.target_user.mention} (`{target_nickname}`)"),
-                        ("🚫 제한 해제일", f"`{auto_warning.get('restricted_until', 'N/A')}`"),
+                        ("🚫 참여 제한", f"`{auto_warning.get('restricted_until', 'N/A')}`까지"),
                         ("📊 누적 경고", _count_summary(auto_warning)),
                         ("📝 이번 주의 사유", reason),
                         ("📋 누적 주의 내역", _caution_history(converted_cautions, detailed=False)),
@@ -200,7 +200,7 @@ class WarningReasonModal(Modal):
                     warning_info = auto_warning or {}
                     fields = [
                         ("📌 대상", f"{self.target_user.mention} (`{target_nickname}`)"),
-                        ("🚫 제한 해제일", f"`{warning_info.get('restricted_until', 'N/A')}`"),
+                        ("🚫 참여 제한", f"`{warning_info.get('restricted_until', 'N/A')}`까지"),
                         ("📊 누적 경고", _count_summary(warning_info)),
                         ("📝 사유", reason),
                     ]
