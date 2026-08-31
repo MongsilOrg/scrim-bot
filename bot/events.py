@@ -58,11 +58,9 @@ async def bootstrap_on_ready(client: "ScrimBot") -> None:
                 current_time = get_current_kst_time()
                 if (team_data_manager.is_scrim_date_today()
                         and current_time.hour >= settings.TEAM_REGISTRATION_DEADLINE_HOUR):
-                    # 스크림 당일 마감 시각 이후 재시작: 조편성이 미완료면 즉시 실행
                     logger.info(f"[시작] {settings.TEAM_REGISTRATION_DEADLINE_HOUR}시 이후 재시작 - 조편성 미완료, 즉시 실행")
                     asyncio.create_task(team_data_manager.start_team_assignment())
                 else:
-                    # 태스크 재시작 (당일 마감 시각 전 또는 전날 밤)
                     team_data_manager.auto_assignment_task = asyncio.create_task(
                         team_data_manager.check_and_auto_assign()
                     )
@@ -71,7 +69,6 @@ async def bootstrap_on_ready(client: "ScrimBot") -> None:
                     )
                     logger.info("[시작] 조편성/MMR 태스크 재시작")
             else:
-                # 조편성 후 복구: GroupRosterView 재등록
                 await team_data_manager.restore_group_roster_views(client)
                 logger.info("[시작] 조편성 후 복구 완료")
         else:
@@ -105,7 +102,6 @@ async def on_app_command_error(
     interaction: discord.Interaction,
     error: app_commands.AppCommandError,
 ) -> None:
-    """앱 명령어 전역 에러 핸들러"""
     logger.error(f"[명령어] 앱 명령어 오류: {error}", exc_info=True)
     try:
         await send_response(interaction, error_view("명령어 처리 중 오류가 발생했습니다."))
@@ -114,7 +110,7 @@ async def on_app_command_error(
 
 
 async def on_message(message: discord.Message) -> None:
-    """메시지 이벤트 핸들러 (CSV 업로드 시 점수 합산 이미지 생성)"""
+    """CSV 업로드 시 점수 합산 이미지 생성"""
     if message.author.bot:
         return
     if not any(is_csv_filename(att.filename) for att in message.attachments):

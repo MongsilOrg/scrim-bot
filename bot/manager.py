@@ -48,8 +48,7 @@ class BotManager:
 
     async def reset_team_data_manager(self, client: Optional[ScrimBot] = None) -> "TeamDataManager":
         """
-        팀 데이터 매니저의 상태를 초기화합니다. 인스턴스는 유지되므로
-        위임 모듈이 보관한 참조가 계속 유효합니다.
+        인스턴스는 유지되므로 위임 모듈이 보관한 참조가 계속 유효합니다.
         기존 매니저의 백그라운드 태스크도 완전히 취소될 때까지 대기합니다.
         """
         if self._team_data_manager:
@@ -88,7 +87,6 @@ class BotManager:
         return self._warning_manager
 
     def get_team_processor(self) -> "TeamProcessor":
-        """팀 프로세서 반환 (싱글톤)"""
         if self._team_processor is None:
             from models.team_processor import TeamProcessor
 

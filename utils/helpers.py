@@ -1,6 +1,3 @@
-"""
-공통 유틸리티 함수 모듈
-"""
 import json
 import os
 from datetime import date, datetime, timedelta
@@ -21,12 +18,11 @@ def is_admin(user: discord.Member) -> bool:
 
 
 def get_team_members(team_data: 'TeamData') -> tuple:
-    """팀 데이터에서 players, staff 리스트를 추출합니다."""
     return team_data.players, team_data.staff
 
 
 def normalize_player_list(players: List[str]) -> List[str]:
-    """플레이어 리스트 정규화. 닉네임 비교와 같은 규칙(공백 축약, 소문자)을 쓴다."""
+    """닉네임 비교와 같은 규칙(공백 축약, 소문자)을 쓴다."""
     normalized = []
     for player in players or []:
         norm = normalize_nickname_for_comparison(player)
@@ -66,7 +62,6 @@ def get_current_kst_time() -> datetime:
 
 
 def get_start_of_day_utc(now_kst: datetime = None) -> datetime:
-    """KST 자정(당일 시작) 기준 시각을 UTC로 반환합니다."""
     if now_kst is None:
         now_kst = get_current_kst_time()
     start_of_day_kst = now_kst.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -98,7 +93,6 @@ def effective_scrim_date(current_time: datetime = None) -> date:
 
 
 def get_next_scrim_date(current_time: datetime = None) -> dict:
-    """다음 스크림 날짜를 계산합니다 (22시 이후는 익일)."""
     if current_time is None:
         current_time = get_current_kst_time()
 

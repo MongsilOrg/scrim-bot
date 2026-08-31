@@ -66,7 +66,6 @@ async def send_sanction_dm(
 ) -> None:
     """제재 부여 DM을 발송합니다. 실패는 로그만 남깁니다."""
     try:
-        # 주의 누적으로 경고 전환된 경우
         if auto_warning and converted_cautions:
             fields = [
                 ("📋 누적 주의 내역", _caution_history(converted_cautions, detailed=True)),
@@ -80,7 +79,6 @@ async def send_sanction_dm(
                 fields=fields,
             )
 
-        # 일반 경고인 경우 (직접 부여)
         elif warning_type == '경고':
             fields = [
                 ("📝 사유", reason),
@@ -89,7 +87,6 @@ async def send_sanction_dm(
             ]
             dm_view = custom_view("🚨 경고 알림", "**경고**가 부여되었습니다.", discord.Color.red(), fields=fields)
 
-        # 주의인 경우
         else:
             fields = [
                 ("📝 사유", reason),
@@ -106,18 +103,11 @@ async def send_sanction_dm(
 
 
 class WarningReasonModal(Modal):
-    """
-    경고/주의 사유 입력 모달 (통합)
-
-    사유 선택이 유형(주의/경고)을 결정하고,
-    TextInput으로 상세 사유를 입력받습니다.
-    """
 
     def __init__(self, target_user: discord.Member):
         super().__init__(title="제재 부여")
         self.target_user = target_user
 
-        # 사유 선택 (사유가 유형을 결정)
         self.reason_radio = RadioGroup(
             options=[
                 RadioGroupOption(label="지각", value="지각", description="경고, 참여 제한"),
@@ -129,7 +119,6 @@ class WarningReasonModal(Modal):
         )
         self.add_item(Label(text="사유", component=self.reason_radio))
 
-        # 상세 사유 입력
         self.detail_input = TextInput(
             placeholder="기타 선택 시 필수 / 그 외 추가 설명 (선택사항)",
             max_length=200,
@@ -142,7 +131,6 @@ class WarningReasonModal(Modal):
             component=self.detail_input,
         ))
 
-        # 안내 문구
         self.add_item(TextDisplay(content="📢 제재 부여 시 대상자에게 DM으로 알림이 발송됩니다."))
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
@@ -150,7 +138,6 @@ class WarningReasonModal(Modal):
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=True)
 
-            # 입력 데이터 수집 (사유가 유형을 결정)
             reason_choice = self.reason_radio.value
             detail = self.detail_input.value.strip() if self.detail_input.value else ""
 
@@ -179,7 +166,6 @@ class WarningReasonModal(Modal):
 
             if success:
 
-                # 주의 누적으로 경고 전환된 경우
                 if auto_warning and converted_cautions:
                     fields = [
                         ("📌 대상", f"{self.target_user.mention} (`{target_nickname}`)"),
@@ -195,7 +181,6 @@ class WarningReasonModal(Modal):
                         fields=fields,
                     )
 
-                # 일반 경고인 경우
                 elif warning_type == '경고':
                     warning_info = auto_warning or {}
                     fields = [
@@ -206,7 +191,6 @@ class WarningReasonModal(Modal):
                     ]
                     view_result = custom_view("🚨 경고 부여 완료", "", discord.Color.red(), fields=fields)
 
-                # 주의인 경우
                 else:
                     fields = [
                         ("📌 대상", f"{self.target_user.mention} (`{target_nickname}`)"),

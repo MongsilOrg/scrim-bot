@@ -1,8 +1,4 @@
-"""스크림 조편성 오케스트레이션 모듈
-
-자동 조편성 스케줄링, 실행, Discord 서비스 연동, GroupRosterView 복구와
-스크림 생명주기(만료 판정, 22시 다음날 전환, 일일 리셋 루프)를 담당합니다.
-"""
+"""스크림 조편성 오케스트레이션 모듈"""
 import asyncio
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
@@ -24,13 +20,11 @@ logger = get_logger('scrim_orchestrator')
 
 
 class ScrimOrchestrator:
-    """스크림 조편성 오케스트레이션을 담당하는 클래스"""
 
     def __init__(self, manager: "TeamDataManager"):
         self._manager = manager
 
     async def check_and_auto_assign(self) -> None:
-        """자동 조편성 조건을 체크하고 실행합니다."""
         while True:
             try:
                 await asyncio.sleep(settings.AUTO_ASSIGNMENT_CHECK_INTERVAL)
@@ -42,7 +36,6 @@ class ScrimOrchestrator:
 
                 current_time = get_current_kst_time()
 
-                # 17시가 되면 즉시 조편성 시작
                 if current_time.hour >= settings.TEAM_REGISTRATION_DEADLINE_HOUR:
                     await self.start_team_assignment()
                     break
@@ -54,11 +47,9 @@ class ScrimOrchestrator:
                 await asyncio.sleep(settings.AUTO_ASSIGNMENT_CHECK_INTERVAL)
 
     async def start_team_assignment(self) -> None:
-        """조편성을 시작합니다."""
         try:
             team_data_manager = self._manager
 
-            # 날짜 검증: 현재 날짜와 스크림 날짜가 일치하는지 확인
             current_time = get_current_kst_time()
             if not team_data_manager.is_scrim_date_today():
                 logger.warning(
@@ -67,7 +58,6 @@ class ScrimOrchestrator:
                 )
                 return
 
-            # 이미 시작된 경우 중복 실행 방지
             if team_data_manager.is_team_assignment_started:
                 return
 
@@ -78,7 +68,7 @@ class ScrimOrchestrator:
                 logger.warning(f"[조편성] 팀 부족으로 중단 - {total_teams_current}팀 < {settings.TEAMS_PER_GROUP}팀")
                 return
 
-            # 조편성 직전 MMR 마지막 갱신 (시드 마킹도 함께 반영)
+            # 시드 마킹도 함께 반영
             await self._refresh_mmr_before_assignment(team_data_manager)
 
             team_data_manager.is_team_assignment_started = True
@@ -90,7 +80,7 @@ class ScrimOrchestrator:
             self._rollback_assignment()
 
     def _rollback_assignment(self) -> None:
-        """조편성 실패 롤백. 플래그만 되돌리면 조편성 감지로 종료된 MMR 루프가 죽은 채 남는다."""
+        """플래그만 되돌리면 조편성 감지로 종료된 MMR 루프가 죽은 채 남는다."""
         mgr = self._manager
         mgr.is_team_assignment_started = False
         task = mgr.mmr_update_task
@@ -135,7 +125,6 @@ class ScrimOrchestrator:
             # 조편성 실행 (Discord 작업 제외) - 최신 인스턴스의 팀 데이터 사용
             groups, unmatched_teams = await team_processor.build_groups(team_data_manager.teams)
 
-            # groups 저장 및 백업
             team_data_manager.groups = groups
             team_data_manager.save_backup()
 
@@ -145,7 +134,6 @@ class ScrimOrchestrator:
                 logger.warning("[조편성] 편성된 조가 없으므로 Discord 서비스 건너뜀")
                 return
 
-            # Discord 서비스 실행 (클라이언트가 있을 때만)
             if client:
                 await self._execute_discord_services(client, groups, unmatched_teams)
             else:
@@ -156,7 +144,6 @@ class ScrimOrchestrator:
             team_data_manager = self._manager
             self._rollback_assignment()
 
-            # 오류 메시지 전송 (클라이언트가 있으면)
             try:
                 client = team_data_manager.client
                 if client and team_data_manager.scrim_channel_id:
@@ -167,7 +154,6 @@ class ScrimOrchestrator:
                 logger.error(f"[Discord] 오류 메시지 전송 실패: {e2}", exc_info=True)
 
     async def _execute_discord_services(self, client, groups, unmatched_teams):
-        """Discord 서비스를 실행합니다 (공지, 역할, 채널 관리 등)."""
         try:
             team_processor = BotManager.get_instance().get_team_processor()
 
@@ -213,14 +199,12 @@ class ScrimOrchestrator:
                     logger.warning(f"[복구] {group_letter}조 메시지를 찾을 수 없음 (id={message_id})")
                     continue
 
-                # groups에서 해당 조의 데이터 복원
                 group_index = ord(group_letter) - ord('A')
                 if group_index < 0 or group_index >= len(mgr.groups):
                     continue
 
                 group_teams = mgr.groups[group_index]
 
-                # 새 GroupRosterView 생성 및 재등록
                 saved_text = mgr.group_message_texts.get(group_letter, "")
                 roster_view = GroupRosterView(
                     group_letter, group_teams,
@@ -298,7 +282,6 @@ async def transition_to_next_scrim(client: "ScrimBot", channel: discord.TextChan
     await refresh_dashboard(channel)
     team_data_manager.save_backup()
 
-    # 태스크 시작
     team_data_manager.auto_assignment_task = asyncio.create_task(
         team_data_manager.check_and_auto_assign()
     )
@@ -306,7 +289,6 @@ async def transition_to_next_scrim(client: "ScrimBot", channel: discord.TextChan
         team_data_manager.mmr_update_loop()
     )
 
-    # MMR 메시지 생성 (팀이 있을 때만)
     if team_data_manager.teams:
         try:
             await team_data_manager.update_mmr_message(channel)
@@ -342,5 +324,4 @@ async def daily_reset_loop(client: "ScrimBot", refresh_dashboard) -> None:
         except Exception as e:
             logger.error(f"[스크림] 자동 전환 실패: {e}", exc_info=True)
 
-        # 중복 실행 방지
         await asyncio.sleep(60)

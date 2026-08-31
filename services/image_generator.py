@@ -1,6 +1,4 @@
 """
-이미지 생성 서비스
-
 wkhtmltoimage 렌더는 blocking이라 async 컨텍스트에서는 *_async 래퍼로 호출한다.
 """
 import asyncio
@@ -27,13 +25,11 @@ logger = get_logger('image_generator')
 
 TOURNAMENT_COLOR = '#FB9206'
 
-# wkhtmltoimage 공통 설정
 if platform.system() == 'Windows':
     WKHTML_PATH = r'C:\Program Files\wkhtmltopdf\bin\wkhtmltoimage.exe'
 else:
     WKHTML_PATH = '/usr/bin/wkhtmltoimage'
 
-# HTML 템플릿 디렉토리
 TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'assets', 'templates')
 
 def _load_template(name: str) -> str:
@@ -42,7 +38,6 @@ def _load_template(name: str) -> str:
         return f.read()
 
 def _render_html_to_image(html_str: str, width: int = 800, height: int = None) -> Optional[BytesIO]:
-    """HTML 문자열을 PNG 이미지로 변환하는 공통 유틸리티."""
     try:
         if not os.path.exists(WKHTML_PATH):
             logger.error(f"[이미지생성] wkhtmltoimage를 찾을 수 없음 - 경로: {WKHTML_PATH}")
@@ -70,12 +65,10 @@ def _render_html_to_image(html_str: str, width: int = 800, height: int = None) -
 
 
 class ImageGenerator:
-    """이미지 생성 클래스"""
 
     @staticmethod
     async def generate_mmr_image_async(teams_data: dict, *, sort_by_mmr: bool = True,
                                        unverified_teams: set = None, server_info: dict = None) -> Optional[BytesIO]:
-        """generate_mmr_image의 async 래퍼. 렌더와 Notion 조회를 스레드로 오프로딩합니다."""
         return await asyncio.to_thread(
             ImageGenerator.generate_mmr_image, teams_data,
             sort_by_mmr=sort_by_mmr, unverified_teams=unverified_teams, server_info=server_info,
@@ -84,19 +77,12 @@ class ImageGenerator:
     @staticmethod
     def generate_mmr_image(teams_data: dict, *, sort_by_mmr: bool = True,
                            unverified_teams: set = None, server_info: dict = None) -> Optional[BytesIO]:
-        """MMR 이미지를 HTML/CSS 기반으로 생성하는 함수
-
-        Args:
-            teams_data: {team_name: TeamData} 딕셔너리
-            sort_by_mmr: True면 MMR 내림차순 정렬, False면 딕셔너리 삽입 순서 유지
-            server_info: 미리 조회한 get_server_info() 결과. None이면 내부에서 조회
-        """
+        """sort_by_mmr=False면 삽입 순서(팀 번호) 유지, server_info=None이면 내부에서 조회한다."""
         try:
             if unverified_teams is None:
                 unverified_teams = set()
 
             if sort_by_mmr:
-                # 검증된 팀과 미검증 팀 분리
                 verified = sorted(
                     [(n, d) for n, d in teams_data.items() if n not in unverified_teams],
                     key=lambda x: x[1].mmr,
@@ -119,7 +105,6 @@ class ImageGenerator:
     @staticmethod
     def _create_mmr_html_template(sorted_teams: list, current_time: str, unverified_teams: set = None,
                                   server_info: dict = None) -> str:
-        """MMR 테이블 HTML 템플릿 생성"""
         if server_info is None:
             server_info = get_server_info()
         is_tournament = server_info['is_tournament']
@@ -131,16 +116,14 @@ class ImageGenerator:
         if unverified_teams is None:
             unverified_teams = set()
 
-        # 팀 행 HTML 생성
         rows_html = []
         for idx, (team_name, team_data) in enumerate(sorted_teams):
             is_unverified = team_name in unverified_teams
             rows_html.append(ImageGenerator._build_team_row_html(idx + 1, team_name, team_data, is_unverified=is_unverified))
 
-        # 검증된 팀 수 계산 (미검증 팀 앞의 구분선 위치용)
+        # 미검증 팀 앞 구분선 위치용
         verified_count = sum(1 for name, _ in sorted_teams if name not in unverified_teams)
 
-        # 조 단위 구분선 + 미검증 팀 구분선 적용
         body_html = ''
         for i, row_html in enumerate(rows_html):
             actual_rank = i + 1
@@ -171,7 +154,6 @@ class ImageGenerator:
 
     @staticmethod
     def _build_team_row_html(rank: int, team_name: str, team_data, *, is_unverified: bool = False) -> str:
-        """한 팀의 HTML 테이블 행을 생성"""
         mmr = team_data.mmr
         players = list(team_data.players)
         staff = list(team_data.staff)
@@ -180,11 +162,9 @@ class ImageGenerator:
 
         row_class = 'row-unverified' if is_unverified else ('row-even' if (rank - 1) % 2 == 0 else 'row-odd')
 
-        # HTML 이스케이프
         def _esc(s: str) -> str:
             return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
-        # 팀명 셀: 메인(팀명) + 시드인 경우 하단 작은 글씨 (시드 시트 팀명 표시)
         team_main = f'<div class="cell-main">{_esc(team_name)}</div>'
         if is_seed:
             seed_label = f'시드 {_esc(seed_name)}' if seed_name else '시드'
@@ -193,7 +173,6 @@ class ImageGenerator:
             team_sub = ''
         team_cell = team_main + team_sub
 
-        # 멤버 셀: 메인(선수) + 스태프 있는 경우 하단 작은 글씨
         sep = '<span class="separator">,</span>'
         players_text = sep.join(_esc(p) for p in players) if players else '-'
         members_main = f'<div class="cell-main">{players_text}</div>'
@@ -215,12 +194,10 @@ class ImageGenerator:
 
     @staticmethod
     async def generate_score_table_image_async(team_data: List[Dict]) -> Optional[BytesIO]:
-        """generate_score_table_image의 async 래퍼. 렌더를 스레드로 오프로딩합니다."""
         return await asyncio.to_thread(ImageGenerator.generate_score_table_image, team_data)
 
     @staticmethod
     def generate_score_table_image(team_data: List[Dict]) -> Optional[BytesIO]:
-        """점수표 이미지 생성 (BytesIO 반환)"""
         if not team_data:
             return ImageGenerator._create_empty_score_image()
 
@@ -229,7 +206,6 @@ class ImageGenerator:
 
     @staticmethod
     def _build_score_html(team_data: List[Dict]) -> str:
-        """점수표 HTML 생성"""
         is_tournament = get_server_info()['is_tournament']
         accent_color = TOURNAMENT_COLOR if is_tournament else '#4a9eff'
 
@@ -250,10 +226,8 @@ class ImageGenerator:
 
             row_class = 'row-even' if rank % 2 == 0 else 'row-odd'
 
-            # HTML 이스케이프
             safe_name = team_name.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
-            # 점수 포맷 (정수면 정수, 소수면 소수점 유지)
             ks_display = int(kill_score) if kill_score == int(kill_score) else kill_score
             ts_display = int(total_score) if total_score == int(total_score) else total_score
 
@@ -271,6 +245,5 @@ class ImageGenerator:
 
     @staticmethod
     def _create_empty_score_image() -> Optional[BytesIO]:
-        """빈 데이터용 이미지 생성"""
         html = _load_template('empty_score.html')
         return _render_html_to_image(html, width=900)

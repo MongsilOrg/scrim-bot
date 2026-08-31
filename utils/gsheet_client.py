@@ -1,8 +1,3 @@
-"""
-구글 시트 클라이언트 공통 초기화 유틸리티
-
-gspread 클라이언트와 스프레드시트 객체를 생성하는 공통 함수를 제공합니다.
-"""
 import os
 from typing import Optional, Tuple
 
@@ -14,7 +9,6 @@ from config.settings import settings
 
 logger = get_logger('gsheet_client')
 
-# 구글 시트 API 스코프
 GSHEET_SCOPES = [
     'https://spreadsheets.google.com/feeds',
     'https://www.googleapis.com/auth/drive'
@@ -24,16 +18,7 @@ GSHEET_SCOPES = [
 def create_gspread_client(
     caller: str = ''
 ) -> Tuple[Optional[gspread.Client], Optional[gspread.Spreadsheet]]:
-    """
-    구글 시트 클라이언트와 메인 스프레드시트를 초기화합니다.
-
-    Args:
-        caller: 호출자 식별 문자열 (로그용, 예: '경고관리', '구글시트')
-
-    Returns:
-        (gspread.Client, gspread.Spreadsheet) 튜플.
-        초기화 실패 시 해당 항목은 None.
-    """
+    """caller는 로그 접두사. 초기화 실패 시 해당 항목은 None."""
     prefix = f"[{caller}] " if caller else ""
 
     try:

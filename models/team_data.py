@@ -1,6 +1,3 @@
-"""
-팀 데이터 구조 정의
-"""
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -10,7 +7,6 @@ from utils.helpers import get_current_kst_time
 
 @dataclass
 class TeamData:
-    """팀 데이터 구조"""
     name: str
     players: List[str] = field(default_factory=list)
     staff: List[str] = field(default_factory=list)
@@ -30,11 +26,9 @@ class TeamData:
     
     @property
     def all_members(self) -> List[str]:
-        """모든 멤버 (플레이어 + 스태프) 반환"""
         return self.players + self.staff
     
     def to_dict(self) -> Dict:
-        """딕셔너리로 변환 (백업/직렬화 포함)"""
         result = {
             'players': self.players,
             'staff': self.staff,

@@ -33,8 +33,6 @@ GROUP_IMAGE_FILENAME = 'group_mmr_table.png'
 
 
 class DiscordService:
-    """Discord API 작업을 담당하는 클래스"""
-
     def __init__(self, processor: "TeamProcessor", team_data_manager: "TeamDataManager"):
         self._processor = processor
         self._team_data_manager = team_data_manager
@@ -49,7 +47,6 @@ class DiscordService:
 
             date_str = get_current_kst_time().strftime('%m.%d')
 
-            # LayoutView 구성: 헤더 + 조별 이미지들
             view = LayoutView()
             view.add_item(Container(
                 TextDisplay(content=f"## 📢 {date_str} {settings.SCRIM_START_HOUR}시 스크림 조편성입니다"),
@@ -76,7 +73,6 @@ class DiscordService:
 
                 view.add_item(Container(*children, accent_colour=discord.Color.blue()))
 
-            # 예비팀 표시 (1~7팀, 이미지 테이블)
             if unmatched_teams:
                 spare_teams_dict = {team_name: team_data for team_name, team_data, _ in unmatched_teams}
 
@@ -92,7 +88,6 @@ class DiscordService:
 
                 view.add_item(Container(*children, accent_colour=discord.Color.orange()))
 
-            # 푸터
             view.add_item(Container(
                 Separator(),
                 TextDisplay(content=FOOTER_TEXT),
@@ -117,13 +112,11 @@ class DiscordService:
         return full_message, roster_view
 
     async def send_group_announcement_with_image(self, channel: discord.TextChannel, message: str, group: List[Tuple[str, "TeamData", float]], is_rest_day: bool = False) -> None:
-        """조별 MMR 이미지와 함께 공지를 전송합니다."""
         try:
-            # 채널 ID로부터 조 이름 추출
             group_letter = get_group_letter(channel.id)
             if not group_letter:
                 logger.warning(f"[Discord] 채널에 해당하는 조를 찾을 수 없음 - 채널 ID: {channel.id}")
-                group_letter = "A"  # 기본값
+                group_letter = "A"
 
             group_teams = {team_name: team_data for team_name, team_data, _ in group}
             img_io = await self._processor.generate_group_image(group_letter, group_teams)
@@ -145,7 +138,6 @@ class DiscordService:
                 )
                 logger.warning(f"[Discord] 이미지 생성 실패 - 채널: {channel.name}, 메시지만 전송")
 
-            # message_id와 텍스트를 TeamDataManager에 저장
             team_data_manager = self._team_data_manager
             team_data_manager.group_message_ids[group_letter] = sent_message.id
             team_data_manager.group_message_texts[group_letter] = full_message
@@ -174,9 +166,8 @@ class DiscordService:
                 logger.error(f"[Discord] 에러 메시지 전송 실패 - 채널: {channel.name}: {e2}", exc_info=True)
 
     async def update_single_group_announcement(self, channel: discord.TextChannel, group_letter: str, group_teams: List[Tuple[str, "TeamData", float]]) -> None:
-        """저장된 조별 공지 메시지를 새 로스터로 수정합니다 (로스터 변경 시 사용)."""
+        """저장된 메시지를 수정합니다 (로스터 변경 시 사용)."""
         try:
-            # 저장된 message_id로 직접 fetch
             team_data_manager = self._team_data_manager
             message_id = team_data_manager.group_message_ids.get(group_letter)
             target_message = None
@@ -201,7 +192,6 @@ class DiscordService:
                 channel.guild, group_letter, group_teams, message, has_image=bool(img_io),
             )
 
-            # 기존 메시지 수정
             if img_io:
                 await target_message.edit(
                     view=roster_view,
@@ -216,7 +206,6 @@ class DiscordService:
                     embed=None,
                 )
 
-            # 백업에 갱신된 텍스트 저장
             team_data_manager.group_message_texts[group_letter] = full_message
             team_data_manager.save_backup()
 
@@ -227,11 +216,9 @@ class DiscordService:
 
     async def send_notices(self, guild: discord.Guild, groups: List[List], unmatched_teams: List[Tuple[str, "TeamData", float]] = None) -> None:
         try:
-            # 디스코드 역할 처리 (조별 공지보다 먼저)
             # 역할 핑과 채널 가시성이 '새 조 멤버'에게 올바로 가도록 공지보다 먼저 재배정한다.
             await self.handle_discord_roles(guild, groups)
 
-            # 공휴일/주말 여부 (자율 진행 안내 표시용)
             # 휴무일 조회 실패가 공지와 역할 흐름 전체를 막지 않게 한다
             try:
                 is_rest_day = (await get_rest_day_info())["is_rest_day"]
@@ -239,7 +226,6 @@ class DiscordService:
                 logger.error(f"[Discord] 휴무일 정보 조회 실패, 자율 진행 안내 생략: {e}", exc_info=True)
                 is_rest_day = False
 
-            # 모든 조별 채널에 대해 처리 (팀이 있는 조와 없는 조 모두)
             for group_letter in settings.GROUP_CHANNEL_IDS.keys():
                 try:
                     channel_id = settings.GROUP_CHANNEL_IDS.get(group_letter)
@@ -247,14 +233,10 @@ class DiscordService:
                     if channel_id:
                         channel = guild.get_channel(channel_id)
                         if channel:
-                            # 조별 채널의 모든 메시지 삭제 (팀이 있든 없든)
                             await self.clear_channel_messages(channel)
 
-                            # 해당 조에 팀이 있는지 확인
-                            group_index = ord(group_letter) - ord('A')  # A=0, B=1, ...
-                            # groups 리스트의 범위를 안전하게 체크하고, 해당 인덱스에 팀이 있는지 확인
+                            group_index = ord(group_letter) - ord('A')
                             if group_index < len(groups) and len(groups[group_index]) > 0:
-                                # 팀이 있는 경우: 조별 공지 전송
                                 group = groups[group_index]
                                 message = self.create_group_announcement_message(group_letter, group)
                                 await self.send_group_announcement_with_image(channel, message, group, is_rest_day=is_rest_day)
@@ -270,14 +252,13 @@ class DiscordService:
                     logger.error(f"[Discord] 조별 공지 전송 실패 - 조: {group_letter}조: {e}", exc_info=True)
                     continue
 
-            # 음성채널 이름 변경
             await self.rename_voice_channels(guild, groups)
 
         except Exception as e:
             logger.error(f"[Discord] 공지 전송 실패: {e}", exc_info=True)
 
     async def _retry_discord(self, coro_factory, *, error_message: str, retries: int = 3, base_delay: float = 0.2) -> None:
-        """Discord API 호출을 재시도합니다. 최종 실패 시 로그만 남깁니다."""
+        """최종 실패해도 예외 없이 로그만 남깁니다."""
         for retry in range(retries):
             try:
                 await coro_factory()
@@ -289,7 +270,6 @@ class DiscordService:
                     await asyncio.sleep(base_delay)
 
     async def _update_member_roles_with_retry(self, member, roles_to_remove, roles_to_add):
-        """멤버의 역할을 재시도 로직과 함께 업데이트합니다."""
         try:
             if roles_to_remove:
                 await self._retry_discord(
@@ -362,7 +342,6 @@ class DiscordService:
         try:
             guild = self._resolve_guild(guild)
 
-            # 설정된 모든 조의 역할 가져오기
             group_roles = {}
             for group_letter in settings.GROUP_CHANNEL_IDS:
                 role_name = f"{group_letter}조"
@@ -372,7 +351,6 @@ class DiscordService:
                 else:
                     logger.warning(f"[Discord] 역할을 찾을 수 없음 - 역할: {role_name}")
 
-            # 오늘 경기 참여자 명단 생성 (그룹별)
             today_participants = {letter: set() for letter in group_roles.keys()}
             for group_idx, group in enumerate(groups):
                 if not group:
@@ -387,11 +365,10 @@ class DiscordService:
             logger.error(f"[Discord] 역할 처리 실패: {e}", exc_info=True)
 
     async def update_group_roles(self, guild: discord.Guild, group_letter: str, group_teams: List[Tuple[str, "TeamData", float]]) -> None:
-        """특정 조의 역할만 업데이트합니다 (로스터 변경 시 사용)."""
+        """해당 조만 업데이트합니다 (로스터 변경 시 사용)."""
         try:
             guild = self._resolve_guild(guild)
 
-            # 해당 조의 역할 가져오기
             role_name = f"{group_letter}조"
             group_role = discord.utils.get(guild.roles, name=role_name)
             if not group_role:
@@ -411,7 +388,7 @@ class DiscordService:
 
     @staticmethod
     def _sorted_group_voice_channels(guild: discord.Guild, group_letter: str) -> Optional[List[discord.VoiceChannel]]:
-        """조 카테고리의 음성채널 목록 (position 순). 카테고리를 못 찾으면 None."""
+        """position 순으로 정렬. 카테고리를 못 찾으면 None."""
         category_name = settings.GROUP_CATEGORY_PATTERN.format(letter=group_letter)
         if not category_name:
             logger.warning(f"[Discord] 카테고리 패턴이 설정되지 않음 - 조: {group_letter}조")
@@ -428,7 +405,7 @@ class DiscordService:
 
     @staticmethod
     async def _safe_rename(voice_channel: discord.VoiceChannel, new_name: str, context: str) -> Optional[bool]:
-        """음성채널 이름을 변경합니다. 변경 True, 실패 False, 변경 불필요 None."""
+        """변경 True, 실패 False, 변경 불필요 None."""
         if voice_channel.name == new_name:
             return None
         try:
@@ -442,7 +419,7 @@ class DiscordService:
             return False
 
     async def rename_group_voice_channel(self, guild: discord.Guild, group_letter: str, team_index: int, team_name: str) -> None:
-        """단일 팀 슬롯의 음성채널 이름을 변경합니다 (로스터 변경 시 사용)."""
+        """단일 슬롯만 변경합니다 (로스터 변경 시 사용)."""
         voice_channels = self._sorted_group_voice_channels(guild, group_letter)
         if voice_channels is None:
             return
@@ -450,11 +427,9 @@ class DiscordService:
             await self._safe_rename(voice_channels[team_index], f"{team_index + 1}. {team_name}", f"조: {group_letter}조")
 
     async def rename_voice_channels(self, guild: discord.Guild, groups: List[List]) -> None:
-        """음성채널 이름을 조별로 변경합니다."""
         try:
             guild = self._resolve_guild(guild)
 
-            # 설정된 모든 조에 대해 처리
             for group_letter in settings.GROUP_CHANNEL_IDS:
                 group_index = ord(group_letter) - ord('A')
 
@@ -466,7 +441,6 @@ class DiscordService:
                     category_name = settings.GROUP_CATEGORY_PATTERN.format(letter=group_letter)
                     logger.warning(f"[Discord] 카테고리 음성채널 부족 - 카테고리: {category_name}, 채널 수: {len(voice_channels)}개")
 
-                # 팀 슬롯은 "번호. 팀명", 나머지는 TBD
                 group = groups[group_index] if group_index < len(groups) else None
                 targets = []
                 team_count = 0

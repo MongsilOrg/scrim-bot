@@ -22,21 +22,16 @@ logger = get_logger('bser_api')
 
 
 class BSERAPIClient:
-    """
-    BSER API 클라이언트
-    
-    BSER API와의 통신을 담당하며, 닉네임-유저ID 매칭과 MMR을 캐싱합니다.
-    캐시는 클래스 속성이라 매번 새로 만드는 일회용 인스턴스 간에도 공유됩니다.
-    """
+    """BSER API와의 통신을 담당하며, 닉네임-유저ID 매칭과 MMR을 캐싱합니다."""
 
     # API 관련 상수
     MAX_RETRIES = 4  # 과도한 백오프 방지
-    INITIAL_WAIT = 1  # 초기 대기 시간 (초)
-    MAX_WAIT = 30  # 최대 대기 시간 (초)
+    INITIAL_WAIT = 1
+    MAX_WAIT = 30
 
     # 캐시 TTL 설정
-    NICKNAME_CACHE_TTL = 86400  # 닉네임-유저ID 매칭: 24시간 (장기 캐시)
-    MMR_CACHE_TTL = 60  # MMR 캐시: 60초 (단기 캐시)
+    NICKNAME_CACHE_TTL = 86400  # 24시간 (장기 캐시)
+    MMR_CACHE_TTL = 60  # 단기 캐시
     CACHE_MAX_ENTRIES = 2000  # 초과 시 만료 항목 청소
 
     # 공유 캐시 (클래스 속성, 인스턴스에서 재바인딩 금지: 항목 변경만 할 것)
@@ -87,7 +82,6 @@ class BSERAPIClient:
         return endpoint
     
     def _is_nickname_cache_valid(self, cache_entry: Dict[str, Any]) -> bool:
-        """닉네임 캐시 유효성 검사"""
         return time.time() - cache_entry.get('timestamp', 0) < self.NICKNAME_CACHE_TTL
     
     def _get_from_nickname_cache(self, cache_key: str) -> Optional[Any]:
@@ -96,13 +90,12 @@ class BSERAPIClient:
             if self._is_nickname_cache_valid(cache_entry):
                 return cache_entry['data']
             else:
-                # 만료된 캐시 제거
                 del self._nickname_cache[cache_key]
         return None
     
     @classmethod
     def _prune_expired(cls, cache: Dict[str, Dict[str, Any]], ttl: float) -> None:
-        """캐시가 상한을 넘으면 만료 항목을 제거합니다 (장수 클래스 캐시의 무한 성장 방지)."""
+        """장수 클래스 캐시의 무한 성장 방지용 정리."""
         if len(cache) <= cls.CACHE_MAX_ENTRIES:
             return
         now = time.time()
@@ -117,7 +110,6 @@ class BSERAPIClient:
         }
 
     async def _request(self, method: str, url: str, *, params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
-        """공통 요청 래퍼 (재시도/백오프/타임아웃/429 대응)"""
         if not self.session:
             await self.initialize_session()
 
@@ -130,7 +122,6 @@ class BSERAPIClient:
                     status = response.status
                     data = await response.json(content_type=None)
 
-                    # 429 처리
                     if status == 429:
                         retry_after = response.headers.get('Retry-After')
                         if retries < self.MAX_RETRIES:
@@ -147,7 +138,6 @@ class BSERAPIClient:
                         logger.warning(f"[API] 429 재시도 횟수 초과 ({self.MAX_RETRIES}회)")
                         return None
 
-                    # 5xx 재시도
                     if 500 <= status < 600 and retries < self.MAX_RETRIES:
                         await asyncio.sleep(wait_time + random.random())
                         wait_time = min(wait_time * 2, self.MAX_WAIT)
@@ -181,16 +171,11 @@ class BSERAPIClient:
 
     @classmethod
     def clear_mmr_cache(cls) -> None:
-        """공유 MMR 캐시만 클리어 (조편성 직전 실시간 데이터 보장용)"""
+        """조편성 직전 실시간 데이터 보장을 위해 클리어합니다."""
         cls._mmr_cache.clear()
 
     async def check_server_maintenance(self) -> bool:
-        """BSER 서버 점검 여부를 확인합니다.
-
-        Returns:
-            True: 점검 중 (API 응답이 200이 아닌 경우)
-            False: 정상 운영 중
-        """
+        """서버 점검 여부. 응답 code가 200이 아니면 점검으로 본다."""
         url = "https://open-api.bser.io/v2/data/Season"
         try:
             data = await self._request("GET", url)
@@ -202,8 +187,6 @@ class BSERAPIClient:
 
 
     async def get_user_uid(self, user_nickname: str) -> Optional[str]:
-        """사용자 닉네임으로 사용자 UID를 조회합니다."""
-        # 닉네임 캐시 확인 (장기 캐시)
         # 원본 닉네임 그대로 사용 (대소문자 구분)
         cache_key = self._get_cache_key("user/nickname", {"query": user_nickname})
         cached_result = self._get_from_nickname_cache(cache_key)
@@ -238,7 +221,6 @@ class BSERAPIClient:
     
     
     async def get_user_rank(self, uid: str) -> Optional[Dict]:
-        """사용자 UID로 랭크 정보를 조회합니다."""
         url = f"{self.base_url}/rank/uid/{uid}/41/3"
         data = await self._request("GET", url)
         if not data:
@@ -258,13 +240,7 @@ class BSERAPIClient:
         return None
     
     async def get_user_mmr(self, uid: str) -> Optional[float]:
-        """사용자 MMR 조회 (단기 캐시 적용)
-
-        Returns:
-            float: MMR 값 (0.0 포함, 랭크 데이터가 없는 정상 케이스)
-            None: API 오류, 네트워크 오류 등 조회 실패
-        """
-        # MMR 캐시 확인
+        """MMR 조회 (단기 캐시). 0.0은 랭크 데이터 없음, None은 조회 실패."""
         cache_key = f"mmr:{uid}"
         if cache_key in self._mmr_cache:
             entry = self._mmr_cache[cache_key]
@@ -276,7 +252,6 @@ class BSERAPIClient:
         try:
             rank_data = await self.get_user_rank(uid)
             if rank_data is None:
-                # API 오류 또는 네트워크 오류 → None 반환
                 return None
             mmr = rank_data["userRank"].get("mmr", 0.0)
             self._set_mmr_cache(cache_key, mmr)

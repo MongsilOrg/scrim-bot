@@ -1,7 +1,4 @@
-"""MMR 갱신 및 닉네임 검증 모듈
-
-주기적 MMR 업데이트 루프, MMR 메시지 관리, 점검 해제 후 닉네임 재검증을 담당합니다.
-"""
+"""MMR 갱신 및 닉네임 검증 모듈"""
 import asyncio
 import time
 from typing import Optional, Tuple, TYPE_CHECKING
@@ -26,7 +23,6 @@ logger = get_logger('mmr_updater')
 
 
 class MmrUpdater:
-    """MMR 갱신 및 닉네임 검증을 담당하는 클래스"""
 
     def __init__(self, manager: "TeamDataManager"):
         self._manager = manager
@@ -37,20 +33,18 @@ class MmrUpdater:
         info = await asyncio.to_thread(get_server_info)
         operate = info['operate']
         try:
-            # 조편성 시작 이후인지 확인
             if mgr.is_team_assignment_started:
                 logger.warning("[MMR메시지] 조편성 시작 이후이므로 갱신 불가")
                 return
 
-            # 시드팀 마킹 (이미지에 시드 여부 표시)
+            # 이미지에 시드 여부 표시
             try:
                 team_processor = BotManager.get_instance().get_team_processor()
                 await team_processor.ensure_seeds_marked(mgr.teams)
             except Exception as e:
                 logger.warning(f"[MMR메시지] 시드 마킹 실패 (계속 진행): {e}")
 
-            # 이미지 생성 (조회해둔 서버 정보 전달). 렌더 스레드 중 팀 변경으로
-            # dict가 바뀌지 않도록 스냅샷을 넘긴다
+            # 렌더 스레드 중 팀 변경으로 dict가 바뀌지 않도록 스냅샷을 넘긴다
             img_io = await ImageGenerator.generate_mmr_image_async(
                 dict(mgr.teams), unverified_teams=set(mgr.unverified_teams), server_info=info
             )
@@ -59,7 +53,6 @@ class MmrUpdater:
                 logger.error("[MMR메시지] 이미지 생성 실패", exc_info=True)
                 return
 
-            # MMR LayoutView 생성 (이미지 → 운영 정보 순서)
             update_time = mgr._last_success_time or get_current_kst_time().strftime('%H:%M')
             if mgr.is_maintenance:
                 desc = f"🔧 서버 점검 중 / 마지막 갱신: `{update_time}`"
@@ -103,7 +96,6 @@ class MmrUpdater:
                     mgr.mmr_message_id = None
                 except discord.HTTPException as e:
                     logger.warning(f"[MMR메시지] 편집 실패 - 재시도: {e}")
-                    # 편집 실패 시 기존 메시지 삭제 후 새로 생성
                     try:
                         await mgr.mmr_message.delete()
                     except Exception:
@@ -111,7 +103,6 @@ class MmrUpdater:
                     mgr.mmr_message = None
                     mgr.mmr_message_id = None
 
-            # 새로 생성
             new_message = await channel.send(
                 view=mmr_view,
                 file=discord.File(img_io, filename='mmr_table.png')
@@ -130,11 +121,11 @@ class MmrUpdater:
 
     async def mmr_update_loop(self) -> None:
         team_data_manager = self._manager
-        last_fail_count: Optional[int] = None  # 마지막 사이클의 실패 팀 수 (실패 경고 표시 변화 감지용)
-        last_server_info: Optional[dict] = None  # 마지막 렌더 시점의 서버 정보 (Live/Tournament 전환 감지용)
+        last_fail_count: Optional[int] = None  # 실패 경고 표시 변화 감지용
+        last_server_info: Optional[dict] = None  # Live/Tournament 전환 감지용
         last_render_at: float = 0.0
         try:
-            # 첫 실행은 대기 후 시작 (setup_scrim_dashboard와 충돌 방지)
+            # setup_scrim_dashboard와 충돌 방지
             await asyncio.sleep(10)
 
             while True:
@@ -144,7 +135,6 @@ class MmrUpdater:
                 try:
                     current_time = get_current_kst_time()
 
-                    # 조편성 시작 후에는 즉시 중단
                     if team_data_manager.is_team_assignment_started:
                         team_data_manager.mmr_update_task = None
                         return

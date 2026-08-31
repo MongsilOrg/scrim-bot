@@ -1,6 +1,3 @@
-"""
-유효성 검사 유틸리티 모듈
-"""
 import asyncio
 import re
 from typing import TYPE_CHECKING, List, Set, Tuple
@@ -20,24 +17,18 @@ TEST_NICKNAME_PATTERN = re.compile(r'(?:^|[^a-z])test(?:[^a-z]|$)')
 
 
 def validate_team_name(team_name: str) -> Tuple[bool, str]:
-    """팀명 유효성 검사 (글자수 + 허용 문자 체크)
-
-    - 한글, 영어, 공백만 허용 (숫자, 특수문자 불가)
-    - 3~12글자
-    """
+    """팀명 유효성 검사. 한글/영어/공백만, 3~12글자."""
     if not team_name or not team_name.strip():
         return False, "❌ 팀명을 입력해주세요."
 
     team_name = team_name.strip()
 
-    # 길이 검사 (3~12글자)
     if len(team_name) < 3:
         return False, "❌ 팀명은 3~12글자여야 합니다.\n\n💡 현재 입력: {0}글자".format(len(team_name))
 
     if len(team_name) > 12:
         return False, "❌ 팀명은 3~12글자여야 합니다.\n\n💡 현재 입력: {0}글자".format(len(team_name))
 
-    # 허용 문자 검사 (한글(자음/모음 포함), 영어, 공백만 허용)
     if not re.match(r'^[가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z\s]+$', team_name):
         return False, "❌ 팀명에는 한글과 영어만 사용할 수 있습니다.\n\n💡 숫자, 특수문자는 사용할 수 없습니다."
 
@@ -48,23 +39,19 @@ def validate_team_data(team_data) -> Tuple[bool, str]:
     try:
         players, staff = team_data.players, team_data.staff
 
-        # 플레이어 수 검사 (최소 3명, 최대 4명)
         if len(players) < 3:
             return False, f"❌ 플레이어는 최소 3명이 필요합니다.\n\n💡 현재 입력된 플레이어 수: {len(players)}명"
         
         if len(players) > 4:
             return False, f"❌ 플레이어는 최대 4명까지만 등록할 수 있습니다.\n\n💡 현재 입력된 플레이어 수: {len(players)}명"
-        
-        # 스태프 수 검사 (최대 3명)
+
         if len(staff) > 3:
             return False, f"❌ 스태프는 최대 3명까지만 등록할 수 있습니다.\n\n💡 현재 입력된 스태프 수: {len(staff)}명"
-        
-        # 플레이어명 기본 검사 (빈 문자열만 체크)
+
         for player in players:
             if not player or not player.strip():
                 return False, "❌ 플레이어 닉네임을 입력해주세요.\n\n💡 빈 줄이나 공백만 입력할 수 없습니다."
-        
-        # 스태프명 기본 검사 (빈 문자열만 체크)
+
         for staff_member in staff:
             if not staff_member or not staff_member.strip():
                 return False, "❌ 스태프 닉네임을 입력해주세요.\n\n💡 빈 줄이나 공백만 입력할 수 없습니다."
@@ -77,11 +64,7 @@ def validate_team_data(team_data) -> Tuple[bool, str]:
 
 
 def validate_discord_user_in_team(team_data, member: 'discord.Member') -> bool:
-    """디스코드 사용자가 팀에 포함되어 있는지 검사.
-
-    길드 존재 검증(validate_members_in_guild)과 같은 기준으로,
-    표시명/전역명/계정명 중 어느 것으로 명단에 적혀 있어도 인정합니다.
-    """
+    """표시명/전역명/계정명 중 어느 것으로 명단에 적혀 있어도 인정한다 (길드 검증과 같은 기준)."""
     try:
         team_member_keys = {
             normalize_nickname_for_comparison(name)
@@ -95,17 +78,14 @@ def validate_discord_user_in_team(team_data, member: 'discord.Member') -> bool:
 
 
 def normalize_nickname_for_comparison(name: str) -> str:
-    """닉네임 비교를 위한 정규화 (대소문자 구별 없이)"""
     if not name:
         return ""
-    
-    # 앞뒤 공백 제거 및 중간 공백 정규화 후 소문자로 변환
+
     normalized = re.sub(r'\s+', ' ', name.strip()).lower()
     return normalized
 
 
 def normalize_team_name(name: str) -> str:
-    """팀명 정규화. 닉네임 정규화와 같은 규칙을 쓴다."""
     return normalize_nickname_for_comparison(name)
 
 
@@ -123,10 +103,8 @@ def check_duplicate_members(players: List[str], staff: List[str]) -> Tuple[bool,
     try:
         all_members = players + staff
 
-        # 빈 문자열 제거
         all_members = [member.strip() for member in all_members if member.strip()]
 
-        # 대소문자 무시 중복 검사
         seen = set()
         duplicates = []
         for member in all_members:
@@ -151,23 +129,12 @@ def validate_members_in_guild(
     guild: 'discord.Guild',
     members: List[str]
 ) -> Tuple[bool, List[str]]:
-    """팀원들이 디스코드 서버에 존재하는지 검증합니다.
-
-    guild.members를 한 번 순회하여 이름 set을 구축(O(M))한 뒤,
-    팀원 목록을 대조(O(N))하는 O(M+N) 방식으로 동작합니다.
-
-    Returns:
-        (is_valid, not_found_members):
-        - is_valid: 모든 팀원이 서버에 존재하면 True
-        - not_found_members: 서버에서 찾을 수 없는 팀원 닉네임 목록
-    """
+    """팀원이 길드에 있는지 검증. 이름 set을 한 번 만들어 대조한다 (O(M+N))."""
     try:
-        # 길드 멤버의 모든 닉네임 변형을 set으로 구축 (O(M))
         guild_member_names: set = set()
         for discord_member in guild.members:
             guild_member_names |= member_name_keys(discord_member)
 
-        # 팀원 검증 (O(N))
         not_found: List[str] = []
         for member_name in members:
             normalized = normalize_nickname_for_comparison(member_name)
@@ -187,18 +154,7 @@ async def validate_members_api(
     *,
     maintenance_hint: bool,
 ) -> tuple[bool, list[str], bool]:
-    """게임 API를 통해 팀원 닉네임을 검증합니다.
-
-    Args:
-        members: 검증할 닉네임 목록
-        maintenance_hint: 호출 시점에 이미 점검으로 판정된 상태면 True
-
-    Returns:
-        (is_valid, invalid_members, is_maintenance):
-        - is_valid: 모든 닉네임이 유효하면 True
-        - invalid_members: 유효하지 않은 닉네임 목록
-        - is_maintenance: 서버 점검 중이면 True
-    """
+    """게임 API 닉네임 검증. maintenance_hint 는 호출 시점에 이미 점검으로 판정된 상태."""
     try:
         async with BSERAPIClient() as api:
             results = await asyncio.gather(
@@ -253,7 +209,6 @@ def split_test_nicknames(nicknames: List[str]) -> Tuple[List[str], List[str]]:
 
 
 def build_test_account_notice(nicknames: List[str]) -> str:
-    """테스트 계정 닉네임에 대한 문의 안내를 만듭니다."""
     if not nicknames:
         return ""
     return (
@@ -268,9 +223,7 @@ API_UNAVAILABLE_NOTICE = "❌ 게임 서버 응답이 없어 닉네임을 확인
 
 
 def build_team_mmr_line(team_mmr: float, players: List[str], is_test_account) -> str:
-    """팀 MMR 표시 줄을 만듭니다.
-
-    MMR 0 은 두 가지 원인이 있어 구분해야 합니다. 전원 테스트 계정이면 '테스트'
+    """MMR 0 은 두 가지 원인이 있어 구분해야 합니다. 전원 테스트 계정이면 '테스트'
     시트에 MMR 이 없는 것이라 자동 갱신으로 채워지지 않고, 일반 팀이면 게임 API
     조회 실패라 다음 갱신에서 채워집니다.
     """
@@ -285,7 +238,7 @@ def build_team_mmr_line(team_mmr: float, players: List[str], is_test_account) ->
 
 
 def compose_nickname_error(nicknames: List[str], template: str, fallback: str = "") -> str:
-    """닉네임 검증 실패 안내를 조립합니다. 테스트 계정 몫은 별도 문구로 분리합니다.
+    """테스트 계정 몫은 별도 문구로 분리합니다.
 
     template 의 {names} 자리에 일반 닉네임이 들어갑니다. validate_members_api 는
     API 연결 자체가 실패하면 빈 목록으로 실패를 알리므로, 그때는 fallback 을 씁니다.

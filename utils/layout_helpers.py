@@ -1,8 +1,6 @@
 """
 표준 LayoutView 빌더 및 전송 유틸리티
 
-모든 사용자 응답을 일관된 Components V2 (LayoutView) 형식으로 제공합니다.
-
 톤앤매너 규칙:
   - 존칭: 하십시오체 통일 ("~입니다", "~해주세요", "~없습니다")
   - 푸터: 모든 응답에 포함
@@ -82,11 +80,7 @@ def custom_view(
     *,
     fields: list[tuple[str, str]] | None = None,
 ) -> LayoutView:
-    """추가 필드가 포함된 커스텀 LayoutView를 생성합니다.
-
-    Args:
-        fields: [("필드명", "필드값"), ...] 형태의 리스트
-    """
+    """fields는 [("필드명", "필드값"), ...] 형태."""
     children: list = [TextDisplay(content=f"## {title}\n{description}")]
 
     if fields:
@@ -113,9 +107,7 @@ def image_response_view(
     *,
     fields: list[tuple[str, str]] | None = None,
 ) -> LayoutView:
-    """이미지가 포함된 LayoutView를 생성합니다.
-
-    image_url 에 attachment://filename.png 형식을 전달하면
+    """image_url 에 attachment://filename.png 형식을 전달하면
     send_response / edit_to_layout 의 files 매개변수로 첨부할 수 있습니다.
     """
     children: list = [TextDisplay(content=f"## {title}\n{description}")]
@@ -146,11 +138,6 @@ async def send_response(
     ephemeral: bool = True,
     files: list[discord.File] | None = None,
 ) -> discord.Message | None:
-    """LayoutView를 interaction 응답으로 전송합니다.
-
-    ``is_done()`` 여부를 자동으로 확인하여 ``send_message`` 또는
-    ``followup.send`` 를 사용합니다.
-    """
     try:
         kwargs: dict = {"view": view, "ephemeral": ephemeral}
         if files:
@@ -179,7 +166,6 @@ async def send_response(
 
 
 async def update_temp_message(temp_message: discord.Message, message: str, color: discord.Color) -> None:
-    """임시 메시지를 LayoutView로 업데이트합니다."""
     try:
         if color == discord.Color.green():
             view = success_view(message)
@@ -195,7 +181,6 @@ async def update_temp_message(temp_message: discord.Message, message: str, color
 
 
 async def send_error_message(interaction: discord.Interaction, message: str) -> None:
-    """에러 메시지를 전송하는 공통 유틸리티 함수"""
     try:
         await send_response(interaction, error_view(message))
     except Exception as e:
@@ -260,10 +245,7 @@ async def edit_to_layout(
     *,
     files: list[discord.File] | None = None,
 ) -> None:
-    """기존 메시지(embed 포함 가능)를 LayoutView로 교체합니다.
-
-    embed 및 content 를 None 으로 지정하여 기존 임베드를 제거합니다.
-    """
+    """embed 및 content 를 None 으로 지정하여 기존 임베드를 제거합니다."""
     try:
         kwargs: dict = {"view": view, "embed": None, "content": None}
         if files:
@@ -273,14 +255,13 @@ async def edit_to_layout(
         logger.error(f"[레이아웃] 메시지 편집 실패: {e}", exc_info=True)
 
 
-# 버튼 cooldown 관리 (사용자별 마지막 클릭 시간)
 _button_cooldowns: dict = {}
 BUTTON_COOLDOWN_SECONDS = 1
-_COOLDOWN_CLEANUP_THRESHOLD = 100  # 이 크기 초과 시 만료 항목 정리
+_COOLDOWN_CLEANUP_THRESHOLD = 100
 
 
 async def check_cooldown(interaction: discord.Interaction, cooldown_seconds: float = BUTTON_COOLDOWN_SECONDS) -> bool:
-    """버튼 cooldown을 확인합니다. True면 cooldown 중이므로 무시해야 합니다."""
+    """True면 cooldown 중이므로 무시해야 합니다."""
     user_id = interaction.user.id
     now = time.monotonic()
     last_click = _button_cooldowns.get(user_id, 0)
@@ -288,7 +269,6 @@ async def check_cooldown(interaction: discord.Interaction, cooldown_seconds: flo
         await send_response(interaction, info_view("요청 처리 중입니다. 잠시 기다려주세요.", title="⏳ 대기"))
         return True
     _button_cooldowns[user_id] = now
-    # 만료된 쿨다운 항목 주기적 정리
     if len(_button_cooldowns) > _COOLDOWN_CLEANUP_THRESHOLD:
         expired = [uid for uid, t in _button_cooldowns.items() if now - t > cooldown_seconds]
         for uid in expired:

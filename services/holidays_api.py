@@ -66,7 +66,6 @@ async def get_holiday_names(
 
 
 async def get_rest_day_info(target_date: Optional[Union[date, datetime]] = None) -> dict:
-    """휴무일(토/일/공휴일) 정보를 반환합니다."""
     target = _to_date(target_date)
 
     is_saturday = target.weekday() == 5

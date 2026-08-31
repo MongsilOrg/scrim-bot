@@ -26,7 +26,6 @@ logger = get_logger('schedule_views')
 
 
 class AvailabilityModal(Modal):
-    """참가 요일 선택 모달"""
 
     def __init__(self, current_days: set):
         super().__init__(title="참가 등록")
@@ -64,7 +63,6 @@ class AvailabilityModal(Modal):
 
 
 class AbsenceReasonModal(Modal):
-    """전체 불참 사유 입력 모달"""
 
     def __init__(self, current_reason: str = ''):
         super().__init__(title="불참 등록")
@@ -96,18 +94,12 @@ class AbsenceReasonModal(Modal):
 
 
 class ScheduleView(LayoutView):
-    """주간 일정 관리 뷰
-
-    관리자들이 참가/불참을 등록하고 편성과 투입을 관리합니다.
-    현황 표시 + 일정등록/응답삭제/편성/투입 버튼을 포함합니다.
-    """
 
     def __init__(self, status_text: str, *, has_assignments: bool = False):
         super().__init__(timeout=None)
 
         accent = Color.green() if has_assignments else Color.blue()
 
-        # 현황 Container
         children = [
             TextDisplay(content=status_text),
             Separator(),
@@ -115,7 +107,6 @@ class ScheduleView(LayoutView):
         ]
         self.add_item(Container(*children, accent_colour=accent))
 
-        # 버튼 ActionRow
         self.register_button = Button(label="참가", style=ButtonStyle.primary, emoji="✏️")
         self.register_button.callback = self.register_callback
 
@@ -189,7 +180,6 @@ class ScheduleView(LayoutView):
             await send_response(interaction, error_view("주간 일정이 초기화되지 않았습니다."))
             return
 
-        # 편성 전 → 바로 편성
         if not schedule_mgr.assignments:
             if not schedule_mgr.availability:
                 await send_response(interaction, error_view("참가 등록된 관리자가 없습니다."))
@@ -286,11 +276,7 @@ class ScheduleView(LayoutView):
 
 
 def _build_deploy_view(schedule_mgr, user_id: str) -> LayoutView:
-    """투입 기록 뷰를 생성합니다.
-
-    배정된 요일은 눈에 띄게, 미배정 요일은 구분하여 표시합니다.
-    """
-    # 본인 배정 요일 파악
+    """배정된 요일은 눈에 띄게, 미배정 요일은 구분해 표시한다."""
     assigned_days = {
         d for d in ACTIVE_DAYS
         if user_id in schedule_mgr.assignments.get(d, [])
@@ -305,7 +291,6 @@ def _build_deploy_view(schedule_mgr, user_id: str) -> LayoutView:
             await _refresh_schedule_status(day_interaction)
         return _day_btn_callback
 
-    # 배정 요일을 앞에, 미배정 요일을 뒤에 배치
     assigned_buttons = []
     extra_buttons = []
 
@@ -332,14 +317,12 @@ def _build_deploy_view(schedule_mgr, user_id: str) -> LayoutView:
         else:
             extra_buttons.append(btn)
 
-    # 현재 본인 투입 현황
     my_days = [
         WEEKDAYS[d] for d in ACTIVE_DAYS
         if user_id in schedule_mgr.actual_deployments.get(d, [])
     ]
     my_status = ', '.join(my_days) if my_days else "없음"
 
-    # 배정 요일 안내
     if assigned_days:
         assigned_str = ', '.join(WEEKDAYS[d] for d in sorted(assigned_days))
         info_line = f"내 배정: **{assigned_str}** / 내 투입: **{my_status}**"
@@ -389,7 +372,6 @@ async def refresh_dashboard(
     has_assignments = bool(schedule_mgr.assignments)
     view = ScheduleView(status_text, has_assignments=has_assignments)
 
-    # 대상 채널: 명시 채널 → 저장된 채널 → 기본 대시보드 채널
     target_channel = channel
     if target_channel is None and schedule_mgr.status_channel_id:
         target_channel = guild.get_channel(schedule_mgr.status_channel_id)
@@ -407,7 +389,6 @@ async def refresh_dashboard(
 
 
 async def _refresh_schedule_status(interaction: discord.Interaction) -> None:
-    """인터랙션이 발생한 서버의 일정 대시보드를 갱신합니다."""
     guild = interaction.guild
     if not guild:
         return

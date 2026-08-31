@@ -1,7 +1,4 @@
-"""CSV 점수 집계 도메인 로직
-
-채널에 업로드된 당일 CSV를 수집하고 파싱해 팀 점수 누적과 밴 리스트를 계산한다.
-"""
+"""채널에 업로드된 당일 CSV를 수집하고 파싱해 팀 점수 누적과 밴 리스트를 계산한다."""
 
 import io
 import re
@@ -33,7 +30,6 @@ def is_csv_filename(filename: str) -> bool:
 
 
 async def collect_today_csv_data(channel, start_utc: datetime, limit: int = 200) -> List[CSVRow]:
-    """해당 채널의 오늘 CSV 데이터 목록을 수집합니다."""
     csv_data_list: List[CSVRow] = []
     async for msg in channel.history(after=start_utc, oldest_first=True, limit=limit):
         for attachment in msg.attachments:
@@ -66,7 +62,6 @@ async def _read_and_parse_csv_attachment(attachment) -> Optional[CSVRow]:
 
 
 def _extract_game_id(df: pd.DataFrame, filename: str) -> Optional[int]:
-    """CSV DataFrame에서 gameId를 파싱합니다."""
     if len(df) == 0:
         logger.warning(f"[점수집계] gameId를 찾을 수 없음 - 파일: {filename}")
         return None
@@ -79,12 +74,10 @@ def _extract_game_id(df: pd.DataFrame, filename: str) -> Optional[int]:
 
 
 def _is_default_team_name(name: str) -> bool:
-    """기본 팀명(Team 1~8) 여부를 판별합니다."""
     return bool(DEFAULT_TEAM_PATTERN.match(name.strip()))
 
 
 def _build_team_nickname_map(df: pd.DataFrame) -> dict:
-    """DataFrame에서 팀명 → 닉네임 set 매핑을 구축합니다."""
     team_nicknames = {}
     if 'nickname' not in df.columns:
         return team_nicknames
@@ -97,7 +90,6 @@ def _build_team_nickname_map(df: pd.DataFrame) -> dict:
 
 
 def _resolve_default_team_names(current_df: pd.DataFrame, previous_rounds_nicknames: list) -> pd.DataFrame:
-    """기본 팀명(Team N)을 이전 라운드 닉네임 기반으로 실제 팀명으로 치환합니다."""
     if 'nickname' not in current_df.columns or not previous_rounds_nicknames:
         return current_df
 
@@ -126,7 +118,6 @@ def _resolve_default_team_names(current_df: pd.DataFrame, previous_rounds_nickna
 
 
 def aggregate_team_scores(csv_data_list: List[CSVRow]) -> List[dict]:
-    """라운드별 CSV를 누적 집계해 팀 점수표 데이터로 변환합니다."""
     team_max_scores = {}
     display_names = {}  # 정규화 키 → 최초 등장 원본 팀명
     previous_rounds_nicknames = []
@@ -135,10 +126,9 @@ def aggregate_team_scores(csv_data_list: List[CSVRow]) -> List[dict]:
         round_df = df.copy()
         round_df[COL_TEAM_NAME] = round_df[COL_TEAM_NAME].astype(str).str.strip()
 
-        # 기본 팀명(Team N)을 이전 라운드 닉네임 기반으로 치환
         round_df = _resolve_default_team_names(round_df, previous_rounds_nicknames)
 
-        # 현재 라운드 닉네임 맵 저장 (다음 라운드 매칭용)
+        # 다음 라운드 매칭용으로 저장
         previous_rounds_nicknames.append(_build_team_nickname_map(round_df))
 
         for num_col in [COL_TOTAL_SCORE, COL_KILL_SCORE]:
@@ -192,14 +182,12 @@ async def compute_ban_list_for_channel(channel) -> List[str]:
     if not csv_data_list:
         return []
     csv_data_list.sort(key=lambda x: x[0])
-    last_csv_df = csv_data_list[-1][1]  # (game_id, df, filename)
+    last_csv_df = csv_data_list[-1][1]
     return _extract_ban_list(last_csv_df)
 
 
 def _extract_ban_list(last_csv_df: Optional[pd.DataFrame]) -> List[str]:
-    """마지막 라운드 기준 밴 리스트를 추출합니다.
-
-    같은 캐릭터를 3회 이상 픽한 경우 밴 대상입니다. 캐릭터명은 앞뒤/중간 공백과
+    """같은 캐릭터를 3회 이상 픽한 경우 밴 대상입니다. 캐릭터명은 앞뒤/중간 공백과
     대소문자 차이를 무시하고 집계하며, 표시는 첫 등장한 원본 표기를 사용합니다.
     빈 값은 집계에서 제외합니다.
     """

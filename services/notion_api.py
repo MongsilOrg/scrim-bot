@@ -25,7 +25,6 @@ def _tag_names(props) -> List[str]:
     return [tag["name"] for tag in props.get("태그", {}).get("multi_select", [])]
 
 
-# 1. 설정 정보
 NOTION_TOKEN: str = os.getenv('NOTION_TOKEN', '')
 NOTION_DATABASE_ID: str = os.getenv('NOTION_DATABASE_ID', '')
 UNMANAGED_TOURNAMENT_TAGS = {"KEL"}
@@ -67,7 +66,6 @@ def _query_database(payload: dict) -> list:
 
 
 def get_notion_data():
-    # 날짜가 있는 행만 조회
     payload = {
         "filter": {
             "property": "날짜",
@@ -201,9 +199,7 @@ def _build_server_info(is_tournament: bool, broadcast: bool) -> dict:
 
 
 def get_server_info() -> dict:
-    """서버 타입 및 송출 정보 dict.
-
-    조회 실패 시 만료된 캐시라도 있으면 그것을, 없으면 Live 기본값을 반환하므로
+    """조회 실패 시 만료된 캐시라도 있으면 그것을, 없으면 Live 기본값을 반환하므로
     호출부는 예외 처리 없이 써도 된다. 실패 시 캐시를 갱신하지 않아 다음 호출에 재시도한다.
     """
     global _server_info_cache, _server_info_cached_at

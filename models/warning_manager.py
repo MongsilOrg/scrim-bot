@@ -1,8 +1,5 @@
 """
-경고 관리 모델
-
-구글 시트 API를 통해 경고/주의를 관리합니다.
-주의 2회 → 경고 1회 자동 환산 및 제한 날짜 계산을 수행합니다.
+주의 2회 → 경고 1회 자동 환산 및 제한 날짜 계산.
 """
 import asyncio
 import json
@@ -25,8 +22,6 @@ MASTERS_NOT_DEDUCTED = "마스터즈 진행일은 제한 일수에서 차감되�
 
 
 class WarningManager:
-    """경고 관리 클래스"""
-
 
     # 패널티 시트 (내부용). 활성 경고만 남고 만료분은 삭제된다
     PENALTY_HEADERS = ['날짜', '대상', '대상ID', '유형', '사유', '경고일', '제한해제일', '관리자ID', '비고']
@@ -42,7 +37,7 @@ class WarningManager:
     # 주의 → 경고 자동 전환 임계. 안내 문구도 이 값으로 포맷한다
     CAUTION_TO_WARNING_COUNT = 2
 
-    # 만료 정리 컷오프 시각 (제한해제일 당일 이 시각 이후 행 삭제)
+    # 제한해제일 당일 이 시각 이후 행 삭제
     CLEANUP_HOUR = 18
 
     MASTERS_STATE_FILE = settings.MASTERS_STATE_PATH
@@ -51,12 +46,11 @@ class WarningManager:
         self.client: Optional[gspread.Client] = None
         self.spreadsheet: Optional[gspread.Spreadsheet] = None
         self.worksheet: Optional[gspread.Worksheet] = None
-        self.warning_log_worksheet: Optional[gspread.Worksheet] = None  # 경고로그 시트 (외부용)
+        self.warning_log_worksheet: Optional[gspread.Worksheet] = None
         self.cleanup_task: Optional[asyncio.Task] = None
-        # 경고 데이터 캐시
         self._warnings_cache: Optional[List[Dict]] = None
         self._cache_timestamp: Optional[datetime] = None
-        self._cache_ttl: int = 300  # 초
+        self._cache_ttl: int = 300
         self._initialize_client()
     
     def _initialize_client(self) -> None:
@@ -66,7 +60,6 @@ class WarningManager:
             return
 
         try:
-            # 패널티 시트 열기 (없으면 생성)
             try:
                 self.worksheet = self.spreadsheet.worksheet(
                     settings.GOOGLE_SHEETS_WARNING_WORKSHEET_NAME
@@ -80,7 +73,6 @@ class WarningManager:
                 )
                 logger.info(f"[경고관리] 패널티 시트 생성됨 - 이름: {settings.GOOGLE_SHEETS_WARNING_WORKSHEET_NAME}")
 
-            # 경고로그 시트 열기 (외부용 - 영구 보관, 없으면 생성)
             try:
                 self.warning_log_worksheet = self.spreadsheet.worksheet(
                     settings.GOOGLE_SHEETS_WARNING_LOG_WORKSHEET_NAME
@@ -101,7 +93,6 @@ class WarningManager:
             logger.error(f"[경고관리] 워크시트 초기화 실패: {e}")
     
     def _ensure_headers(self) -> None:
-        """패널티 시트에 헤더가 없으면 생성합니다."""
         try:
             if not self.worksheet:
                 logger.warning("[경고관리] 패널티 워크시트가 None입니다")
@@ -120,7 +111,6 @@ class WarningManager:
             logger.error(f"[경고관리] 패널티 시트 헤더 확인 실패: {e}")
 
     def _ensure_warning_log_headers(self) -> None:
-        """경고로그 시트에 헤더가 없으면 생성합니다."""
         try:
             if not self.warning_log_worksheet:
                 logger.warning("[경고관리] 패널티로그 워크시트가 None입니다")

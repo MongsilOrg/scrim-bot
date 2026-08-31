@@ -20,17 +20,11 @@ logger = get_logger('modals')
 
 
 def _parse_member_lines(text: str) -> list:
-    """줄 단위 입력을 공백 제거한 멤버 리스트로 파싱합니다."""
     return [line.strip() for line in text.strip().split('\n') if line.strip()]
 
 
 class TeamModal(Modal):
-    """
-    팀 정보 입력 모달
-
-    새로운 팀 등록을 위한 폼을 제공합니다.
-    팀명, 선수 3~4명, 스태프 최대 3명의 정보를 입력받습니다.
-    """
+    """선수 3~4명, 스태프 최대 3명."""
 
     def __init__(self, user: discord.Member, default_team_name: str = "", default_players: str = "", default_staff: str = ""):
         super().__init__(title="팀 신청")
@@ -67,13 +61,10 @@ class TeamModal(Modal):
         self.add_item(self.staff_input)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        """모달 제출 처리: 입력 수집 후 등록 파이프라인에 위임"""
         try:
-            # 즉시 응답하여 모달을 닫음
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=True)
 
-            # 임시 메시지 전송
             temp_message = await interaction.followup.send(view=processing_view("팀 정보를 확인하고 등록하고 있습니다."), ephemeral=True, wait=True)
 
             team_data = TeamData(
@@ -92,12 +83,6 @@ class TeamModal(Modal):
 
 
 class TeamEditModal(Modal):
-    """
-    팀 정보 수정 모달
-    
-    기존 팀의 정보를 수정할 수 있는 폼을 제공합니다.
-    팀명, 선수, 스태프 정보를 변경할 수 있으며, MMR 재계산 및 중복 검사를 수행합니다.
-    """
     
     def __init__(
         self,
@@ -146,7 +131,6 @@ class TeamEditModal(Modal):
         )
         self.add_item(self.staff_input)
 
-        # 로스터 변경 시 주의 부여 옵션 추가
         self.warning_checkbox = None
         self.warning_reason_input = None
         if is_roster_change:
@@ -171,13 +155,10 @@ class TeamEditModal(Modal):
             self.add_item(Label(text="사유", component=self.warning_reason_input))
     
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        """모달 제출 처리: 입력 수집 후 수정 파이프라인에 위임"""
         try:
-            # 즉시 응답하여 모달을 닫음
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=True)
 
-            # 임시 메시지 전송
             temp_message = await interaction.followup.send(view=processing_view("변경된 팀 정보를 확인하고 업데이트하고 있습니다."), ephemeral=True, wait=True)
 
             is_roster_change = self.is_roster_change
@@ -188,7 +169,6 @@ class TeamEditModal(Modal):
                 staff=_parse_member_lines(self.staff_input.value),
             )
 
-            # 주의 부여 입력 수집 (로스터 변경 전용)
             apply_warning = bool(is_roster_change and self.warning_checkbox and self.warning_checkbox.values)
             warning_reason = ""
             if self.warning_reason_input and self.warning_reason_input.value:

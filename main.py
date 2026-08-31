@@ -1,8 +1,4 @@
-"""
-스크림봇 메인 진입점
-
-클라이언트를 생성하고 이벤트/앱 명령어를 등록한 뒤 봇을 실행합니다.
-"""
+"""스크림봇 메인 진입점"""
 import asyncio
 import os
 import sys
@@ -43,7 +39,6 @@ from config.settings import settings
 
 
 def _register_client_events(client: ScrimBot) -> None:
-    """클라이언트 이벤트 핸들러를 등록합니다."""
     @client.event
     async def on_ready():
         await bootstrap_on_ready(client)
@@ -56,7 +51,6 @@ def _register_client_events(client: ScrimBot) -> None:
 
 
 def _register_app_commands(client: ScrimBot) -> None:
-    """앱 명령어/컨텍스트 메뉴를 등록합니다."""
     @client.tree.command(
         name="방코드",
         description="방 코드를 공지합니다",

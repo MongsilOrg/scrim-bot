@@ -30,12 +30,6 @@ logger = get_logger('roster_views')
 
 
 class GroupRosterView(LayoutView):
-    """
-    조별 로스터 관리 뷰
-
-    조별 공지에서 팀 로스터 변경 기능을 제공합니다.
-    관리자만 접근 가능하며, 드롭다운을 통해 팀을 선택하고 수정할 수 있습니다.
-    """
 
     def __init__(
         self,
@@ -51,7 +45,6 @@ class GroupRosterView(LayoutView):
         self.message_text = message_text
         self.has_image = has_image
 
-        # Container (공지 텍스트 + 이미지 + 푸터)
         children: list = [TextDisplay(content=message_text)]
         if has_image:
             # 파일명 단일 출처. discord_service 가 이 모듈을 최상단 import 하므로
@@ -62,7 +55,6 @@ class GroupRosterView(LayoutView):
         children.append(TextDisplay(content=FOOTER_TEXT))
         self.add_item(Container(*children, accent_colour=Color.blue()))
 
-        # ActionRow (로스터 변경 버튼)
         self.roster_change_button = Button(
             label="로스터 변경",
             style=ButtonStyle.primary,
@@ -90,7 +82,6 @@ class GroupRosterView(LayoutView):
             await send_error_message(interaction, "로스터 변경 중 오류가 발생했습니다.")
 
     async def _recreate_view_on_message(self, interaction: discord.Interaction) -> None:
-        """View가 만료된 경우 메시지를 새로운 View로 업데이트"""
         try:
             if hasattr(interaction, 'message') and interaction.message:
                 new_view = GroupRosterView(
@@ -123,19 +114,12 @@ def build_rest_day_guide_view(team_name: str, user_id: Optional[str] = None) -> 
 
 
 class TeamSelectionView(LayoutView):
-    """
-    팀 선택 뷰
-
-    조별 로스터 변경 시 변경할 팀을 선택하는 드롭다운을 제공합니다.
-    선택된 팀의 정보를 TeamEditModal로 전달합니다.
-    """
 
     def __init__(self, parent_view: 'GroupRosterView'):
-        super().__init__(timeout=None)  # 영구적으로 작동
+        super().__init__(timeout=None)
         self.parent_view = parent_view
         self.is_empty = not parent_view.group_teams
 
-        # Container (안내 텍스트)
         self.add_item(Container(
             TextDisplay(content="## 팀 선택\n변경할 팀을 선택해주세요."),
             Separator(),
@@ -144,7 +128,6 @@ class TeamSelectionView(LayoutView):
         ))
 
         if self.is_empty:
-            # 빈 팀 리스트일 때 placeholder 옵션 추가
             options = [SelectOption(label="등록된 팀이 없습니다", value="_empty", description="팀이 등록되면 선택 가능합니다")]
         else:
             options = [
@@ -156,7 +139,6 @@ class TeamSelectionView(LayoutView):
                 for i, (team_name, team_data, mmr) in enumerate(parent_view.group_teams)
             ]
 
-        # ActionRow (팀 선택 드랍다운)
         self.team_select = Select(
             placeholder="변경할 팀을 선택해주세요",
             options=options,
@@ -169,7 +151,6 @@ class TeamSelectionView(LayoutView):
         try:
             selected_team = self.team_select.values[0]
 
-            # 선택된 팀의 정보 찾기
             selected_team_data = None
             for team_name, team_data, mmr in self.parent_view.group_teams:
                 if team_name == selected_team:
@@ -180,7 +161,6 @@ class TeamSelectionView(LayoutView):
                 await send_response(interaction, error_view("선택된 팀 정보를 찾을 수 없습니다."))
                 return
 
-            # 팀 정보 수정 모달 표시
             if interaction.response.is_done():
                 logger.warning("[뷰] 이미 응답된 interaction - 팀 수정 모달 표시 불가")
                 return
@@ -189,9 +169,9 @@ class TeamSelectionView(LayoutView):
             )
 
         except discord.InteractionResponded:
-            pass  # 이미 응답된 상호작용 무시 (팀 선택)
+            pass
         except discord.NotFound:
-            pass  # 상호작용을 찾을 수 없음 - 팀 선택 View 만료 가능성
+            pass  # View 만료 가능성
         except Exception as e:
             logger.error(f"[뷰] 팀 선택 콜백 처리 실패: {e}", exc_info=True)
             try:
