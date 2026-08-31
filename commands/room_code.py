@@ -54,7 +54,7 @@ def calculate_round_start_time(current_time: datetime) -> datetime:
 
 
 def _is_scrim_notice_message(message: discord.Message) -> bool:
-    """메시지가 스크림 공지(방코드)인지 판별합니다."""
+    """메시지가 스크림 공지(방코드)인지 판별한다."""
     try:
         for component in message.components:
             for child in getattr(component, 'children', []):
@@ -71,10 +71,10 @@ def _is_scrim_notice_message(message: discord.Message) -> bool:
 
 
 async def get_round_number(channel: discord.TextChannel) -> int:
-    """채널의 당일 방코드(스크림 공지) 메시지를 전부 스캔하여 현재 라운드 번호를 계산합니다.
+    """채널의 당일 방코드(스크림 공지) 메시지를 전부 스캔하여 현재 라운드 번호를 계산한다.
 
     KST 자정 기준 당일 메시지만 집계하므로 전날 라운드가 이월되지 않으며,
-    채널 전체(당일분)를 스캔하므로 중간 메시지 수와 무관하게 정확합니다.
+    채널 전체(당일분)를 스캔하므로 중간 메시지 수와 무관하게 정확하다.
     """
     try:
         start_utc = get_start_of_day_utc()
@@ -170,7 +170,7 @@ class RoomCodeView(LayoutView):
 
 
 async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
-    """방 코드를 공지합니다"""
+    """방 코드를 공지한다"""
     try:
         if not isinstance(interaction.channel, discord.TextChannel):
             try:

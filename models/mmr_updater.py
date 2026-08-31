@@ -209,15 +209,7 @@ class MmrUpdater:
     TEAM_MMR_TTL_SECONDS = 600
 
     async def update_all_team_mmr(self, force: bool = False) -> Tuple[int, int]:
-        """모든 팀의 MMR을 갱신합니다 (TTL 이내 갱신된 팀은 스킵).
-
-        Args:
-            force: True면 TTL 캐시를 무시하고 모든 팀을 실제로 재조회합니다
-                (조편성 직전 마지막 갱신 등에 사용).
-
-        Returns:
-            Tuple[int, int]: (성공 팀 수, 실패 팀 수)
-        """
+        """TTL 이내 갱신된 팀은 스킵. force 면 무시하고 전부 재조회한다. 반환 (성공 팀 수, 실패 팀 수)."""
         mgr = self._manager
         success_count = 0
         fail_count = 0
@@ -266,7 +258,7 @@ class MmrUpdater:
         return success_count, fail_count
 
     async def verify_unverified_teams(self) -> None:
-        """점검 해제 후 미검증 팀의 닉네임을 재검증하고 DM을 발송합니다."""
+        """점검 해제 후 미검증 팀의 닉네임을 재검증하고 DM을 발송한다."""
         mgr = self._manager
         if not mgr.unverified_teams:
             return
@@ -310,7 +302,7 @@ class MmrUpdater:
         logger.info(f"[점검해제] 미검증 팀 재검증 완료 - 잔여: {len(mgr.unverified_teams)}개")
 
     async def _send_verification_dm(self, team_name: str, team_data, invalid_members: list) -> None:
-        """점검 해제 후 닉네임 검증 결과를 DM으로 발송합니다."""
+        """점검 해제 후 닉네임 검증 결과를 DM으로 발송한다."""
         mgr = self._manager
         try:
             if not mgr.client:

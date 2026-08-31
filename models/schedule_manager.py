@@ -2,7 +2,7 @@
 주간 일정 관리 모듈
 
 관리자들의 다음 주 참가 가능 요일을 수집하고,
-Load-Balanced Greedy 알고리즘으로 요일별 관리자를 배정합니다.
+Load-Balanced Greedy 알고리즘으로 요일별 관리자를 배정한다.
 """
 import json
 import os
@@ -56,7 +56,7 @@ class ScheduleManager:
     # ------------------------------------------------------------------
 
     def initialize_week(self) -> str:
-        """다음 주 월~토 기간을 자동으로 설정합니다."""
+        """다음 주 월~토 기간을 자동으로 설정한다."""
         now = get_current_kst_time()
         days_until_monday = (7 - now.weekday()) % 7
         if days_until_monday == 0:
@@ -71,7 +71,7 @@ class ScheduleManager:
             f"{next_monday.month}/{next_monday.day} ~ "
             f"{next_saturday.month}/{next_saturday.day}"
         )
-        # 초기화 (상태 메시지 참조는 갱신을 위해 유지)
+        # 상태 메시지 참조는 갱신에 써야 하므로 남긴다
         self.availability.clear()
         self.absence_reasons.clear()
         self.admin_names.clear()
@@ -92,10 +92,10 @@ class ScheduleManager:
         available_days: Set[int],
         absence_reason: Optional[str] = None,
     ) -> None:
-        """참가 요일과 불참 사유를 한 번에 등록합니다.
+        """참가 요일과 불참 사유를 한 번에 등록한다.
 
-        available_days가 비어 있으면 전체 불참으로 처리합니다.
-        available_days가 있으면 참가 등록합니다 (불참 사유 제거).
+        available_days가 비어 있으면 전체 불참으로 처리한다.
+        available_days가 있으면 참가 등록한다 (불참 사유 제거).
         """
         self.admin_names[user_id] = display_name
 
@@ -119,11 +119,7 @@ class ScheduleManager:
         return responded
 
     def get_status_text(self, all_admin_ids: List[Tuple[str, str]]) -> str:
-        """현황 텍스트를 생성합니다.
-
-        Args:
-            all_admin_ids: [(user_id, display_name), ...] 전체 관리자 목록
-        """
+        """현황 텍스트. all_admin_ids 는 [(user_id, display_name), ...]."""
         responded = self.get_responded_user_ids()
         total = len(all_admin_ids)
         resp_count = len(responded)
@@ -199,7 +195,7 @@ class ScheduleManager:
     # ------------------------------------------------------------------
 
     def generate_assignments(self) -> Dict[int, List[str]]:
-        """요일별 관리자 배정표를 생성합니다 (Load-Balanced Greedy).
+        """요일별 관리자 배정표를 생성한다 (Load-Balanced Greedy).
 
         1. 가용 인원이 적은 요일부터 처리
         2. 배정 횟수가 적은 관리자 우선
@@ -260,11 +256,7 @@ class ScheduleManager:
     # ------------------------------------------------------------------
 
     def toggle_self_deployment(self, day_index: int, user_id: str) -> bool:
-        """본인의 투입 상태를 토글하고 남은 요일 편성을 재조정합니다.
-
-        Returns:
-            True면 투입 등록, False면 투입 해제
-        """
+        """본인의 투입 상태를 토글하고 남은 요일 편성을 재조정한다. 반환 True면 등록, False면 해제."""
         if day_index not in self.actual_deployments:
             self.actual_deployments[day_index] = []
 
@@ -282,7 +274,7 @@ class ScheduleManager:
         return user_id in self.actual_deployments.get(day_index, [])
 
     def _readjust_remaining(self) -> None:
-        """투입 기록이 없는 요일의 편성을 재조정합니다.
+        """투입 기록이 없는 요일의 편성을 재조정한다.
 
         정렬 기준 (오름차순):
           1. 투입 횟수: 실제 투입이 많을수록 후순위
@@ -349,7 +341,7 @@ class ScheduleManager:
     # ------------------------------------------------------------------
 
     def save_backup(self) -> None:
-        """현재 상태를 JSON 파일로 백업합니다."""
+        """현재 상태를 JSON 파일로 백업한다."""
         try:
             data = {
                 'week_label': self.week_label,
@@ -376,7 +368,7 @@ class ScheduleManager:
             logger.error(f"[일정] 백업 저장 실패: {e}", exc_info=True)
 
     def load_backup(self) -> bool:
-        """백업 파일에서 상태를 복구합니다."""
+        """백업 파일에서 상태를 복구한다."""
         if not os.path.exists(BACKUP_PATH):
             return False
         try:

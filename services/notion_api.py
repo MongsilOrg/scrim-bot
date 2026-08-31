@@ -133,9 +133,9 @@ def check_notion_for_tags():
 
 
 def get_masters_dates(range_start: date, range_end: date) -> Set[date]:
-    """대회 행(비숫자 태그 포함)의 날짜만 집계하며 KEL 등 미관리 대회는 제외합니다.
+    """대회 행(비숫자 태그 포함)의 날짜만 집계하며 KEL 등 미관리 대회는 제외한다.
 
-    조회 실패 시 빈 집합 대신 예외를 던져 호출부가 재시도하게 합니다.
+    조회 실패 시 빈 집합 대신 예외를 던져 호출부가 재시도하게 한다.
     """
     payload = {
         "filter": {

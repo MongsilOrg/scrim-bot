@@ -1,8 +1,8 @@
 """
 대시보드 계열 Discord View 컴포넌트들
 
-스크림 대시보드(TeamInputView)와 신청 취소/강제취소 흐름의 뷰를 담당합니다.
-로스터 계열 뷰(GroupRosterView 등)는 commands/ui/roster_views.py에 있습니다.
+스크림 대시보드(TeamInputView)와 신청 취소/강제취소 흐름의 뷰를 담당한다.
+로스터 계열 뷰(GroupRosterView 등)는 commands/ui/roster_views.py에 있다.
 """
 from typing import TYPE_CHECKING, Dict, Optional
 import discord
@@ -436,7 +436,7 @@ _SELECT_OPTION_LIMIT = 25  # Discord Select 옵션 최대 개수
 
 
 class ForceCancelSelectView(_TimeoutEditView):
-    """팀이 25개를 넘으면 Discord Select 제한을 우회하기 위해 드롭다운을 여러 개로 분할한다."""
+    """팀이 25개를 넘으면 Discord Select 제한에 걸려 드롭다운을 여러 개로 분할한다."""
 
     def __init__(self, parent_view: Optional['TeamInputView'], teams: Dict[str, 'TeamData']):
         super().__init__()

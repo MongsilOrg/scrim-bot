@@ -1,7 +1,7 @@
 """팀 데이터 관리 모델
 
-스크림 팀 등록, 취소, 인덱스 관리 등의 핵심 CRUD 기능을 담당합니다.
-메모리 기반으로 팀 데이터를 관리하며, 백업/조편성/MMR 갱신은 전용 모듈에 위임합니다.
+스크림 팀 등록, 취소, 인덱스 관리 등의 핵심 CRUD 기능을 담당한다.
+메모리 기반으로 팀 데이터를 관리하며, 백업/조편성/MMR 갱신은 전용 모듈에 위임한다.
 """
 import asyncio
 import os
@@ -118,11 +118,11 @@ class TeamDataManager:
         return await self._mmr_updater.update_all_team_mmr(force=force)
 
     def mark_mmr_success(self) -> None:
-        """마지막 MMR 갱신 성공 시각(HH:MM)을 기록합니다."""
+        """마지막 MMR 갱신 성공 시각(HH:MM)을 기록한다."""
         self._last_success_time = get_current_kst_time().strftime('%H:%M')
 
     def resolve_mmr_channel(self) -> Optional[discord.abc.Messageable]:
-        """MMR 메시지를 게시할 채널을 해석합니다 (기존 메시지 채널 우선, 없으면 스크림 채널)."""
+        """MMR 메시지를 게시할 채널을 해석한다 (기존 메시지 채널 우선, 없으면 스크림 채널)."""
         if self.mmr_message and self.mmr_message.channel:
             return self.mmr_message.channel
         if self.scrim_channel_id and self.client:
@@ -145,7 +145,7 @@ class TeamDataManager:
     # ──────────────────────────────────────────────
 
     def mark_unverified(self, team_name: str) -> None:
-        """팀을 미검증으로 표시합니다 (마커 + 재렌더 + 백업을 원자로 묶음)."""
+        """팀을 미검증으로 표시한다 (마커 + 재렌더 + 백업을 원자로 묶음)."""
         if team_name in self.unverified_teams:
             return
         self.unverified_teams.add(team_name)
@@ -153,7 +153,7 @@ class TeamDataManager:
         self.save_backup()
 
     def clear_unverified(self, team_name: str) -> None:
-        """팀의 미검증 마커를 제거합니다 (마커 + 재렌더 + 백업을 원자로 묶음)."""
+        """팀의 미검증 마커를 제거한다 (마커 + 재렌더 + 백업을 원자로 묶음)."""
         if team_name not in self.unverified_teams:
             return
         self.unverified_teams.discard(team_name)
@@ -180,7 +180,7 @@ class TeamDataManager:
             self.team_by_member[key] = team_name
 
     def get_team_by_member(self, member_name: str) -> Optional[str]:
-        """멤버명으로 팀을 O(1)로 조회합니다."""
+        """멤버명으로 팀을 O(1)로 조회한다."""
         key = normalize_nickname_for_comparison(member_name)
         return self.team_by_member.get(key)
 
@@ -231,9 +231,9 @@ class TeamDataManager:
 
     async def initialize_new_scrim(self, scrim_day: int, scrim_month: int, scrim_channel_id: int) -> None:
         """
-        새로운 스크림 날짜/채널을 설정합니다.
+        새로운 스크림 날짜/채널을 설정한다.
 
-        Note: reset_team_data()는 호출자(reset_team_data_manager)가 이미 수행합니다.
+        Note: reset_team_data()는 호출자(reset_team_data_manager)가 이미 수행한다.
         """
         self.scrim_day = scrim_day
         self.scrim_month = scrim_month
@@ -246,21 +246,21 @@ class TeamDataManager:
     # ──────────────────────────────────────────────
 
     def start_background_tasks(self) -> None:
-        """조편성 감시와 MMR 갱신 루프를 띄웁니다. 살아있는 태스크는 건드리지 않습니다."""
+        """조편성 감시와 MMR 갱신 루프를 띄운다. 살아있는 태스크는 건드리지 않는다."""
         if not (self.auto_assignment_task and not self.auto_assignment_task.done()):
             self.auto_assignment_task = asyncio.create_task(self.check_and_auto_assign())
         if not (self.mmr_update_task and not self.mmr_update_task.done()):
             self.mmr_update_task = asyncio.create_task(self.mmr_update_loop())
 
     def spawn_task(self, coro) -> asyncio.Task:
-        """fire-and-forget 태스크를 생성하고 리셋 시 취소되도록 추적합니다."""
+        """fire-and-forget 태스크를 생성하고 리셋 시 취소되도록 추적한다."""
         task = asyncio.create_task(coro)
         self._pending_tasks.add(task)
         task.add_done_callback(self._pending_tasks.discard)
         return task
 
     async def _cancel_task_and_wait(self, task: Optional[asyncio.Task], label: str, timeout: float = 10.0) -> None:
-        """비동기 태스크를 취소하고 완전히 종료될 때까지 대기합니다."""
+        """비동기 태스크를 취소하고 완전히 종료될 때까지 대기한다."""
         if not task:
             return
 
@@ -297,7 +297,7 @@ class TeamDataManager:
     # ──────────────────────────────────────────────
 
     def check_team_time_rules(self, current_time: datetime, *, is_edit: bool = False) -> Tuple[bool, str]:
-        """조편성 여부와 마감 시각 기준으로 팀 등록/수정 가능 여부를 확인합니다."""
+        """조편성 여부와 마감 시각 기준으로 팀 등록/수정 가능 여부를 확인한다."""
         if self.is_team_assignment_started:
             return False, ASSIGNMENT_CLOSED_EDIT_MSG if is_edit else ASSIGNMENT_CLOSED_REGISTER_MSG
 
@@ -319,7 +319,7 @@ class TeamDataManager:
         new_team: Optional[TeamData] = None,
         previous_members: Optional[List[str]] = None,
     ) -> Tuple[bool, str]:
-        """새로 들어오는 팀원의 경고 제한 여부를 확인합니다 (previous_members 는 검사 제외)."""
+        """새로 들어오는 팀원의 경고 제한 여부를 확인한다 (previous_members 는 검사 제외)."""
         warning_manager = BotManager.get_instance().get_warning_manager()
         if not (warning_manager and warning_manager.worksheet):
             return True, ""
@@ -363,7 +363,7 @@ class TeamDataManager:
         return True, ""
 
     def _should_check_auto_assign(self) -> bool:
-        """자동 조편성 체크가 필요한지 확인합니다."""
+        """자동 조편성 체크가 필요한지 확인한다."""
         current_time = get_current_kst_time()
 
         if not self.is_scrim_date_today(current_time):
@@ -391,7 +391,7 @@ class TeamDataManager:
     # ──────────────────────────────────────────────
 
     def log_state_snapshot(self, prefix: str = "상태") -> None:
-        """현재 스크림 상태를 로그로 남깁니다."""
+        """현재 스크림 상태를 로그로 남긴다."""
         try:
             auto_alive = bool(self.auto_assignment_task and not self.auto_assignment_task.done())
             mmr_alive = bool(self.mmr_update_task and not self.mmr_update_task.done())
@@ -404,7 +404,7 @@ class TeamDataManager:
 
     def log_action(self, action_type: str, user: discord.Member, team_name: str,
                    *, detail: str = '') -> None:
-        """액션 로그를 Discord 채널로 전송합니다."""
+        """액션 로그를 Discord 채널로 전송한다."""
         try:
             current_time = get_current_kst_time()
             self.spawn_task(
@@ -421,7 +421,7 @@ class TeamDataManager:
         timestamp: datetime,
         detail: str = '',
     ) -> None:
-        """로그 메시지를 지정 채널로 전송합니다."""
+        """로그 메시지를 지정 채널로 전송한다."""
         try:
             if not self.client:
                 return
@@ -450,11 +450,7 @@ class TeamDataManager:
         team_data: TeamData,
         user: discord.Member
     ) -> Tuple[bool, str]:
-        """팀을 추가합니다.
-
-        Returns:
-            (성공 여부, 실패 사유 또는 빈 문자열)
-        """
+        """팀을 추가한다. 반환 (성공 여부, 실패 사유 또는 빈 문자열)."""
         try:
             team = team_data
             if team.name != team_name:
@@ -489,11 +485,7 @@ class TeamDataManager:
             return False, f"팀 추가 중 오류가 발생했습니다: {str(e)}"
 
     async def remove_team(self, team_name: str) -> Tuple[bool, str]:
-        """팀을 제거합니다.
-
-        Returns:
-            Tuple[bool, str]: (성공 여부, 실패 사유 또는 빈 문자열)
-        """
+        """팀을 제거한다. 반환 (성공 여부, 실패 사유 또는 빈 문자열)."""
         try:
             async with self._teams_lock:
                 if team_name not in self.teams:
@@ -515,7 +507,7 @@ class TeamDataManager:
             return False, f"팀 제거 중 오류가 발생했습니다: {str(e)}"
 
     def find_user_team(self, user_id: str, member: Optional[discord.Member] = None) -> Optional[str]:
-        """사용자 ID 또는 이름 키(표시명/전역명/계정명)로 등록한 팀명을 찾습니다."""
+        """사용자 ID 또는 이름 키(표시명/전역명/계정명)로 등록한 팀명을 찾는다."""
         for team_name, team_data in self.teams.items():
             if team_data.user_id == user_id:
                 return team_name
@@ -533,12 +525,12 @@ class TeamDataManager:
         return self.teams.copy()
 
     def get_team_mmr(self, team_name: str) -> Optional[float]:
-        """팀의 평균 MMR을 가져옵니다."""
+        """팀의 평균 MMR을 가져온다."""
         team = self.teams.get(team_name)
         return team.mmr if team else None
 
     async def set_team_mmr(self, team_name: str, mmr: float) -> None:
-        """팀의 평균 MMR을 설정합니다."""
+        """팀의 평균 MMR을 설정한다."""
         async with self._teams_lock:
             team = self.teams.get(team_name)
             if team:
@@ -549,11 +541,7 @@ class TeamDataManager:
 
 
     async def replace_team(self, old_team_name: str, new_team: TeamData, new_mmr: float) -> Tuple[bool, str]:
-        """기존 팀을 새 팀으로 교체하며 인덱스와 MMR 정보를 일관되게 갱신합니다.
-
-        Returns:
-            (성공 여부, 실패 사유 또는 빈 문자열)
-        """
+        """기존 팀을 새 팀으로 교체하며 인덱스와 MMR 을 함께 갱신한다. 반환 (성공 여부, 실패 사유)."""
         async with self._teams_lock:
             if old_team_name not in self.teams:
                 # 검증과 저장 사이에 팀이 취소된 경우. 여기서 추가하면 취소된 팀이 부활한다
@@ -576,7 +564,7 @@ class TeamDataManager:
     # ──────────────────────────────────────────────
 
     def check_duplicate_with_bot_teams(self, team_name: str, team_members: List[str], exclude_team: str = None) -> Tuple[bool, str]:
-        """봇 신청 팀이 이미 봇으로 등록된 팀들과 중복되는지 검사합니다. (대소문자 구별 없이)"""
+        """봇 신청 팀이 이미 봇으로 등록된 팀들과 중복되는지 검사한다. (대소문자 구별 없이)"""
         try:
             normalized_new_members = [normalize_nickname_for_comparison(member) for member in team_members]
             normalized_new_team_name = normalize_team_name(team_name)

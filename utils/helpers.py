@@ -32,7 +32,7 @@ def normalize_player_list(players: List[str]) -> List[str]:
 
 
 def save_json_atomic(path: str, data, indent: Optional[int] = None) -> None:
-    """임시 파일에 쓴 뒤 교체해 부분 쓰기를 방지합니다."""
+    """임시 파일에 쓴 뒤 교체해 부분 쓰기를 방지한다."""
     directory = os.path.dirname(path)
     if directory:
         os.makedirs(directory, exist_ok=True)
@@ -43,7 +43,7 @@ def save_json_atomic(path: str, data, indent: Optional[int] = None) -> None:
 
 
 def build_member_lookup(guild: Optional[discord.Guild]) -> Dict[str, discord.Member]:
-    """길드 멤버를 정규화 닉네임(표시명/전역명/계정명)으로 찾는 매핑을 만듭니다."""
+    """길드 멤버를 정규화 닉네임(표시명/전역명/계정명)으로 찾는 매핑을 만든다."""
     lookup: Dict[str, discord.Member] = {}
     if not guild:
         return lookup

@@ -48,8 +48,8 @@ class BotManager:
 
     async def reset_team_data_manager(self, client: Optional[ScrimBot] = None) -> "TeamDataManager":
         """
-        인스턴스는 유지되므로 위임 모듈이 보관한 참조가 계속 유효합니다.
-        기존 매니저의 백그라운드 태스크도 완전히 취소될 때까지 대기합니다.
+        인스턴스는 유지되므로 위임 모듈이 보관한 참조가 계속 유효하다.
+        기존 매니저의 백그라운드 태스크도 완전히 취소될 때까지 대기한다.
         """
         if self._team_data_manager:
             try:

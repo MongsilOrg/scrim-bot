@@ -35,7 +35,7 @@ _bootstrap_done = False
 
 
 async def bootstrap_on_ready(client: "ScrimBot") -> None:
-    """봇 준비 완료 시 초기 상태를 복구하고 명령어를 동기화합니다."""
+    """봇 준비 완료 시 초기 상태를 복구하고 명령어를 동기화한다."""
     global _bootstrap_done
     logger.info(f"[시작] 봇 준비 완료 - {client.user} 온라인")
 
@@ -118,7 +118,7 @@ async def on_message(message: discord.Message) -> None:
 
 
 async def _process_csv_attachments(message: discord.Message) -> None:
-    """오늘 업로드된 모든 CSV를 스캔해 점수를 합산하고 이미지를 전송합니다."""
+    """오늘 업로드된 모든 CSV를 스캔해 점수를 합산하고 이미지를 전송한다."""
     channel = message.channel
     now_kst = get_current_kst_time()
     start_utc = get_start_of_day_utc(now_kst)

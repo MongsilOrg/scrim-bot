@@ -108,7 +108,7 @@ def image_response_view(
     fields: list[tuple[str, str]] | None = None,
 ) -> LayoutView:
     """image_url 에 attachment://filename.png 형식을 전달하면
-    send_response / edit_to_layout 의 files 매개변수로 첨부할 수 있습니다.
+    send_response / edit_to_layout 의 files 매개변수로 첨부할 수 있다.
     """
     children: list = [TextDisplay(content=f"## {title}\n{description}")]
 
@@ -201,13 +201,10 @@ async def upsert_persistent_message(
     *,
     files: list[discord.File] | None = None,
 ) -> int:
-    """상시 메시지(대시보드 등)를 기존 메시지 편집으로 갱신하고, 불가하면 재생성합니다.
+    """상시 메시지를 기존 메시지 편집으로 갱신하고, 불가하면 재생성한다.
 
     편집이 일시 오류(HTTPException)로 실패하면 옛 메시지를 삭제 시도한 뒤
-    새로 보내, 옛 대시보드가 방치되어 이중으로 남는 것을 막습니다.
-
-    Returns:
-        갱신(또는 재생성)된 메시지 id
+    새로 보내, 옛 대시보드가 방치되어 이중으로 남는 것을 막는다.
     """
     old_message: discord.Message | None = None
     if message_id:
@@ -245,7 +242,7 @@ async def edit_to_layout(
     *,
     files: list[discord.File] | None = None,
 ) -> None:
-    """embed 및 content 를 None 으로 지정하여 기존 임베드를 제거합니다."""
+    """embed 및 content 를 None 으로 지정하여 기존 임베드를 제거한다."""
     try:
         kwargs: dict = {"view": view, "embed": None, "content": None}
         if files:
@@ -261,7 +258,7 @@ _COOLDOWN_CLEANUP_THRESHOLD = 100
 
 
 async def check_cooldown(interaction: discord.Interaction, cooldown_seconds: float = BUTTON_COOLDOWN_SECONDS) -> bool:
-    """True면 cooldown 중이므로 무시해야 합니다."""
+    """True면 cooldown 중이므로 무시해야 한다."""
     user_id = interaction.user.id
     now = time.monotonic()
     last_click = _button_cooldowns.get(user_id, 0)

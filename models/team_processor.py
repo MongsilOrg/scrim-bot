@@ -1,9 +1,9 @@
 """
 팀 처리 모델
 
-팀 MMR 조회, 조편성 알고리즘, 시드/테스트 계정 관리를 담당합니다.
-BSER API를 통해 팀 MMR을 조회하고, 시드 데이터를 기반으로 조편성을 수행합니다.
-Discord API 관련 작업은 services.discord_service에 위임합니다.
+팀 MMR 조회, 조편성 알고리즘, 시드/테스트 계정 관리를 담당한다.
+BSER API를 통해 팀 MMR을 조회하고, 시드 데이터를 기반으로 조편성을 수행한다.
+Discord API 관련 작업은 services.discord_service에 위임한다.
 """
 import asyncio
 import heapq
@@ -31,17 +31,9 @@ logger = get_logger('team_processor')
 
 
 class TeamProcessor:
-    """
-    팀 처리 클래스
+    """팀 MMR 조회, 시드 관리, 조편성 알고리즘. Discord 작업은 discord_service 로 위임한다.
 
-    팀 MMR 조회, 시드 관리, 조편성 알고리즘을 담당합니다.
-    Discord 공지/역할/음성채널 작업은 discord_service 프로퍼티로 위임합니다.
-
-    Attributes:
-        client: Discord 봇 클라이언트
-        api_key: BSER API 키
-        seeds_data: 시드 데이터
-        group_image_cache: "조문자:정렬" -> 이미지 bytes 캐시 (조편성 시작 시 클리어)
+    group_image_cache 는 "조문자:정렬" -> 이미지 bytes (조편성 시작 시 클리어).
     """
     
     def __init__(self, client: Optional[commands.Bot], team_data_manager: "TeamDataManager"):
@@ -73,11 +65,9 @@ class TeamProcessor:
         self, group_letter: str, group_teams: dict,
         *, sort_by_mmr: bool = True, refresh: bool = False,
     ) -> Optional[BytesIO]:
-        """조별 이미지 생성 + 캐시. 렌더는 스레드로 오프로딩합니다.
+        """조별 이미지 생성 + 캐시. 렌더는 스레드로 오프로딩한다.
 
-        Args:
-            sort_by_mmr: True면 MMR 내림차순, False면 삽입 순서(팀 번호 순서) 유지
-            refresh: True면 해당 조 캐시를 무효화하고 재생성 (로스터 편집 시)
+        sort_by_mmr=False 면 삽입 순서(팀 번호) 유지, refresh=True 면 캐시를 버리고 재생성한다.
         """
         try:
             # 같은 조라도 정렬 방식이 다르면 다른 이미지이므로 키에 정렬을 포함한다
@@ -105,23 +95,12 @@ class TeamProcessor:
         self.gspread_client, self.gspread_spreadsheet = create_gspread_client(caller='구글시트')
     
     async def _load_seeds_data(self) -> bool:
-        """구글 시트에서 시드 데이터를 로드합니다.
-
-        시트 I/O 는 blocking 이므로 스레드로 오프로딩해 이벤트 루프를 막지 않습니다.
-
-        Returns:
-            로드 성공 여부
-        """
+        """시트 I/O 는 blocking 이라 스레드로 오프로딩해 이벤트 루프를 막지 않는다."""
         return await asyncio.to_thread(self._load_seeds_data_sync)
 
     def _load_seeds_data_sync(self) -> bool:
-        """구글 시트에서 시드 데이터를 동기적으로 로드합니다.
-
-        실패해도 seeds_data 를 비우지 않습니다. 비우면 '시드 없음'으로 취급되어
-        캐시 TTL 동안 시드팀 우선 선발이 통째로 빠집니다.
-
-        Returns:
-            로드 성공 여부
+        """실패해도 seeds_data 를 비우지 않는다. 비우면 '시드 없음'으로 취급되어
+        캐시 TTL 동안 시드팀 우선 선발이 통째로 빠진다.
         """
         try:
             if not self.gspread_spreadsheet:
@@ -166,13 +145,8 @@ class TeamProcessor:
             return False
     
     def _load_test_accounts_data_sync(self) -> bool:
-        """구글 시트에서 테스트 계정 데이터를 동기적으로 로드합니다.
-
-        실패해도 test_accounts_data 를 비우지 않습니다. 캐시를 비우면 시트에
-        등록된 테스트 계정이 미등록으로 취급되어 신청이 반려됩니다.
-
-        Returns:
-            로드 성공 여부
+        """실패해도 test_accounts_data 를 비우지 않는다. 비우면 시트에 등록된
+        테스트 계정이 미등록으로 취급되어 신청이 반려된다.
         """
         if not self.gspread_spreadsheet:
             self._initialize_gspread_client()
@@ -207,7 +181,7 @@ class TeamProcessor:
         return True
 
     def _set_test_accounts(self, accounts: Dict[str, float]) -> None:
-        """테스트 계정 데이터와 정규화 키 인덱스를 함께 교체합니다 (O(1) 조회 유지)."""
+        """테스트 계정 데이터와 정규화 키 인덱스를 함께 교체한다 (O(1) 조회 유지)."""
         self.test_accounts_data = accounts
         self._test_accounts_by_key = {
             normalize_nickname_for_comparison(nickname): mmr
@@ -218,18 +192,11 @@ class TeamProcessor:
     TEST_ACCOUNTS_RETRY_COOLDOWN_SECONDS = 30
 
     async def ensure_test_accounts_loaded(self, force: bool = False) -> bool:
-        """테스트 계정 시트를 재로드합니다 (TTL 캐시).
+        """테스트 계정 시트를 재로드한다 (TTL 캐시).
 
-        test_accounts_data 는 __init__ 에서 한 번만 로드되므로, 봇 실행 중
-        '테스트' 시트에 추가된 계정은 기본적으로 인식되지 않습니다. 그 경우
-        해당 계정이 MMR 평균에서 탈락해 팀 MMR 이 2인/1인 평균으로 잘못
-        계산되고, 신청 시에는 일반 계정으로 취급되어 반려됩니다.
-
-        직전 시도가 실패했으면 쿨다운 동안 재시도하지 않습니다. 신청이 몰릴 때
-        매 호출이 재시도 지연을 그대로 물지 않도록 합니다.
-
-        Returns:
-            캐시가 최신 시트 내용인지 여부
+        __init__ 에서 한 번만 로드하므로, 봇 실행 중 시트에 추가된 계정은 그냥 두면
+        일반 계정으로 취급되어 신청이 반려되고 팀 MMR 도 그 인원을 뺀 채 계산된다.
+        직전 시도가 실패했으면 쿨다운 동안 재시도하지 않는다.
         """
         now = time.monotonic()
         is_fresh = bool(
@@ -255,14 +222,14 @@ class TeamProcessor:
         return loaded
 
     def is_test_account(self, nickname: str) -> bool:
-        """닉네임이 테스트 계정인지 확인합니다."""
+        """닉네임이 테스트 계정인지 확인한다."""
         return normalize_nickname_for_comparison(nickname) in self._test_accounts_by_key
 
     def _get_test_account_mmr(self, nickname: str) -> Optional[float]:
         return self._test_accounts_by_key.get(normalize_nickname_for_comparison(nickname))
     
     def _calculate_test_team_mmr(self, players: List[str]) -> float:
-        """테스트 계정 팀의 MMR을 계산합니다 (상위 3명 평균)."""
+        """테스트 계정 팀의 MMR을 계산한다 (상위 3명 평균)."""
         mmr_list = []
         for player in players:
             mmr = self._get_test_account_mmr(player)
@@ -282,11 +249,11 @@ class TeamProcessor:
         return sum(top_3_mmr) / len(top_3_mmr)
     
     def _extract_players_only(self, team_data: TeamData) -> List[str]:
-        """팀 데이터에서 플레이어만 추출합니다 (스태프 제외, MMR 조회용이라 원본 대소문자 유지)."""
+        """팀 데이터에서 플레이어만 추출한다 (스태프 제외, MMR 조회용이라 원본 대소문자 유지)."""
         return [player.strip() for player in team_data.players if player and player.strip()]
 
     def _are_players_matching(self, players1: List[str], players2: List[str]) -> bool:
-        """두 선수 리스트가 매칭되는지 확인합니다 (순서 무관, 스태프 제외).
+        """두 선수 리스트가 매칭되는지 확인한다 (순서 무관, 스태프 제외).
 
         시드 적용 규칙: 3명 또는 4명 팀이 정규화 기준 전원 일치해야 함.
         인원수가 다르거나 3~4명이 아니면 시드 미적용.
@@ -298,7 +265,7 @@ class TeamProcessor:
     SEEDS_TTL_SECONDS = 3600  # 시드 시트 캐시 TTL (1시간)
 
     async def ensure_seeds_marked(self, teams: Dict[str, TeamData]) -> None:
-        """시드 데이터 (1시간 TTL 캐시) 로드 후 팀들에 is_seed/seed_name을 마킹합니다."""
+        """시드 데이터 (1시간 TTL 캐시) 로드 후 팀들에 is_seed/seed_name을 마킹한다."""
         now = time.monotonic()
         if self.seeds_data is None or (now - self._seeds_loaded_at) >= self.SEEDS_TTL_SECONDS:
             # 실패 시 스탬프를 두지 않아 다음 호출에서 재시도한다 (기존 데이터로 마킹)
@@ -307,13 +274,7 @@ class TeamProcessor:
         await self._identify_seeded_teams(teams)
 
     async def _identify_seeded_teams(self, teams: Dict[str, TeamData]) -> Dict[str, int]:
-        """시드팀을 식별하고 우선순위를 부여합니다.
-        
-        Returns:
-            Dict[str, int]: 팀명을 키로 하고 우선순위(1, 2)를 값으로 하는 딕셔너리
-            - 1순위: 시드팀 (시드 데이터에 있는 모든 팀)
-            - 2순위: 시드가 없는 팀
-        """
+        """팀명 -> 우선순위(1=시드팀, 2=시드 없음) 딕셔너리를 돌려준다."""
         team_priorities = {}
 
         for team_data in teams.values():
@@ -349,7 +310,7 @@ class TeamProcessor:
         return team_priorities
     
     async def fetch_team_mmr(self, team_name: str, team_data: TeamData) -> Tuple[str, TeamData, float]:
-        """팀 MMR을 조회해 반환만 합니다 (실패 시 0.0).
+        """팀 MMR을 조회해 반환만 한다 (실패 시 0.0).
 
         저장은 TeamDataManager.set_team_mmr 한 곳에서만 한다. 여기서 team_data.mmr을
         직접 바꾸면 set_team_mmr의 변경 감지(_mmr_dirty)가 무력화된다.
@@ -402,9 +363,9 @@ class TeamProcessor:
             return team_name, team_data, 0.0
     
     async def build_groups(self, teams: Dict[str, TeamData]) -> Tuple[List[List], List]:
-        """조편성. 캐시를 비워 시드/MMR을 실시간으로 재조회하는 것을 보장합니다."""
+        """조편성. 캐시를 비워 시드/MMR을 실시간으로 재조회하는 것을 보장한다."""
         try:
-            # 조편성 시작: 실시간 데이터 보장을 위해 공유 MMR 캐시만 클리어
+            # 조편성은 실시간 값을 써야 하므로 공유 MMR 캐시만 클리어
             # (닉네임 캐시는 변경되지 않는 데이터라 유지), 조별 이미지 캐시도 새로 시작
             BSERAPIClient.clear_mmr_cache()
             self.group_image_cache.clear()
@@ -513,7 +474,7 @@ class TeamProcessor:
             raise
     
     def _distribute_teams_to_groups(self, sorted_teams: List[Tuple[str, TeamData, float]]) -> Tuple[List[List], List[Tuple[str, TeamData, float]]]:
-        """정원을 채운 조만 만들고 잔여 팀은 unmatched로 돌려줍니다."""
+        """정원을 채운 조만 만들고 잔여 팀은 unmatched로 돌려준다."""
         groups = []
         unmatched_teams = []
 
@@ -543,7 +504,7 @@ class TeamProcessor:
         return new_groups
     
     def _apply_grouped_snake_pattern(self, teams: List[Tuple[str, TeamData, float]], groups: List[List], num_groups: int) -> None:
-        """2개씩 묶어서 스네이크 드래프트 패턴을 적용합니다."""
+        """2개씩 묶어서 스네이크 드래프트 패턴을 적용한다."""
         team_idx = 0
         pair_size = 2 * settings.TEAMS_PER_GROUP
 
@@ -558,7 +519,7 @@ class TeamProcessor:
                 groups[group_pair] = remaining_teams
     
     def _apply_snake_pattern(self, teams: List[Tuple[str, TeamData, float]], groups: List[List], num_groups: int) -> None:
-        """2개 그룹에 스네이크 드래프트 패턴을 적용합니다."""
+        """2개 그룹에 스네이크 드래프트 패턴을 적용한다."""
         for i, team in enumerate(teams):
             # 스네이크 패턴: 1조는 0,3,4,7 / 2조는 1,2,5,6
             if i in [0, 3, 4, 7, 8, 11, 12, 15]:

@@ -105,7 +105,7 @@ class WarningManager:
                 self.worksheet.insert_row(expected_headers, 1)
                 logger.info("[경고관리] 패널티 시트 헤더 생성")
             elif first_row != expected_headers:
-                # 데이터 보호를 위해 자동 수정하지 않는다
+                # 데이터 보호 차원에서 자동 수정하지 않는다
                 logger.warning(f"[경고관리] 패널티 시트 헤더 불일치 - 현재: {first_row}")
         except Exception as e:
             logger.error(f"[경고관리] 패널티 시트 헤더 확인 실패: {e}")
@@ -123,15 +123,15 @@ class WarningManager:
                 self.warning_log_worksheet.insert_row(expected_headers, 1)
                 logger.info("[경고관리] 패널티로그 시트 헤더 생성")
             elif first_row != expected_headers:
-                # 데이터 보호를 위해 자동 수정하지 않는다
+                # 데이터 보호 차원에서 자동 수정하지 않는다
                 logger.warning(f"[경고관리] 패널티로그 시트 헤더 불일치 - 현재: {first_row}")
         except Exception as e:
             logger.error(f"[경고관리] 경고로그 시트 헤더 확인 실패: {e}")
 
     def _add_to_warning_log(self, warning_type: str, target: str, date: str, restricted_until: str, reason: str, target_id: str = '') -> None:
-        """패널티로그 시트에 항목을 추가합니다. (영구 보관 - 삭제되지 않음)
+        """패널티로그 시트에 항목을 추가한다. (영구 보관 - 삭제되지 않음)
 
-        영구 원장 누락은 이후 누적 회차 축소 산정으로 이어지므로 1회 재시도합니다.
+        영구 원장 누락은 이후 누적 회차 축소 산정으로 이어지므로 1회 재시도한다.
         """
         if not self.warning_log_worksheet:
             return
@@ -161,7 +161,7 @@ class WarningManager:
 
     @staticmethod
     def _parse_sheet_date(value) -> Optional[date]:
-        """시트의 'YYYY-MM-DD' 값을 date로 파싱합니다. 빈 값과 형식 오류는 None."""
+        """시트의 'YYYY-MM-DD' 값을 date로 파싱한다. 빈 값과 형식 오류는 None."""
         try:
             return datetime.strptime(str(value).strip(), '%Y-%m-%d').date()
         except (ValueError, TypeError):
@@ -169,17 +169,17 @@ class WarningManager:
 
     @staticmethod
     def _sheet_row(headers: List[str], values: Dict[str, str]) -> List[str]:
-        """헤더명 기준으로 시트 행 리스트를 만듭니다."""
+        """헤더명 기준으로 시트 행 리스트를 만든다."""
         return [values.get(header, '') for header in headers]
 
     def _penalty_row(self, values: Dict[str, str]) -> List[str]:
         return self._sheet_row(self.PENALTY_HEADERS, values)
 
     def _iter_penalty_rows(self) -> Iterator[Tuple[int, Dict]]:
-        """패널티 시트 데이터 행을 (1-based 행 번호, 레코드 dict)로 순회합니다.
+        """패널티 시트 데이터 행을 (1-based 행 번호, 레코드 dict)로 순회한다.
 
-        전체를 한 번에 읽으므로 순회 결과와 행 번호가 같은 스냅샷을 공유합니다.
-        짧은 행은 빈 값으로 채워 호출부의 인덱스 가드를 없앱니다.
+        전체를 한 번에 읽으므로 순회 결과와 행 번호가 같은 스냅샷을 공유한다.
+        짧은 행은 빈 값으로 채워 호출부의 인덱스 가드를 없앤다.
         """
         all_values = self.worksheet.get_all_values()
         for row_num, row in enumerate(all_values[1:], start=2):
@@ -187,7 +187,7 @@ class WarningManager:
             yield row_num, dict(zip(self.PENALTY_HEADERS, padded))
 
     def _delete_rows_desc(self, row_nums: List[int], label: str) -> int:
-        """행 번호가 밀리지 않도록 아래 행부터 삭제합니다. Returns 삭제 성공 수."""
+        """행 번호가 밀리지 않도록 아래 행부터 삭제한다. Returns 삭제 성공 수."""
         deleted = 0
         for row_num in sorted(row_nums, reverse=True):
             try:
@@ -199,10 +199,10 @@ class WarningManager:
 
     @staticmethod
     def _matches_target(record_id: str, record_name: str, target_id: Optional[str], target_name: Optional[str]) -> bool:
-        """행이 대상과 일치하는지 판단합니다.
+        """행이 대상과 일치하는지 판단한다.
 
-        양쪽 다 ID가 있으면 ID로만 판단합니다 (동명이인 오판 방지).
-        어느 한쪽이라도 ID가 없으면 정규화 닉네임으로 판단합니다.
+        양쪽 다 ID가 있으면 ID로만 판단한다 (동명이인 오판 방지).
+        어느 한쪽이라도 ID가 없으면 정규화 닉네임으로 판단한다.
         """
         record_id = str(record_id).strip() if record_id else ''
         target_id = str(target_id).strip() if target_id else ''
@@ -218,7 +218,7 @@ class WarningManager:
         )
 
     def _count_previous_warnings(self, target_id: str = None, target_name: str = None) -> Optional[int]:
-        """영구 보관용 패널티로그를 기준으로 기존 경고 횟수를 셉니다."""
+        """영구 보관용 패널티로그를 기준으로 기존 경고 횟수를 센다."""
         if not self.warning_log_worksheet:
             return None
 
@@ -260,7 +260,7 @@ class WarningManager:
 
     @staticmethod
     def _get_warning_date(current_time: datetime) -> date:
-        """17시 기준으로 경고 날짜를 판정합니다. 17시 이전은 전날 스크림 건으로 본다."""
+        """17시 기준으로 경고 날짜를 판정한다. 17시 이전은 전날 스크림 건으로 본다."""
         if current_time.hour < settings.TEAM_REGISTRATION_DEADLINE_HOUR:
             return (current_time - timedelta(days=1)).date()
         return current_time.date()
@@ -285,11 +285,11 @@ class WarningManager:
     def _compute_restriction_terms(
         self, target: str, target_id: str, *, fallback_on_failure: bool
     ) -> Optional[Dict]:
-        """경고 회차와 제한 일수, 해제일을 산정합니다.
+        """경고 회차와 제한 일수, 해제일을 산정한다.
 
         누적 집계 실패 시 fallback_on_failure가 True면 최소 회차로 진행하고,
-        False면 None을 반환해 호출부가 중단하게 합니다.
-        마스터즈 진행일 연장은 일일 배치(process_masters_days)가 처리합니다.
+        False면 None을 반환해 호출부가 중단하게 한다.
+        마스터즈 진행일 연장은 일일 배치(process_masters_days)가 처리한다.
         """
         warning_date = self._get_warning_date(get_current_kst_time())
         prev_warnings = self._count_previous_warnings(target_id, target)
@@ -591,10 +591,10 @@ class WarningManager:
             logger.error(f"[경고관리] 마스터즈 상태 파일 저장 실패: {e}")
 
     def _extend_active_restrictions(self, masters_day: date) -> int:
-        """마스터즈 진행일 하루만큼 활성 제재의 제한해제일을 늘립니다.
+        """마스터즈 진행일 하루만큼 활성 제재의 제한해제일을 늘린다.
 
-        제재 기간(경고일 다음날~해제일)에 마스터즈 날이 포함된 행만 대상입니다.
-        부분 적용으로 인한 이중 연장을 줄이기 위해 단일 batch_update로 보냅니다.
+        제재 기간(경고일 다음날~해제일)에 마스터즈 날이 포함된 행만 대상이다.
+        부분 적용으로 인한 이중 연장을 줄이기 위해 단일 batch_update로 보낸다.
         """
         if not self.worksheet:
             return 0
@@ -698,7 +698,7 @@ class WarningManager:
             return 0
 
     async def cleanup_loop(self) -> None:
-        """주기적으로 마스터즈 진행일 연장과 만료 항목 정리를 수행합니다."""
+        """주기적으로 마스터즈 진행일 연장과 만료 항목 정리를 수행한다."""
         try:
             # 봇 시작 시 즉시 1회 수행 후 주기적으로 반복
             while True:

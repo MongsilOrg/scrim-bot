@@ -30,7 +30,7 @@ MASTERS_NOTE = ("💡 안내", MASTERS_NOT_DEDUCTED)
 
 
 def _caution_history(cautions: list, detailed: bool) -> str:
-    """누적 주의 내역 문자열을 만듭니다. detailed는 DM용 줄바꿈 포맷."""
+    """누적 주의 내역 문자열을 만든다. detailed는 DM용 줄바꿈 포맷."""
     lines = []
     for i, caution in enumerate(cautions or [], 1):
         caution_date = caution.get('날짜', 'N/A')
@@ -64,7 +64,7 @@ async def send_sanction_dm(
     auto_warning: dict = None,
     converted_cautions: list = None,
 ) -> None:
-    """제재 부여 DM을 발송합니다. 실패는 로그만 남깁니다."""
+    """제재 부여 DM을 발송한다. 실패는 로그만 남긴다."""
     try:
         if auto_warning and converted_cautions:
             fields = [

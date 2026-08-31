@@ -197,7 +197,7 @@ async def validate_members_api(
 
 
 def split_test_nicknames(nicknames: List[str]) -> Tuple[List[str], List[str]]:
-    """닉네임 목록을 (일반, 테스트 계정)으로 분리합니다."""
+    """닉네임 목록을 (일반, 테스트 계정)으로 분리한다."""
     normal: List[str] = []
     test_like: List[str] = []
     for nickname in nicknames:
@@ -223,9 +223,9 @@ API_UNAVAILABLE_NOTICE = "❌ 게임 서버 응답이 없어 닉네임을 확인
 
 
 def build_team_mmr_line(team_mmr: float, players: List[str], is_test_account) -> str:
-    """MMR 0 은 두 가지 원인이 있어 구분해야 합니다. 전원 테스트 계정이면 '테스트'
+    """MMR 0 은 두 가지 원인이 있어 구분해야 한다. 전원 테스트 계정이면 '테스트'
     시트에 MMR 이 없는 것이라 자동 갱신으로 채워지지 않고, 일반 팀이면 게임 API
-    조회 실패라 다음 갱신에서 채워집니다.
+    조회 실패라 다음 갱신에서 채워진다.
     """
     if team_mmr > 0:
         return f"📊 팀 평균 MMR: **{team_mmr:.2f}**"
@@ -238,10 +238,10 @@ def build_team_mmr_line(team_mmr: float, players: List[str], is_test_account) ->
 
 
 def compose_nickname_error(nicknames: List[str], template: str, fallback: str = "") -> str:
-    """테스트 계정 몫은 별도 문구로 분리합니다.
+    """테스트 계정 몫은 별도 문구로 분리한다.
 
-    template 의 {names} 자리에 일반 닉네임이 들어갑니다. validate_members_api 는
-    API 연결 자체가 실패하면 빈 목록으로 실패를 알리므로, 그때는 fallback 을 씁니다.
+    template 의 {names} 자리에 일반 닉네임이 들어간다. validate_members_api 는
+    API 연결 자체가 실패하면 빈 목록으로 실패를 알리므로, 그때는 fallback 을 쓴다.
     """
     normal, test_like = split_test_nicknames(nicknames)
     parts = []

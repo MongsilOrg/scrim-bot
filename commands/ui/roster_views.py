@@ -2,8 +2,8 @@
 로스터 계열 Discord View 컴포넌트들
 
 조편성 후 조별 공지에 붙는 로스터 관리 뷰(GroupRosterView, TeamSelectionView)와
-공휴일/주말 자율 진행 안내 뷰를 담당합니다.
-대시보드 계열 뷰(TeamInputView 등)는 commands/ui/views.py에 있습니다.
+공휴일/주말 자율 진행 안내 뷰를 담당한다.
+대시보드 계열 뷰(TeamInputView 등)는 commands/ui/views.py에 있다.
 """
 from typing import TYPE_CHECKING, List, Optional, Tuple
 

@@ -172,9 +172,9 @@ def aggregate_team_scores(csv_data_list: List[CSVRow]) -> List[dict]:
 
 
 async def compute_ban_list_for_channel(channel) -> List[str]:
-    """채널의 당일 CSV를 스캔해 직전(가장 최근) 라운드 기준 밴 리스트를 즉석 계산합니다.
+    """채널의 당일 CSV를 스캔해 직전(가장 최근) 라운드 기준 밴 리스트를 즉석 계산한다.
 
-    저장된 상태에 의존하지 않으므로 전날 밴이 이월되지 않습니다.
+    저장된 상태에 의존하지 않으므로 전날 밴이 이월되지 않는다.
     """
     now_kst = get_current_kst_time()
     start_utc = get_start_of_day_utc(now_kst)
@@ -187,9 +187,9 @@ async def compute_ban_list_for_channel(channel) -> List[str]:
 
 
 def _extract_ban_list(last_csv_df: Optional[pd.DataFrame]) -> List[str]:
-    """같은 캐릭터를 3회 이상 픽한 경우 밴 대상입니다. 캐릭터명은 앞뒤/중간 공백과
-    대소문자 차이를 무시하고 집계하며, 표시는 첫 등장한 원본 표기를 사용합니다.
-    빈 값은 집계에서 제외합니다.
+    """같은 캐릭터를 3회 이상 픽한 경우 밴 대상이다. 캐릭터명은 앞뒤/중간 공백과
+    대소문자 차이를 무시하고 집계하며, 표시는 첫 등장한 원본 표기를 사용한다.
+    빈 값은 집계에서 제외한다.
     """
     if last_csv_df is None or 'character' not in last_csv_df.columns:
         return []

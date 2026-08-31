@@ -1,10 +1,10 @@
 """
 팀 등록/수정 파이프라인
 
-TeamModal(등록)과 TeamEditModal(수정)이 공유하는 흐름을 담당합니다:
+TeamModal(등록)과 TeamEditModal(수정)이 공유하는 흐름을 담당한다:
 입력 검증 → 제한 검사 → 닉네임 검증 → MMR 조회 → 저장 → 캐시/백업 → 후속 갱신.
 UI 콜백에는 입력 수집과 임시 메시지 생성만 남기고, 결과 표시를 포함한
-나머지 단계는 모두 이 모듈이 수행합니다.
+나머지 단계는 모두 이 모듈이 수행한다.
 """
 from typing import TYPE_CHECKING, List, Optional, Set, Tuple
 
@@ -74,7 +74,7 @@ async def _handle_pipeline_exception(
 
 
 async def _validate_inputs(team_data: TeamData, temp_message: discord.Message) -> bool:
-    """팀명/멤버 중복/팀 구성 검증. 실패 시 temp_message에 사유를 표시합니다."""
+    """팀명/멤버 중복/팀 구성 검증. 실패 시 temp_message에 사유를 표시한다."""
     is_name_valid, name_error = validate_team_name(team_data.name)
     if not is_name_valid:
         await update_temp_message(temp_message, name_error, discord.Color.red())
@@ -103,13 +103,10 @@ async def _validate_team_rules(
     original_team_name: Optional[str] = None,
     original_members: Optional[List[str]] = None,
 ) -> Tuple[bool, bool]:
-    """등록/수정 공통 제한 검사와 닉네임 검증.
+    """등록/수정 공통 제한 검사와 닉네임 검증. 반환 (통과 여부, 서버 점검 여부).
 
     순서: 조편성/시간 제한 → 경고 제한 → 봇 팀 중복 → 길드 존재 → 게임 API.
-    수정 경로는 팀명이 바뀐 경우에만 봇 팀 중복을, 경고 제한은 새 팀원만 검사합니다.
-
-    Returns:
-        (통과 여부, 서버 점검 여부)
+    수정 경로는 팀명이 바뀐 경우에만 봇 팀 중복을, 경고 제한은 새 팀원만 검사한다.
     """
     team_name = team_data.name
     fail_tag = "팀수정실패" if is_edit else "팀신청실패"
@@ -178,7 +175,7 @@ async def _fetch_team_mmr_or(team_processor: "TeamProcessor", team_data: TeamDat
 
 
 def _save_user_cache(user_id: str, team_data: TeamData) -> None:
-    """다음 신청 프리필용 사용자 캐시를 저장합니다."""
+    """다음 신청 프리필용 사용자 캐시를 저장한다."""
     try:
         UserTeamCache().set(user_id, {
             "team_name": team_data.name,
@@ -190,7 +187,7 @@ def _save_user_cache(user_id: str, team_data: TeamData) -> None:
 
 
 def schedule_mmr_refresh(team_data_manager: "TeamDataManager", channel) -> None:
-    """백그라운드 MMR 갱신 + 대시보드 메시지 업데이트를 예약합니다 (fire-and-forget)."""
+    """백그라운드 MMR 갱신 + 대시보드 메시지 업데이트를 예약한다 (fire-and-forget)."""
     team_data_manager.spawn_task(_update_mmr_background(team_data_manager, channel))
 
 
@@ -325,8 +322,8 @@ async def process_team_edit(
     """팀 수정 파이프라인: 검증 → MMR 조회 → 교체 저장 → 캐시 → 조별 갱신 → 결과 표시.
 
     is_roster_change=True(관리자 로스터 변경)면 모든 검증을 건너뛰고,
-    group_letter가 가리키는 조의 데이터/역할/음성채널/공지 갱신과 주의 부여를 수행합니다.
-    조별 팀 목록은 team_data_manager.groups를 단일 소스로 사용합니다.
+    group_letter가 가리키는 조의 데이터/역할/음성채널/공지 갱신과 주의 부여를 수행한다.
+    조별 팀 목록은 team_data_manager.groups를 단일 소스로 사용한다.
     """
     new_team_name = new_team_data.name
     try:
@@ -414,7 +411,7 @@ def _apply_unverified_transition(
     old_name: str,
     new_name: str,
 ) -> None:
-    """점검 중 로스터가 바뀐 팀만 미검증으로 표시하고, 평시와 개명 잔여 마커는 정리합니다."""
+    """점검 중 로스터가 바뀐 팀만 미검증으로 표시하고, 평시와 개명 잔여 마커는 정리한다."""
     if is_maintenance:
         old_norm = {normalize_nickname_for_comparison(p) for p in old_players}
         new_norm = {normalize_nickname_for_comparison(p) for p in new_players}
@@ -437,7 +434,7 @@ def _log_edit_diff(
     """변경사항 diff 계산 + 로그 기록. Returns (added, removed).
 
     비교는 정규화 키 기준(_apply_unverified_transition 과 동일)이라
-    대소문자/공백만 고친 수정은 변경으로 집계되지 않고, 표시는 원문을 유지합니다.
+    대소문자/공백만 고친 수정은 변경으로 집계되지 않고, 표시는 원문을 유지한다.
     """
     old_by_key = {
         normalize_nickname_for_comparison(name): name
@@ -614,7 +611,7 @@ async def _apply_roster_warnings(
     reason: str,
     temp_message: discord.Message,
 ) -> None:
-    """로스터 변경 시 빠지는 팀 선수에게 주의를 부여합니다."""
+    """로스터 변경 시 빠지는 팀 선수에게 주의를 부여한다."""
     try:
         admin_name = interaction.user.display_name or interaction.user.name
         warning_manager = BotManager.get_instance().get_warning_manager()

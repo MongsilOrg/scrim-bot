@@ -1,6 +1,6 @@
 """팀 데이터 백업/복구 모듈
 
-팀 데이터의 JSON 백업 저장, 복구, 유효성 검사 기능을 담당합니다.
+팀 데이터의 JSON 백업 저장, 복구, 유효성 검사 기능을 담당한다.
 """
 import json
 import os
@@ -58,7 +58,7 @@ class TeamBackup:
         return self._manager.BACKUP_FILE
 
     def save(self) -> None:
-        """팀 데이터를 JSON 파일로 백업합니다 (날짜 메타데이터 포함)."""
+        """팀 데이터를 JSON 파일로 백업한다 (날짜 메타데이터 포함)."""
         try:
             serialized_groups = None
             if self._manager.groups is not None:
@@ -91,7 +91,7 @@ class TeamBackup:
             logger.error(f"[팀데이터] 백업 저장 실패: {e}", exc_info=True)
 
     def load(self) -> bool:
-        """JSON 백업에서 팀 데이터를 복구합니다. 성공 시 True 반환."""
+        """JSON 백업에서 팀 데이터를 복구한다. 성공 시 True 반환."""
         try:
             if not os.path.exists(self.backup_file):
                 return False
@@ -140,11 +140,11 @@ class TeamBackup:
             return False
 
     def should_restore(self) -> bool:
-        """백업 파일이 유효한지 확인합니다.
+        """백업 파일이 유효한지 확인한다.
 
-        백업 파일이 존재하고 메타데이터가 있으면 항상 유효합니다.
+        백업 파일이 존재하고 메타데이터가 있으면 항상 유효하다.
         초기화는 다음 스크림 자동 전환(transition_to_next_scrim)이
-        수행하는 reset_team_data()로만 이루어집니다.
+        수행하는 reset_team_data()로만 이루어진다.
         """
         try:
             if not os.path.exists(self.backup_file):

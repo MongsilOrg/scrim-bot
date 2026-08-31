@@ -22,7 +22,7 @@ logger = get_logger('bser_api')
 
 
 class BSERAPIClient:
-    """BSER API와의 통신을 담당하며, 닉네임-유저ID 매칭과 MMR을 캐싱합니다."""
+    """BSER API와의 통신을 담당하며, 닉네임-유저ID 매칭과 MMR을 캐싱한다."""
 
     # API 관련 상수
     MAX_RETRIES = 4  # 과도한 백오프 방지
@@ -71,7 +71,7 @@ class BSERAPIClient:
             self.session = None
 
     def __del__(self) -> None:
-        """소멸자에서 세션이 남아있다면 경고를 기록합니다."""
+        """소멸자에서 세션이 남아있다면 경고를 기록한다."""
         if self.session is not None and not self.session.closed:
             logger.warning("[API] 클라이언트가 적절히 종료되지 않음")
     
@@ -171,7 +171,7 @@ class BSERAPIClient:
 
     @classmethod
     def clear_mmr_cache(cls) -> None:
-        """조편성 직전 실시간 데이터 보장을 위해 클리어합니다."""
+        """조편성 직전에 클리어해 실시간 값을 쓰게 한다."""
         cls._mmr_cache.clear()
 
     async def check_server_maintenance(self) -> bool:

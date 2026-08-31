@@ -63,7 +63,7 @@ class EventsLogicTest(unittest.TestCase):
         self.assertEqual(ranks, [1, 2])
 
     def test_extract_ban_list(self):
-        """3회 이상 픽만 밴 대상이며 빈/NaN 값은 집계에서 제외합니다."""
+        """3회 이상 픽만 밴 대상이며 빈/NaN 값은 집계에서 제외한다."""
         df = pd.DataFrame(
             {
                 "character": [
@@ -95,7 +95,7 @@ class EventsLogicTest(unittest.TestCase):
         self.assertEqual(normalize_team_name(""), "")
 
     def test_aggregate_team_scores_normalizes_team_names(self):
-        """대소문자/공백 표기가 달라도 같은 팀으로 집계하고 최초 등장 원형을 표시합니다."""
+        """대소문자/공백 표기가 달라도 같은 팀으로 집계하고 최초 등장 원형을 표시한다."""
         round1 = pd.DataFrame(
             {
                 "teamName": ["DM ", "DM ", "VGX"],
@@ -123,7 +123,7 @@ class EventsLogicTest(unittest.TestCase):
         self.assertEqual(score_map["VGX"]["tournament total score"], 20.0)
 
     def test_aggregate_team_scores_default_team_name_resolved(self):
-        """기본 팀명(Team 1)이 이전 라운드 닉네임 기반으로 실제 팀명으로 치환됩니다."""
+        """기본 팀명(Team 1)이 이전 라운드 닉네임 기반으로 실제 팀명으로 치환된다."""
         round1 = pd.DataFrame(
             {
                 "teamName": ["DM", "DM", "DM", "VGX", "VGX", "VGX"],
@@ -151,7 +151,7 @@ class EventsLogicTest(unittest.TestCase):
         self.assertNotIn("Team 1", team_names)
 
     def test_aggregate_team_scores_default_team_not_resolved_single_match(self):
-        """닉네임 1명만 일치할 경우 기본 팀명이 치환되지 않습니다."""
+        """닉네임 1명만 일치할 경우 기본 팀명이 치환되지 않는다."""
         round1 = pd.DataFrame(
             {
                 "teamName": ["DM", "DM", "DM"],

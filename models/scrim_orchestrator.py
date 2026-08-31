@@ -89,7 +89,7 @@ class ScrimOrchestrator:
             logger.info("[조편성] 실패 롤백 - MMR 갱신 루프 재시작")
 
     async def _refresh_mmr_before_assignment(self, team_data_manager) -> None:
-        """조편성 시작 직전 MMR을 새로 fetch하고 이미지를 한 번 갱신합니다."""
+        """조편성 시작 직전 MMR을 새로 fetch하고 이미지를 한 번 갱신한다."""
         try:
             if not team_data_manager.teams:
                 return
@@ -108,7 +108,7 @@ class ScrimOrchestrator:
             logger.error(f"[조편성] 직전 MMR 갱신 실패 (계속 진행): {e}", exc_info=True)
 
     async def execute_auto_assignment(self) -> None:
-        """실제 조편성을 실행합니다."""
+        """실제 조편성을 실행한다."""
         try:
             team_data_manager = self._manager
 
@@ -170,7 +170,7 @@ class ScrimOrchestrator:
             logger.error(f"[Discord] 서비스 실행 실패: {e}", exc_info=True)
 
     async def restore_group_roster_views(self, client) -> None:
-        """조편성 후 재시작 시 GroupRosterView를 복구합니다."""
+        """조편성 후 재시작 시 GroupRosterView를 복구한다."""
         mgr = self._manager
         if not mgr.groups or not mgr.group_message_ids:
             logger.info("[복구] groups 또는 group_message_ids가 없어 복구 건너뜀")
@@ -225,7 +225,7 @@ class ScrimOrchestrator:
 # ──────────────────────────────────────────────
 
 def is_scrim_expired(team_data_manager) -> bool:
-    """스크림이 만료되었는지 확인합니다 (스크림 당일 22시 기준)."""
+    """스크림이 만료되었는지 확인한다 (스크림 당일 22시 기준)."""
     if not team_data_manager.scrim_day or not team_data_manager.scrim_month:
         return True
 
@@ -247,7 +247,7 @@ def is_scrim_expired(team_data_manager) -> bool:
 
 
 async def transition_to_next_scrim(client: "ScrimBot", channel: discord.TextChannel, refresh_dashboard) -> None:
-    """다음날 스크림으로 전환합니다. refresh_dashboard(channel)로 대시보드를 갱신합니다."""
+    """다음날 스크림으로 전환한다. refresh_dashboard(channel)로 대시보드를 갱신한다."""
     bot_manager = BotManager.get_instance()
     old_tdm = bot_manager.get_team_data_manager()
     old_msg_id = old_tdm.dashboard_message_id

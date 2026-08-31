@@ -52,7 +52,7 @@ class Settings:
 
     GROUP_CHANNEL_IDS: dict = _parse_group_channel_ids(os.getenv('GROUP_CHANNEL_IDS', ''))
 
-    # {letter}가 조 문자(A, B, C, ...)로 대체되어 음성채널을 동적으로 찾는 데 쓰입니다.
+    # {letter}가 조 문자(A, B, C, ...)로 대체되어 음성채널을 동적으로 찾는 데 쓰이다.
     GROUP_CATEGORY_PATTERN: str = os.getenv('GROUP_CATEGORY_PATTERN', 'Group {letter}')
 
     TEAMS_PER_GROUP: int = 8

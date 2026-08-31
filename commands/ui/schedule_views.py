@@ -94,7 +94,7 @@ class AbsenceReasonModal(Modal):
 
 
 async def _ensure_schedule_ready(interaction: discord.Interaction, *, need_assignments: bool = False):
-    """쿨다운, 관리자 권한, 일정 초기화 여부를 확인하고 매니저를 돌려줍니다. 막히면 None."""
+    """쿨다운, 관리자 권한, 일정 초기화 여부를 확인하고 매니저를 돌려준다. 막히면 None."""
     if await check_cooldown(interaction):
         return None
     if not is_admin(interaction.user):
@@ -346,10 +346,10 @@ async def refresh_dashboard(
     channel=None,
     schedule_mgr=None,
 ) -> None:
-    """일정 대시보드 메시지를 갱신합니다.
+    """일정 대시보드 메시지를 갱신한다.
 
     channel이 주어지면 그 채널에서 수정/생성하고,
-    없으면 저장된 status_channel_id → 기본 대시보드 채널 순으로 사용합니다.
+    없으면 저장된 status_channel_id → 기본 대시보드 채널 순으로 사용한다.
     """
     if schedule_mgr is None:
         schedule_mgr = BotManager.get_instance().get_schedule_manager()

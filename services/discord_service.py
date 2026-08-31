@@ -1,7 +1,7 @@
 """Discord 서비스 모듈
 
 조편성 공지 전송, 역할 관리, 음성채널 이름 변경, 채널 메시지 삭제 등
-Discord API 관련 작업을 담당합니다.
+Discord API 관련 작업을 담당한다.
 """
 import asyncio
 from typing import List, Optional, Tuple, TYPE_CHECKING
@@ -38,7 +38,7 @@ class DiscordService:
         self._team_data_manager = team_data_manager
 
     async def send_global_announcement(self, guild: discord.Guild, groups: List[List], unmatched_teams: List[Tuple[str, "TeamData", float]] = None) -> None:
-        """전체 공지를 하나의 LayoutView로 전송합니다."""
+        """전체 공지를 하나의 LayoutView로 전송한다."""
         try:
             notice_channel = guild.get_channel(settings.NOTICE_CHANNEL_ID)
             if not notice_channel:
@@ -99,7 +99,7 @@ class DiscordService:
             logger.error(f"[Discord] 전체 공지 전송 실패: {e}", exc_info=True)
 
     def _build_group_notice(self, guild: discord.Guild, group_letter: str, group: List[Tuple[str, "TeamData", float]], message: str, *, has_image: bool):
-        """조별 역할 멘션을 붙인 본문과 GroupRosterView를 조립합니다."""
+        """조별 역할 멘션을 붙인 본문과 GroupRosterView를 조립한다."""
         role_mention = get_group_role_mention(guild, group_letter)
         if not role_mention:
             logger.warning(f"[Discord] 조별 역할을 찾을 수 없음 - 역할: {group_letter}조")
@@ -166,7 +166,7 @@ class DiscordService:
                 logger.error(f"[Discord] 에러 메시지 전송 실패 - 채널: {channel.name}: {e2}", exc_info=True)
 
     async def update_single_group_announcement(self, channel: discord.TextChannel, group_letter: str, group_teams: List[Tuple[str, "TeamData", float]]) -> None:
-        """저장된 메시지를 수정합니다 (로스터 변경 시 사용)."""
+        """저장된 메시지를 수정한다 (로스터 변경 시 사용)."""
         try:
             team_data_manager = self._team_data_manager
             message_id = team_data_manager.group_message_ids.get(group_letter)
@@ -258,7 +258,7 @@ class DiscordService:
             logger.error(f"[Discord] 공지 전송 실패: {e}", exc_info=True)
 
     async def _retry_discord(self, coro_factory, *, error_message: str, retries: int = 3, base_delay: float = 0.2) -> None:
-        """최종 실패해도 예외 없이 로그만 남깁니다."""
+        """최종 실패해도 예외 없이 로그만 남긴다."""
         for retry in range(retries):
             try:
                 await coro_factory()
@@ -287,7 +287,7 @@ class DiscordService:
             logger.error(f"[Discord] 멤버 역할 업데이트 실패 - 멤버: {member.display_name}: {e}", exc_info=True)
 
     def _resolve_guild(self, guild: Optional[discord.Guild]) -> Optional[discord.Guild]:
-        """guild가 없으면 클라이언트에서 조회합니다."""
+        """guild가 없으면 클라이언트에서 조회한다."""
         if not guild and self._processor.client:
             guild = self._processor.client.get_guild(settings.GUILD_ID)
             if not guild:
@@ -296,7 +296,7 @@ class DiscordService:
 
     @staticmethod
     def _team_participants(teams: List[Tuple[str, "TeamData", float]]) -> set:
-        """팀 목록에서 정규화된 참여자(선수+스태프) 명단을 만듭니다."""
+        """팀 목록에서 정규화된 참여자(선수+스태프) 명단을 만든다."""
         participants = set()
         for team_name, team_data, _ in teams:
             participants.update(normalize_nickname_for_comparison(member) for member in team_data.all_members)
@@ -304,7 +304,7 @@ class DiscordService:
 
     @staticmethod
     def _build_role_updates(guild: discord.Guild, group_roles: dict, participants_by_letter: dict) -> list:
-        """참여자 명단과 실제 역할 보유를 비교해 (member, 제거, 추가) 목록을 만듭니다."""
+        """참여자 명단과 실제 역할 보유를 비교해 (member, 제거, 추가) 목록을 만든다."""
         role_values = set(group_roles.values())
         role_updates = []
         for member in guild.members:
@@ -327,7 +327,7 @@ class DiscordService:
         return role_updates
 
     async def _apply_role_updates(self, role_updates: list) -> None:
-        """역할 업데이트를 배치로 처리합니다 (Rate Limiting 고려)."""
+        """역할 업데이트를 배치로 처리한다 (Rate Limiting 고려)."""
         batch_size = 10
         for i in range(0, len(role_updates), batch_size):
             batch = role_updates[i:i + batch_size]
@@ -365,7 +365,7 @@ class DiscordService:
             logger.error(f"[Discord] 역할 처리 실패: {e}", exc_info=True)
 
     async def update_group_roles(self, guild: discord.Guild, group_letter: str, group_teams: List[Tuple[str, "TeamData", float]]) -> None:
-        """해당 조만 업데이트합니다 (로스터 변경 시 사용)."""
+        """해당 조만 업데이트한다 (로스터 변경 시 사용)."""
         try:
             guild = self._resolve_guild(guild)
 
@@ -419,7 +419,7 @@ class DiscordService:
             return False
 
     async def rename_group_voice_channel(self, guild: discord.Guild, group_letter: str, team_index: int, team_name: str) -> None:
-        """단일 슬롯만 변경합니다 (로스터 변경 시 사용)."""
+        """단일 슬롯만 변경한다 (로스터 변경 시 사용)."""
         voice_channels = self._sorted_group_voice_channels(guild, group_letter)
         if voice_channels is None:
             return

@@ -116,7 +116,7 @@ class CautionConversionTest(unittest.IsolatedAsyncioTestCase):
             len(converted), WarningManager.CAUTION_TO_WARNING_COUNT
         )
 
-        # 전환된 주의 행 삭제: 행 밀림 방지를 위해 아래 행부터
+        # 전환된 주의 행 삭제: 행이 밀리지 않게 아래부터
         manager.worksheet.delete_rows.assert_has_calls(
             [mock.call(3), mock.call(2)]
         )
