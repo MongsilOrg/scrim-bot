@@ -61,12 +61,7 @@ async def bootstrap_on_ready(client: "ScrimBot") -> None:
                     logger.info(f"[시작] {settings.TEAM_REGISTRATION_DEADLINE_HOUR}시 이후 재시작 - 조편성 미완료, 즉시 실행")
                     asyncio.create_task(team_data_manager.start_team_assignment())
                 else:
-                    team_data_manager.auto_assignment_task = asyncio.create_task(
-                        team_data_manager.check_and_auto_assign()
-                    )
-                    team_data_manager.mmr_update_task = asyncio.create_task(
-                        team_data_manager.mmr_update_loop()
-                    )
+                    team_data_manager.start_background_tasks()
                     logger.info("[시작] 조편성/MMR 태스크 재시작")
             else:
                 await team_data_manager.restore_group_roster_views(client)

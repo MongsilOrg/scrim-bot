@@ -170,23 +170,18 @@ class TeamDataManager:
 
     def _remove_member_index(self, team_name: str, team: TeamData) -> None:
         for member in team.all_members:
-            key = self._normalize_member_key(member)
+            key = normalize_nickname_for_comparison(member)
             if self.team_by_member.get(key) == team_name:
                 self.team_by_member.pop(key, None)
 
     def _add_member_index(self, team_name: str, team: TeamData) -> None:
         for member in team.all_members:
-            key = self._normalize_member_key(member)
+            key = normalize_nickname_for_comparison(member)
             self.team_by_member[key] = team_name
-
-    @staticmethod
-    def _normalize_member_key(member: str) -> str:
-        """멤버 키 정규화 (대소문자/공백 무시)"""
-        return normalize_nickname_for_comparison(member)
 
     def get_team_by_member(self, member_name: str) -> Optional[str]:
         """멤버명으로 팀을 O(1)로 조회합니다."""
-        key = self._normalize_member_key(member_name)
+        key = normalize_nickname_for_comparison(member_name)
         return self.team_by_member.get(key)
 
     # ──────────────────────────────────────────────
@@ -249,6 +244,13 @@ class TeamDataManager:
     # ──────────────────────────────────────────────
     # 비동기 태스크 관리
     # ──────────────────────────────────────────────
+
+    def start_background_tasks(self) -> None:
+        """조편성 감시와 MMR 갱신 루프를 띄웁니다. 살아있는 태스크는 건드리지 않습니다."""
+        if not (self.auto_assignment_task and not self.auto_assignment_task.done()):
+            self.auto_assignment_task = asyncio.create_task(self.check_and_auto_assign())
+        if not (self.mmr_update_task and not self.mmr_update_task.done()):
+            self.mmr_update_task = asyncio.create_task(self.mmr_update_loop())
 
     def spawn_task(self, coro) -> asyncio.Task:
         """fire-and-forget 태스크를 생성하고 리셋 시 취소되도록 추적합니다."""

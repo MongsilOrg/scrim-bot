@@ -282,12 +282,7 @@ async def transition_to_next_scrim(client: "ScrimBot", channel: discord.TextChan
     await refresh_dashboard(channel)
     team_data_manager.save_backup()
 
-    team_data_manager.auto_assignment_task = asyncio.create_task(
-        team_data_manager.check_and_auto_assign()
-    )
-    team_data_manager.mmr_update_task = asyncio.create_task(
-        team_data_manager.mmr_update_loop()
-    )
+    team_data_manager.start_background_tasks()
 
     if team_data_manager.teams:
         try:
