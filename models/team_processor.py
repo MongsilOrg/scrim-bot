@@ -275,10 +275,11 @@ class TeamProcessor:
         """테스트 계정 팀의 MMR을 계산합니다 (상위 3명 평균)."""
         mmr_list = []
         for player in players:
-            if self.is_test_account(player):
-                mmr = self._get_test_account_mmr(player)
-                if mmr and mmr > 0:
-                    mmr_list.append(mmr)
+            mmr = self._get_test_account_mmr(player)
+            if mmr is None:
+                logger.warning(f"[MMR조회] 테스트 계정 시트에 없음 - 플레이어: {player}")
+                continue
+            mmr_list.append(mmr)
 
         return self._average_top_three(mmr_list, len(players))
 
@@ -388,19 +389,17 @@ class TeamProcessor:
                         try:
                             if self.is_test_account(player):
                                 mmr = self._get_test_account_mmr(player)
-                                if mmr and mmr > 0:
-                                    return mmr
-                                logger.warning(f"[MMR조회] 테스트 계정 MMR 조회 실패 또는 0 - 플레이어: {player}, MMR: {mmr}")
-                                return None
+                                if mmr is None:
+                                    logger.warning(f"[MMR조회] 테스트 계정 시트에 없음 - 플레이어: {player}")
+                                return mmr
                             uid = await api_client.get_user_uid(player)
                             if not uid:
                                 logger.warning(f"[MMR조회] 플레이어 UID 조회 실패 - 플레이어: {player}")
                                 return None
                             mmr = await api_client.get_user_mmr(uid)
-                            if mmr and mmr > 0:
-                                return mmr
-                            logger.warning(f"[MMR조회] 플레이어 MMR 조회 실패 또는 0 - 플레이어: {player}, UID: {uid}, MMR: {mmr}")
-                            return None
+                            if mmr is None:
+                                logger.warning(f"[MMR조회] 플레이어 MMR 조회 실패 - 플레이어: {player}, UID: {uid}")
+                            return mmr
                         except Exception as e:
                             logger.warning(f"[MMR조회] 플레이어 MMR 조회 실패 - 플레이어: {player}: {e}")
                             return None
