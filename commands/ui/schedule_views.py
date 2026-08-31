@@ -93,6 +93,25 @@ class AbsenceReasonModal(Modal):
             await send_response(interaction, error_view("불참 등록 중 오류가 발생했습니다."))
 
 
+async def _ensure_schedule_ready(interaction: discord.Interaction, *, need_assignments: bool = False):
+    """쿨다운, 관리자 권한, 일정 초기화 여부를 확인하고 매니저를 돌려줍니다. 막히면 None."""
+    if await check_cooldown(interaction):
+        return None
+    if not is_admin(interaction.user):
+        await send_response(interaction, permission_error_view())
+        return None
+
+    schedule_mgr = BotManager.get_instance().get_schedule_manager()
+    if need_assignments:
+        if not schedule_mgr.assignments:
+            await send_response(interaction, error_view("주간 일정이 편성되지 않았습니다.\n먼저 편성을 실행해주세요."))
+            return None
+    elif not schedule_mgr.week_label:
+        await send_response(interaction, error_view("주간 일정이 초기화되지 않았습니다."))
+        return None
+    return schedule_mgr
+
+
 class ScheduleView(LayoutView):
 
     def __init__(self, status_text: str, *, has_assignments: bool = False):
@@ -126,15 +145,8 @@ class ScheduleView(LayoutView):
 
     async def register_callback(self, interaction: discord.Interaction) -> None:
         """참가 버튼: 요일 선택 모달"""
-        if await check_cooldown(interaction):
-            return
-        if not is_admin(interaction.user):
-            await send_response(interaction, permission_error_view())
-            return
-
-        schedule_mgr = BotManager.get_instance().get_schedule_manager()
-        if not schedule_mgr.week_label:
-            await send_response(interaction, error_view("주간 일정이 초기화되지 않았습니다."))
+        schedule_mgr = await _ensure_schedule_ready(interaction)
+        if schedule_mgr is None:
             return
         if schedule_mgr.assignments:
             await send_response(interaction, error_view("편성이 완료된 상태에서는 일정을 수정할 수 없습니다.\n편성 취소 후 다시 시도해주세요."))
@@ -147,15 +159,8 @@ class ScheduleView(LayoutView):
 
     async def absence_callback(self, interaction: discord.Interaction) -> None:
         """불참 버튼: 사유 입력 모달"""
-        if await check_cooldown(interaction):
-            return
-        if not is_admin(interaction.user):
-            await send_response(interaction, permission_error_view())
-            return
-
-        schedule_mgr = BotManager.get_instance().get_schedule_manager()
-        if not schedule_mgr.week_label:
-            await send_response(interaction, error_view("주간 일정이 초기화되지 않았습니다."))
+        schedule_mgr = await _ensure_schedule_ready(interaction)
+        if schedule_mgr is None:
             return
         if schedule_mgr.assignments:
             await send_response(interaction, error_view("편성이 완료된 상태에서는 불참을 수정할 수 없습니다.\n편성 취소 후 다시 시도해주세요."))
@@ -169,15 +174,8 @@ class ScheduleView(LayoutView):
 
     async def assign_callback(self, interaction: discord.Interaction) -> None:
         """편성 버튼: 상태에 따라 편성/재편성/편성취소 분기"""
-        if await check_cooldown(interaction):
-            return
-        if not is_admin(interaction.user):
-            await send_response(interaction, permission_error_view())
-            return
-
-        schedule_mgr = BotManager.get_instance().get_schedule_manager()
-        if not schedule_mgr.week_label:
-            await send_response(interaction, error_view("주간 일정이 초기화되지 않았습니다."))
+        schedule_mgr = await _ensure_schedule_ready(interaction)
+        if schedule_mgr is None:
             return
 
         if not schedule_mgr.assignments:
@@ -259,15 +257,8 @@ class ScheduleView(LayoutView):
 
     async def deploy_callback(self, interaction: discord.Interaction) -> None:
         """투입 기록 버튼: 요일별 버튼으로 본인 투입 토글"""
-        if await check_cooldown(interaction):
-            return
-        if not is_admin(interaction.user):
-            await send_response(interaction, permission_error_view())
-            return
-
-        schedule_mgr = BotManager.get_instance().get_schedule_manager()
-        if not schedule_mgr.assignments:
-            await send_response(interaction, error_view("주간 일정이 편성되지 않았습니다.\n먼저 편성을 실행해주세요."))
+        schedule_mgr = await _ensure_schedule_ready(interaction, need_assignments=True)
+        if schedule_mgr is None:
             return
 
         deploy_view = _build_deploy_view(schedule_mgr, str(interaction.user.id))
