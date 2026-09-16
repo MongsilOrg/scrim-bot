@@ -18,7 +18,6 @@ GSHEET_SCOPES = [
 def create_gspread_client(
     caller: str = ''
 ) -> Tuple[Optional[gspread.Client], Optional[gspread.Spreadsheet]]:
-    """caller는 로그 접두사. 초기화 실패 시 해당 항목은 None."""
     prefix = f"[{caller}] " if caller else ""
 
     try:

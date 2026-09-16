@@ -1,6 +1,3 @@
-"""
-방 코드 명령어
-"""
 import asyncio
 import re
 from datetime import datetime, timedelta
@@ -25,7 +22,6 @@ from utils.helpers import (
 
 logger = get_logger('room_code')
 
-# 날씨 상수 (라운드 번호 → 메인 날씨)
 MAIN_WEATHERS = {1: "모래바람", 2: "비", 3: "쾌청", 4: "흐림"}
 SUB_WEATHERS = ["무풍", "강풍", "벼락", "자색 안개"]
 
@@ -35,12 +31,10 @@ assert len(MAIN_WEATHERS) == settings.TOTAL_ROUNDS, (
 
 
 def clean_room_code(room_code: str) -> str:
-    """방코드에서 빈칸을 제거하고 정리"""
     return room_code.replace(" ", "").replace("\t", "").replace("\n", "")
 
 
 def validate_room_code(room_code: str) -> bool:
-    """방코드가 6자리 숫자인지 검증 (빈칸 무시, 0으로 시작 가능)"""
     cleaned_code = clean_room_code(room_code)
     return bool(re.match(r'^\d{6}$', cleaned_code))
 
@@ -54,7 +48,6 @@ def calculate_round_start_time(current_time: datetime) -> datetime:
 
 
 def _is_scrim_notice_message(message: discord.Message) -> bool:
-    """메시지가 스크림 공지(방코드)인지 판별한다."""
     try:
         for component in message.components:
             for child in getattr(component, 'children', []):
@@ -71,11 +64,6 @@ def _is_scrim_notice_message(message: discord.Message) -> bool:
 
 
 async def get_round_number(channel: discord.TextChannel) -> int:
-    """채널의 당일 방코드(스크림 공지) 메시지를 전부 스캔하여 현재 라운드 번호를 계산한다.
-
-    KST 자정 기준 당일 메시지만 집계하므로 전날 라운드가 이월되지 않으며,
-    채널 전체(당일분)를 스캔하므로 중간 메시지 수와 무관하게 정확하다.
-    """
     try:
         start_utc = get_start_of_day_utc()
         round_count = 0
@@ -92,8 +80,6 @@ async def get_round_number(channel: discord.TextChannel) -> int:
 
 
 class RoomCodeView(LayoutView):
-    """방코드 공지 LayoutView"""
-
     def __init__(
         self,
         round_number: int,
@@ -170,7 +156,6 @@ class RoomCodeView(LayoutView):
 
 
 async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
-    """방 코드를 공지한다"""
     try:
         if not isinstance(interaction.channel, discord.TextChannel):
             try:
@@ -209,22 +194,18 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                 weather_warning = f"이전 라운드의 서브 날씨가 {missed}개 미선택 상태입니다."
 
             if len(available) == 1:
-                # 마지막 라운드는 후보가 하나뿐이라 자동 확정
                 sub_weather = available[0]
                 team_data_manager.add_selected_weather(group_letter, sub_weather)
                 weather_value = f"`{main_weather}` / `{sub_weather}`"
             elif len(available) == 0:
                 weather_value = f"`{main_weather}`"
             else:
-                # 후보 전체 표시 + 버튼으로 등장한 날씨 선택
                 sub_list = ", ".join(f"`{w}`" for w in available)
                 weather_value = f"`{main_weather}` / {sub_list}"
                 weather_options = available
         else:
             weather_value = f"`{main_weather}` / {', '.join(f'`{w}`' for w in SUB_WEATHERS)}"
 
-        # 밴 리스트: 저장 상태 대신 당일 CSV를 즉석 스캔한다
-        # (전날 이월 없음, 1라운드는 CSV가 없어 자연히 빈 값)
         ban_display = None
         if group_letter:
             ban_list = await compute_ban_list_for_channel(interaction.channel)
@@ -254,7 +235,6 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
         if role_mention:
             send_kwargs["allowed_mentions"] = discord.AllowedMentions(roles=True)
 
-        # 만료 처리 및 네트워크 오류 재시도
         max_retries = 3
 
         for attempt in range(max_retries):

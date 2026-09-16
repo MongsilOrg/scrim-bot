@@ -1,4 +1,3 @@
-"""MMR 갱신 및 닉네임 검증 모듈"""
 import asyncio
 import time
 from typing import Optional, Tuple, TYPE_CHECKING
@@ -29,7 +28,7 @@ class MmrUpdater:
 
     async def update_mmr_message(self, channel: discord.TextChannel, mmr_fail_count: int = 0) -> None:
         mgr = self._manager
-        # TTL 캐시 미스 시에만 실제 Notion 호출
+        # get_server_info는 TTL 캐시
         info = await asyncio.to_thread(get_server_info)
         operate = info['operate']
         try:
@@ -37,14 +36,13 @@ class MmrUpdater:
                 logger.warning("[MMR메시지] 조편성 시작 이후이므로 갱신 불가")
                 return
 
-            # 이미지에 시드 여부 표시
             try:
                 team_processor = BotManager.get_instance().get_team_processor()
                 await team_processor.ensure_seeds_marked(mgr.teams)
             except Exception as e:
                 logger.warning(f"[MMR메시지] 시드 마킹 실패 (계속 진행): {e}")
 
-            # 렌더 스레드 중 팀 변경으로 dict가 바뀌지 않도록 스냅샷을 넘긴다
+            # 렌더 스레드 도중 팀 변경에 대비한 스냅샷
             img_io = await ImageGenerator.generate_mmr_image_async(
                 dict(mgr.teams), unverified_teams=set(mgr.unverified_teams), server_info=info
             )
@@ -73,7 +71,6 @@ class MmrUpdater:
             accent = discord.Color.from_str(TOURNAMENT_COLOR) if info['is_tournament'] else discord.Color.blue()
             mmr_view.add_item(Container(*children, accent_colour=accent))
 
-            # 기존 메시지 편집 시도 (메모리 참조 또는 백업 ID)
             if not mgr.mmr_message and mgr.mmr_message_id:
                 try:
                     mgr.mmr_message = await channel.fetch_message(mgr.mmr_message_id)
@@ -116,16 +113,16 @@ class MmrUpdater:
             logger.error(f"[MMR메시지] 업데이트 실패: {e}", exc_info=True)
             raise
 
-    # 스킵 조건이 놓친 표시 변화가 있어도 이 주기 안에는 화면에 반영된다
+    # 스킵 조건이 놓친 표시 변화의 최대 반영 지연
     RENDER_BACKSTOP_SECONDS = 1800
 
     async def mmr_update_loop(self) -> None:
         team_data_manager = self._manager
-        last_fail_count: Optional[int] = None  # 실패 경고 표시 변화 감지용
-        last_server_info: Optional[dict] = None  # Live/Tournament 전환 감지용
+        last_fail_count: Optional[int] = None
+        last_server_info: Optional[dict] = None
         last_render_at: float = 0.0
         try:
-            # setup_scrim_dashboard와 충돌 방지
+            # setup_scrim_dashboard와 동시 실행 시 충돌
             await asyncio.sleep(10)
 
             while True:
@@ -139,7 +136,6 @@ class MmrUpdater:
                         team_data_manager.mmr_update_task = None
                         return
 
-                    # 스크림 당일 마감 시각 이후면 마지막 갱신 1회 후 종료
                     final_run = (
                         team_data_manager.is_scrim_date_today()
                         and current_time.hour >= settings.TEAM_REGISTRATION_DEADLINE_HOUR
@@ -148,7 +144,6 @@ class MmrUpdater:
                     if team_data_manager.teams:
                         success, fail = await self.update_all_team_mmr()
 
-                        # 점검 감지: 전체 실패 시 점검으로 판정
                         was_maintenance = team_data_manager.is_maintenance
                         if fail > 0 and success == 0:
                             team_data_manager.is_maintenance = True
@@ -159,11 +154,9 @@ class MmrUpdater:
                             )
                         else:
                             team_data_manager.is_maintenance = False
-                            # 실제 갱신 성공 시에만 마지막 갱신 시각 업데이트
                             if success > 0:
                                 team_data_manager.mark_mmr_success()
 
-                        # 정상 상태에서 잔여 미검증 팀 재검증 (점검 해제, 봇 재시작, 이전 검증 실패 등)
                         if not team_data_manager.is_maintenance and team_data_manager.unverified_teams:
                             if was_maintenance:
                                 logger.info("[MMR갱신] 서버 점검 해제 감지")
@@ -179,7 +172,6 @@ class MmrUpdater:
                             server_changed = info != last_server_info
                             stale = (time.monotonic() - last_render_at) >= self.RENDER_BACKSTOP_SECONDS
 
-                            # MMR/팀 구성/점검 상태/실패 수/서버 정보 모두 무변화면 재렌더+재업로드 스킵
                             if (not final_run and not team_data_manager._mmr_dirty
                                     and not maintenance_changed and not fail_changed
                                     and not server_changed and not stale):
@@ -203,20 +195,18 @@ class MmrUpdater:
             team_data_manager.mmr_update_task = None
         except Exception as e:
             logger.error(f"[MMR갱신] 업데이트 루프 종료: {e}", exc_info=True)
-            # 태스크 참조만 정리 (재시작은 외부에서 관리)
             team_data_manager.mmr_update_task = None
 
     TEAM_MMR_TTL_SECONDS = 600
 
     async def update_all_team_mmr(self, force: bool = False) -> Tuple[int, int]:
-        """TTL 이내 갱신된 팀은 스킵. force 면 무시하고 전부 재조회한다. 반환 (성공 팀 수, 실패 팀 수)."""
+        """반환 (성공 팀 수, 실패 팀 수), TTL 스킵도 성공으로 집계."""
         mgr = self._manager
         success_count = 0
         fail_count = 0
         try:
             team_processor = BotManager.get_instance().get_team_processor()
 
-            # 시트에 새로 추가된 테스트 계정도 인식되도록 MMR 조회 직전 재로드
             await team_processor.ensure_test_accounts_loaded()
 
             current_time = get_current_kst_time()
@@ -225,7 +215,6 @@ class MmrUpdater:
             teams_copy = dict(mgr.teams)
             for team_name, team_data in teams_copy.items():
                 try:
-                    # TTL 이내 갱신된 팀은 스킵 (force면 무시하고 실제 재조회)
                     if not force and team_data.mmr_updated_at:
                         elapsed = (current_time - team_data.mmr_updated_at).total_seconds()
                         if elapsed < self.TEAM_MMR_TTL_SECONDS:
@@ -238,7 +227,6 @@ class MmrUpdater:
                         await mgr.set_team_mmr(team_name, team_mmr)
                         success_count += 1
                     else:
-                        # API 실패로 MMR 0 반환 → 실패로 처리 (mmr_updated_at 미갱신)
                         fail_count += 1
 
                 except Exception as e:
@@ -258,7 +246,6 @@ class MmrUpdater:
         return success_count, fail_count
 
     async def verify_unverified_teams(self) -> None:
-        """점검 해제 후 미검증 팀의 닉네임을 재검증하고 DM을 발송한다."""
         mgr = self._manager
         if not mgr.unverified_teams:
             return
@@ -286,7 +273,6 @@ class MmrUpdater:
                         if not uid:
                             invalid_members.append(player)
 
-                # MMR 갱신 시도 (0 반환 시 기존 MMR 유지)
                 if not invalid_members:
                     _, _, team_mmr = await team_processor.fetch_team_mmr(team_name, team_data)
                     if team_mmr > 0:
@@ -302,7 +288,6 @@ class MmrUpdater:
         logger.info(f"[점검해제] 미검증 팀 재검증 완료 - 잔여: {len(mgr.unverified_teams)}개")
 
     async def _send_verification_dm(self, team_name: str, team_data, invalid_members: list) -> None:
-        """점검 해제 후 닉네임 검증 결과를 DM으로 발송한다."""
         mgr = self._manager
         try:
             if not mgr.client:

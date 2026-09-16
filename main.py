@@ -1,4 +1,3 @@
-"""스크림봇 메인 진입점"""
 import asyncio
 import os
 import sys
@@ -6,12 +5,11 @@ import sys
 import sentry_sdk
 from dotenv import load_dotenv
 
-# config.settings 를 import 하기 전이라 여기서 .env 를 읽어야 DSN 이 빈 문자열로 안 들어간다
+# sentry_sdk.init이 config.settings의 load_dotenv보다 먼저 실행
 load_dotenv()
 
 
 def _sentry_before_send(event, hint):
-    """일시적 네트워크 에러는 Sentry로 보내지 않는다."""
     exc_info = hint.get("exc_info")
     if exc_info:
         name = getattr(exc_info[0], "__name__", "")

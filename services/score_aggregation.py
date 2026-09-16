@@ -1,5 +1,3 @@
-"""채널에 업로드된 당일 CSV를 수집하고 파싱해 팀 점수 누적과 밴 리스트를 계산한다."""
-
 import io
 import re
 from datetime import datetime
@@ -15,7 +13,7 @@ logger = get_logger('score_aggregation')
 
 CSVRow = Tuple[int, pd.DataFrame, str]
 
-# 점수 CSV 컬럼과 집계 결과 dict 키 계약, image_generator 등 소비자와 공유
+# CSV 컬럼명과 결과 dict 키, image_generator와 공유하는 계약
 COL_TEAM_NAME = 'teamName'
 COL_TOTAL_SCORE = 'tournament total score'
 COL_KILL_SCORE = 'tournament kill score'
@@ -119,7 +117,7 @@ def _resolve_default_team_names(current_df: pd.DataFrame, previous_rounds_nickna
 
 def aggregate_team_scores(csv_data_list: List[CSVRow]) -> List[dict]:
     team_max_scores = {}
-    display_names = {}  # 정규화 키 → 최초 등장 원본 팀명
+    display_names = {}
     previous_rounds_nicknames = []
 
     for _, df, _ in csv_data_list:
@@ -128,7 +126,6 @@ def aggregate_team_scores(csv_data_list: List[CSVRow]) -> List[dict]:
 
         round_df = _resolve_default_team_names(round_df, previous_rounds_nicknames)
 
-        # 다음 라운드 매칭용으로 저장
         previous_rounds_nicknames.append(_build_team_nickname_map(round_df))
 
         for num_col in [COL_TOTAL_SCORE, COL_KILL_SCORE]:
@@ -172,10 +169,7 @@ def aggregate_team_scores(csv_data_list: List[CSVRow]) -> List[dict]:
 
 
 async def compute_ban_list_for_channel(channel) -> List[str]:
-    """채널의 당일 CSV를 스캔해 직전(가장 최근) 라운드 기준 밴 리스트를 즉석 계산한다.
-
-    저장된 상태에 의존하지 않으므로 전날 밴이 이월되지 않는다.
-    """
+    """저장된 상태에서 읽으면 전날 밴이 이월됨."""
     now_kst = get_current_kst_time()
     start_utc = get_start_of_day_utc(now_kst)
     csv_data_list = await collect_today_csv_data(channel, start_utc)
@@ -187,15 +181,11 @@ async def compute_ban_list_for_channel(channel) -> List[str]:
 
 
 def _extract_ban_list(last_csv_df: Optional[pd.DataFrame]) -> List[str]:
-    """같은 캐릭터를 3회 이상 픽한 경우 밴 대상이다. 캐릭터명은 앞뒤/중간 공백과
-    대소문자 차이를 무시하고 집계하며, 표시는 첫 등장한 원본 표기를 사용한다.
-    빈 값은 집계에서 제외한다.
-    """
     if last_csv_df is None or 'character' not in last_csv_df.columns:
         return []
 
     counts: Dict[str, int] = {}
-    display_names: Dict[str, str] = {}  # 정규화 키 → 첫 등장 원본 캐릭터명
+    display_names: Dict[str, str] = {}
     for raw in last_csv_df['character'].fillna('').astype(str):
         name = raw.strip()
         if not name:

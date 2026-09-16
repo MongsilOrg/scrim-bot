@@ -1,9 +1,3 @@
-"""
-대시보드 계열 Discord View 컴포넌트들
-
-스크림 대시보드(TeamInputView)와 신청 취소/강제취소 흐름의 뷰를 담당한다.
-로스터 계열 뷰(GroupRosterView 등)는 commands/ui/roster_views.py에 있다.
-"""
 from typing import TYPE_CHECKING, Dict, Optional
 import discord
 from discord import ButtonStyle, Color, SelectOption
@@ -31,8 +25,6 @@ if TYPE_CHECKING:
 
 logger = get_logger('views')
 
-# 취소/강제취소 마감 안내. 마감 시각은 settings 를 단일 출처로 쓴다
-# (등록/수정 문구는 models.team_data_manager 의 ASSIGNMENT_CLOSED_*_MSG 를 그대로 사용)
 ASSIGNMENT_CLOSED_CANCEL_MSG = (
     f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시 조편성이 완료되어 팀 취소가 불가능합니다. "
     "관리자에게 문의해주세요."
@@ -47,7 +39,6 @@ class TeamInputView(LayoutView):
     def __init__(self, *, scrim_day: int, scrim_month: int, scrim_weekday: str, is_rest_day: bool = False):
         super().__init__(timeout=None)
 
-        # 공휴일/일요일은 '자율 스크림'으로 표시
         scrim_label = "자율 스크림" if is_rest_day else "스크림"
         title = f"🏆 {scrim_month}/{scrim_day} ({scrim_weekday}) {scrim_label}"
         deadline_line = f"`{settings.TEAM_REGISTRATION_DEADLINE_HOUR}:00` 팀 등록 마감, 조편성\n"
@@ -108,7 +99,6 @@ class TeamInputView(LayoutView):
         self.add_item(ActionRow(self.add_team_button, self.cancel_team_button, self.manage_button))
 
     async def add_team_callback(self, interaction: discord.Interaction) -> None:
-        """팀 추가 버튼 콜백 (기존 팀이 있으면 수정 모달 표시)"""
         if await check_cooldown(interaction):
             return
         try:
@@ -157,7 +147,6 @@ class TeamInputView(LayoutView):
             await send_error_message(interaction, "팀 추가 중 오류가 발생했습니다.")
     
     async def cancel_team_callback(self, interaction: discord.Interaction) -> None:
-        """팀 취소 버튼 콜백 (신청자 ID 또는 닉네임 기반)"""
         if await check_cooldown(interaction, cooldown_seconds=1):
             return
         try:
@@ -225,7 +214,6 @@ class TeamInputView(LayoutView):
 
             team_info = (team_name, team_data, team_mmr)
 
-            # TeamInputView를 직접 전달해 일반 참가자 수정임을 명확히 함
             if interaction.response.is_done():
                 logger.warning("[뷰] 이미 응답된 interaction - 팀 수정 모달 표시 불가")
                 return
@@ -246,7 +234,6 @@ class TeamInputView(LayoutView):
                 await send_error_message(interaction, ASSIGNMENT_CLOSED_CANCEL_MSG)
                 return
 
-            # 미등록 팀은 remove_team 이 사유와 함께 거부한다
             team_info = team_data_manager.get_team_data(team_name)
             players = []
             staff = []
@@ -281,9 +268,7 @@ class TeamInputView(LayoutView):
             logger.error(f"[뷰] 팀 취소 실패: {e}", exc_info=True)
             await send_error_message(interaction, "팀 취소 중 오류가 발생했습니다.")
 
-    # ── 운영진 강제취소 ────────────────────────────────────────────────
     async def manage_callback(self, interaction: discord.Interaction) -> None:
-        """관리 버튼 콜백: 운영진 전용 팀 강제취소 진입점."""
         if await check_cooldown(interaction):
             return
         try:
@@ -314,7 +299,7 @@ class TeamInputView(LayoutView):
         try:
             team_data_manager = BotManager.get_instance().get_team_data_manager()
 
-            # 확정 시점 재검증 (드롭다운/확인 대기 중 상태 변화 방지)
+            # 확인 대기 중 권한과 조편성 상태 변화 가능
             if not is_admin(interaction.user):
                 await send_response(interaction, permission_error_view())
                 return
@@ -358,8 +343,6 @@ class TeamInputView(LayoutView):
 
 
 class _TimeoutEditView(LayoutView):
-    """타임아웃 시 메시지를 안내 뷰로 교체하는 공통 베이스."""
-
     def __init__(self, *, timeout: float = 60):
         super().__init__(timeout=timeout)
         self.message: Optional[discord.Message] = None
@@ -373,8 +356,6 @@ class _TimeoutEditView(LayoutView):
 
 
 class ConfirmView(_TimeoutEditView):
-    """공통 확인 뷰. 확인 시 on_confirm(interaction)에 위임한다."""
-
     def __init__(
         self,
         *,
@@ -432,12 +413,10 @@ class ConfirmView(_TimeoutEditView):
         await super().on_timeout()
 
 
-_SELECT_OPTION_LIMIT = 25  # Discord Select 옵션 최대 개수
+_SELECT_OPTION_LIMIT = 25  # Discord Select 옵션 상한
 
 
 class ForceCancelSelectView(_TimeoutEditView):
-    """팀이 25개를 넘으면 Discord Select 제한에 걸려 드롭다운을 여러 개로 분할한다."""
-
     def __init__(self, parent_view: Optional['TeamInputView'], teams: Dict[str, 'TeamData']):
         super().__init__()
         self.parent_view = parent_view
@@ -468,7 +447,7 @@ class ForceCancelSelectView(_TimeoutEditView):
 
     async def team_select_callback(self, interaction: discord.Interaction) -> None:
         try:
-            # 발화한 드롭다운의 선택값을 raw payload에서 직접 읽는다(다중 Select 분할 시 모호성 제거).
+            # 다중 Select 중 발화한 쪽은 raw payload로만 구분 가능
             values = (interaction.data or {}).get("values") or []
             selected = values[0] if values else None
             if not selected:
@@ -490,7 +469,7 @@ class ForceCancelSelectView(_TimeoutEditView):
                 error_text="강제취소 중 오류가 발생했습니다.",
                 on_confirm=_confirm_force_cancel,
             )
-            self.stop()  # 확인 단계로 전환: 이 드롭다운 뷰의 타임아웃 타이머 종료
+            self.stop()  # 멈추지 않으면 on_timeout이 확인 뷰를 덮어씀
             await interaction.response.edit_message(view=confirm_view)
             confirm_view.message = await interaction.original_response()
         except discord.InteractionResponded:

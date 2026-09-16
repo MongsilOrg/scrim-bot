@@ -8,7 +8,7 @@ from config.settings import settings
 
 class KSTFormatter(logging.Formatter):
     def formatTime(self, record, datefmt=None):
-        # helpers→validators→logging_config 순환 때문에 top-level import 불가
+        # utils.helpers, validators, logging_config 순환 import
         from utils.helpers import KST
         dt = datetime.fromtimestamp(record.created, tz=KST)
         if datefmt:
@@ -35,8 +35,7 @@ class ScrimbotLogger:
             log_dir = os.path.dirname(log_file)
             if log_dir:
                 os.makedirs(log_dir, exist_ok=True)
-        
-        # 10MB당 로테이션, 최대 5개 백업
+
         file_handler = RotatingFileHandler(
             log_file, encoding='utf-8',
             maxBytes=10 * 1024 * 1024, backupCount=5

@@ -1,5 +1,3 @@
-"""봇 이벤트 핸들러"""
-
 import asyncio
 from typing import TYPE_CHECKING, List
 
@@ -27,15 +25,13 @@ if TYPE_CHECKING:
 
 logger = get_logger('events')
 
-# 점수표 첨부 이미지 파일명 (attachment:// 참조와 일치해야 함)
 SCORE_IMAGE_FILENAME = 'score_table.png'
 
-# on_ready는 재-IDENTIFY 시 재발화하므로 부트스트랩은 1회만 실행한다
+# on_ready는 재-IDENTIFY 때 재발화
 _bootstrap_done = False
 
 
 async def bootstrap_on_ready(client: "ScrimBot") -> None:
-    """봇 준비 완료 시 초기 상태를 복구하고 명령어를 동기화한다."""
     global _bootstrap_done
     logger.info(f"[시작] 봇 준비 완료 - {client.user} 온라인")
 
@@ -105,7 +101,6 @@ async def on_app_command_error(
 
 
 async def on_message(message: discord.Message) -> None:
-    """CSV 업로드 시 점수 합산 이미지 생성"""
     if message.author.bot:
         return
     if not any(is_csv_filename(att.filename) for att in message.attachments):
@@ -118,7 +113,6 @@ async def on_message(message: discord.Message) -> None:
 
 
 async def _process_csv_attachments(message: discord.Message) -> None:
-    """오늘 업로드된 모든 CSV를 스캔해 점수를 합산하고 이미지를 전송한다."""
     channel = message.channel
     now_kst = get_current_kst_time()
     start_utc = get_start_of_day_utc(now_kst)
@@ -151,7 +145,7 @@ async def _process_csv_attachments(message: discord.Message) -> None:
     if current_round_count == settings.TOTAL_ROUNDS:
         gameid_view = _build_gameid_view(csv_data_list, group_info, date_str)
         await channel.send(view=gameid_view)
-        # 백업 채널에는 별도 LayoutView 인스턴스 생성 (View는 상태를 가지므로 재사용 불가)
+        # View 인스턴스는 채널 간 재사용 불가
         backup_gameid_view = _build_gameid_view(csv_data_list, group_info, date_str)
         await _send_gameid_to_backup_channel(backup_gameid_view)
 

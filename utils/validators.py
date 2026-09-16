@@ -11,13 +11,11 @@ from services.bser_api import BSERAPIClient
 
 logger = get_logger('validators')
 
-# 테스트 계정 닉네임 규칙 ('테스트' 시트 등록 여부와 무관하게 닉네임만으로 판정).
-# 영문 경계를 요구해 Fastest, Latest, Contest 같은 정상 닉네임을 걸러낸다.
+# 영문 경계가 없으면 Fastest, Latest, Contest도 걸림
 TEST_NICKNAME_PATTERN = re.compile(r'(?:^|[^a-z])test(?:[^a-z]|$)')
 
 
 def validate_team_name(team_name: str) -> Tuple[bool, str]:
-    """팀명 유효성 검사. 한글/영어/공백만, 3~12글자."""
     if not team_name or not team_name.strip():
         return False, "❌ 팀명을 입력해주세요."
 
@@ -64,7 +62,6 @@ def validate_team_data(team_data) -> Tuple[bool, str]:
 
 
 def validate_discord_user_in_team(team_data, member: 'discord.Member') -> bool:
-    """표시명/전역명/계정명 중 어느 것으로 명단에 적혀 있어도 인정한다 (길드 검증과 같은 기준)."""
     try:
         team_member_keys = {
             normalize_nickname_for_comparison(name)
@@ -90,7 +87,6 @@ def normalize_team_name(name: str) -> str:
 
 
 def member_name_keys(member: 'discord.Member') -> Set[str]:
-    """멤버를 찾을 수 있는 정규화 이름 키 집합 (표시명/전역명/계정명)."""
     keys = {normalize_nickname_for_comparison(member.display_name)}
     if member.global_name:
         keys.add(normalize_nickname_for_comparison(member.global_name))
@@ -99,7 +95,6 @@ def member_name_keys(member: 'discord.Member') -> Set[str]:
 
 
 def check_duplicate_members(players: List[str], staff: List[str]) -> Tuple[bool, str]:
-    """팀원 중복 검사 (대소문자 구별 없이)"""
     try:
         all_members = players + staff
 
@@ -129,7 +124,6 @@ def validate_members_in_guild(
     guild: 'discord.Guild',
     members: List[str]
 ) -> Tuple[bool, List[str]]:
-    """팀원이 길드에 있는지 검증. 이름 set을 한 번 만들어 대조한다 (O(M+N))."""
     try:
         guild_member_names: set = set()
         for discord_member in guild.members:
@@ -145,7 +139,7 @@ def validate_members_in_guild(
 
     except Exception as e:
         logger.error(f"[유효성검사] 디스코드 서버 멤버 검증 실패: {e}", exc_info=True)
-        # 검증 실패 시 통과시킴 (서버 장애로 인한 등록 차단 방지)
+        # 일부러 fail-open
         return True, []
 
 
@@ -154,7 +148,7 @@ async def validate_members_api(
     *,
     maintenance_hint: bool,
 ) -> tuple[bool, list[str], bool]:
-    """게임 API 닉네임 검증. maintenance_hint 는 호출 시점에 이미 점검으로 판정된 상태."""
+    """반환 (통과 여부, 확인 안 된 닉네임, 점검 여부)."""
     try:
         async with BSERAPIClient() as api:
             results = await asyncio.gather(
@@ -167,7 +161,7 @@ async def validate_members_api(
                 if isinstance(result, Exception) or not result
             ]
 
-            # 점검 중엔 닉네임 캐시에 없는 멤버만 404가 나므로 실패 수로 점검 여부를 가늠할 수 없다
+            # 점검 중 404는 닉네임 캐시 밖 멤버에게만 발생
             if invalid_members and maintenance_hint:
                 return True, [], True
 
@@ -194,12 +188,12 @@ async def validate_members_api(
             is_maintenance = True
         if is_maintenance:
             return True, [], True
-        # API 불통: 빈 목록으로 실패를 알림
+        # 빈 목록은 API 불통 신호, compose_nickname_error가 fallback으로 처리
         return False, [], False
 
 
 def split_test_nicknames(nicknames: List[str]) -> Tuple[List[str], List[str]]:
-    """닉네임 목록을 (일반, 테스트 계정)으로 분리한다."""
+    """반환 (일반, 테스트 계정)."""
     normal: List[str] = []
     test_like: List[str] = []
     for nickname in nicknames:
@@ -225,10 +219,6 @@ API_UNAVAILABLE_NOTICE = "❌ 게임 서버 응답이 없어 닉네임을 확인
 
 
 def build_team_mmr_line(team_mmr: float, players: List[str], is_test_account) -> str:
-    """MMR 0 은 두 가지 원인이 있어 구분해야 한다. 전원 테스트 계정이면 '테스트'
-    시트에 MMR 이 없는 것이라 자동 갱신으로 채워지지 않고, 일반 팀이면 게임 API
-    조회 실패라 다음 갱신에서 채워진다.
-    """
     if team_mmr > 0:
         return f"📊 팀 평균 MMR: **{team_mmr:.2f}**"
     if players and all(is_test_account(player) for player in players):
@@ -240,11 +230,6 @@ def build_team_mmr_line(team_mmr: float, players: List[str], is_test_account) ->
 
 
 def compose_nickname_error(nicknames: List[str], template: str, fallback: str = "") -> str:
-    """테스트 계정 몫은 별도 문구로 분리한다.
-
-    template 의 {names} 자리에 일반 닉네임이 들어간다. validate_members_api 는
-    API 연결 자체가 실패하면 빈 목록으로 실패를 알리므로, 그때는 fallback 을 쓴다.
-    """
     normal, test_like = split_test_nicknames(nicknames)
     parts = []
     if normal:

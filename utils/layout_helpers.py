@@ -1,11 +1,3 @@
-"""
-표준 LayoutView 빌더 및 전송 유틸리티
-
-톤앤매너 규칙:
-  - 존칭: 하십시오체 통일 ("~입니다", "~해주세요", "~없습니다")
-  - 푸터: 모든 응답에 포함
-  - 구조: ## 타이틀 → 본문 → Separator → 푸터
-"""
 import time
 
 import discord
@@ -24,10 +16,6 @@ logger = get_logger('layout_helpers')
 
 FOOTER_TEXT = f"-# {settings.EMBED_FOOTER_TEXT}"
 
-
-# ---------------------------------------------------------------------------
-# 팩토리 함수 (Container + TextDisplay + 푸터)
-# ---------------------------------------------------------------------------
 
 def _build_view(title: str, description: str, accent_color: discord.Color) -> LayoutView:
     view = LayoutView()
@@ -69,10 +57,6 @@ def permission_error_view(description: str = "관리자 권한이 없습니다."
     return _build_view("❌ 권한 없음", description, discord.Color.red())
 
 
-# ---------------------------------------------------------------------------
-# 커스텀 빌더 (추가 필드가 필요한 응답용)
-# ---------------------------------------------------------------------------
-
 def custom_view(
     title: str,
     description: str,
@@ -80,7 +64,6 @@ def custom_view(
     *,
     fields: list[tuple[str, str]] | None = None,
 ) -> LayoutView:
-    """fields는 [("필드명", "필드값"), ...] 형태."""
     children: list = [TextDisplay(content=f"## {title}\n{description}")]
 
     if fields:
@@ -95,10 +78,6 @@ def custom_view(
     return view
 
 
-# ---------------------------------------------------------------------------
-# 이미지 포함 빌더 (MediaGallery)
-# ---------------------------------------------------------------------------
-
 def image_response_view(
     title: str,
     description: str,
@@ -107,9 +86,6 @@ def image_response_view(
     *,
     fields: list[tuple[str, str]] | None = None,
 ) -> LayoutView:
-    """image_url 에 attachment://filename.png 형식을 전달하면
-    send_response / edit_to_layout 의 files 매개변수로 첨부할 수 있다.
-    """
     children: list = [TextDisplay(content=f"## {title}\n{description}")]
 
     if fields:
@@ -126,10 +102,6 @@ def image_response_view(
     view.add_item(Container(*children, accent_colour=accent_color))
     return view
 
-
-# ---------------------------------------------------------------------------
-# 전송 유틸리티
-# ---------------------------------------------------------------------------
 
 async def send_response(
     interaction: discord.Interaction,
@@ -150,7 +122,6 @@ async def send_response(
             return await interaction.followup.send(**kwargs, wait=True)
     except Exception as e:
         logger.error(f"[레이아웃] 응답 전송 실패: {e}", exc_info=True)
-        # 폴백: 일반 텍스트
         try:
             if not interaction.response.is_done():
                 await interaction.response.send_message(
@@ -201,11 +172,7 @@ async def upsert_persistent_message(
     *,
     files: list[discord.File] | None = None,
 ) -> int:
-    """상시 메시지를 기존 메시지 편집으로 갱신하고, 불가하면 재생성한다.
-
-    편집이 일시 오류(HTTPException)로 실패하면 옛 메시지를 삭제 시도한 뒤
-    새로 보내, 옛 대시보드가 방치되어 이중으로 남는 것을 막는다.
-    """
+    """편집 실패 후 옛 메시지를 지우지 않으면 상시 메시지가 둘로 남음."""
     old_message: discord.Message | None = None
     if message_id:
         try:
@@ -242,7 +209,6 @@ async def edit_to_layout(
     *,
     files: list[discord.File] | None = None,
 ) -> None:
-    """embed 및 content 를 None 으로 지정하여 기존 임베드를 제거한다."""
     try:
         kwargs: dict = {"view": view, "embed": None, "content": None}
         if files:
@@ -258,7 +224,7 @@ _COOLDOWN_CLEANUP_THRESHOLD = 100
 
 
 async def check_cooldown(interaction: discord.Interaction, cooldown_seconds: float = BUTTON_COOLDOWN_SECONDS) -> bool:
-    """True면 cooldown 중이므로 무시해야 한다."""
+    """True면 쿨다운 중."""
     user_id = interaction.user.id
     now = time.monotonic()
     last_click = _button_cooldowns.get(user_id, 0)

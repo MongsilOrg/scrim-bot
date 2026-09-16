@@ -44,7 +44,6 @@ async def fetch_holidays(
         logger.error(f"[공휴일] {year}년 공휴일 조회 실패 - {url}: {e}")
         return _holiday_cache.get(year, {})
     except Exception as e:
-        # 200이지만 JSON이 아닌 응답 등 그 외 예외도 흡수 (호출부 흐름을 막지 않도록)
         logger.error(f"[공휴일] {year}년 공휴일 처리 중 예외 - {url}: {e}", exc_info=True)
         return _holiday_cache.get(year, {})
 

@@ -1,6 +1,4 @@
-"""
-wkhtmltoimage 렌더는 blocking이라 async 컨텍스트에서는 *_async 래퍼로 호출한다.
-"""
+"""wkhtmltoimage 렌더는 blocking, async 쪽은 *_async 래퍼 사용."""
 import asyncio
 import os
 import platform
@@ -77,7 +75,6 @@ class ImageGenerator:
     @staticmethod
     def generate_mmr_image(teams_data: dict, *, sort_by_mmr: bool = True,
                            unverified_teams: set = None, server_info: dict = None) -> Optional[BytesIO]:
-        """sort_by_mmr=False면 삽입 순서(팀 번호) 유지, server_info=None이면 내부에서 조회한다."""
         try:
             if unverified_teams is None:
                 unverified_teams = set()
@@ -121,13 +118,11 @@ class ImageGenerator:
             is_unverified = team_name in unverified_teams
             rows_html.append(ImageGenerator._build_team_row_html(idx + 1, team_name, team_data, is_unverified=is_unverified))
 
-        # 미검증 팀 앞 구분선 위치용
         verified_count = sum(1 for name, _ in sorted_teams if name not in unverified_teams)
 
         body_html = ''
         for i, row_html in enumerate(rows_html):
             actual_rank = i + 1
-            # 미검증 팀 시작 직전에 빨간 구분선
             if i == verified_count and verified_count > 0 and verified_count < num_teams:
                 body_html += row_html.replace('class="row', 'class="row divider-top', 1)
             elif actual_rank % settings.TEAMS_PER_GROUP == 0 and i < num_teams - 1:

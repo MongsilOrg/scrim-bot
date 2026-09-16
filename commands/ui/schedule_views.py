@@ -1,6 +1,3 @@
-"""
-일정 관련 Discord View 컴포넌트들
-"""
 import discord
 from discord import ButtonStyle, Color
 from discord.components import CheckboxGroupOption
@@ -94,7 +91,7 @@ class AbsenceReasonModal(Modal):
 
 
 async def _ensure_schedule_ready(interaction: discord.Interaction, *, need_assignments: bool = False):
-    """쿨다운, 관리자 권한, 일정 초기화 여부를 확인하고 매니저를 돌려준다. 막히면 None."""
+    """통과하면 일정 매니저, 막히면 None."""
     if await check_cooldown(interaction):
         return None
     if not is_admin(interaction.user):
@@ -144,7 +141,6 @@ class ScheduleView(LayoutView):
         ))
 
     async def register_callback(self, interaction: discord.Interaction) -> None:
-        """참가 버튼: 요일 선택 모달"""
         schedule_mgr = await _ensure_schedule_ready(interaction)
         if schedule_mgr is None:
             return
@@ -158,7 +154,6 @@ class ScheduleView(LayoutView):
         await interaction.response.send_modal(AvailabilityModal(current_days))
 
     async def absence_callback(self, interaction: discord.Interaction) -> None:
-        """불참 버튼: 사유 입력 모달"""
         schedule_mgr = await _ensure_schedule_ready(interaction)
         if schedule_mgr is None:
             return
@@ -173,7 +168,6 @@ class ScheduleView(LayoutView):
         await interaction.response.send_modal(AbsenceReasonModal(current_reason))
 
     async def assign_callback(self, interaction: discord.Interaction) -> None:
-        """편성 버튼: 상태에 따라 편성/재편성/편성취소 분기"""
         schedule_mgr = await _ensure_schedule_ready(interaction)
         if schedule_mgr is None:
             return
@@ -196,7 +190,6 @@ class ScheduleView(LayoutView):
             await _refresh_schedule_status(interaction)
             return
 
-        # 편성 후 → 재편성 / 편성 취소 선택
         reassign_btn = Button(label="재편성", style=ButtonStyle.primary, emoji="🔄")
         cancel_btn = Button(label="편성 취소", style=ButtonStyle.danger, emoji="↩️")
         back_btn = Button(label="닫기", style=ButtonStyle.secondary)
@@ -256,7 +249,6 @@ class ScheduleView(LayoutView):
         await send_response(interaction, menu_view)
 
     async def deploy_callback(self, interaction: discord.Interaction) -> None:
-        """투입 기록 버튼: 요일별 버튼으로 본인 투입 토글"""
         schedule_mgr = await _ensure_schedule_ready(interaction, need_assignments=True)
         if schedule_mgr is None:
             return
@@ -267,7 +259,6 @@ class ScheduleView(LayoutView):
 
 
 def _build_deploy_view(schedule_mgr, user_id: str) -> LayoutView:
-    """배정된 요일은 눈에 띄게, 미배정 요일은 구분해 표시한다."""
     assigned_days = {
         d for d in ACTIVE_DAYS
         if user_id in schedule_mgr.assignments.get(d, [])
@@ -332,7 +323,7 @@ def _build_deploy_view(schedule_mgr, user_id: str) -> LayoutView:
         accent_colour=Color.blue(),
     ))
 
-    # ActionRow 당 최대 5개 제한: 배정 요일을 우선 배치한 뒤 분할
+    # ActionRow당 버튼 최대 5개
     all_buttons = assigned_buttons + extra_buttons
     deploy_view.add_item(ActionRow(*all_buttons[:5]))
     if len(all_buttons) > 5:
@@ -346,11 +337,6 @@ async def refresh_dashboard(
     channel=None,
     schedule_mgr=None,
 ) -> None:
-    """일정 대시보드 메시지를 갱신한다.
-
-    channel이 주어지면 그 채널에서 수정/생성하고,
-    없으면 저장된 status_channel_id → 기본 대시보드 채널 순으로 사용한다.
-    """
     if schedule_mgr is None:
         schedule_mgr = BotManager.get_instance().get_schedule_manager()
 

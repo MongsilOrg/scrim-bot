@@ -1,10 +1,3 @@
-"""
-로스터 계열 Discord View 컴포넌트들
-
-조편성 후 조별 공지에 붙는 로스터 관리 뷰(GroupRosterView, TeamSelectionView)와
-공휴일/주말 자율 진행 안내 뷰를 담당한다.
-대시보드 계열 뷰(TeamInputView 등)는 commands/ui/views.py에 있다.
-"""
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import discord
@@ -47,8 +40,7 @@ class GroupRosterView(LayoutView):
 
         children: list = [TextDisplay(content=message_text)]
         if has_image:
-            # 파일명 단일 출처. discord_service 가 이 모듈을 최상단 import 하므로
-            # 순환을 피해 함수 스코프에서 가져온다
+            # discord_service가 이 모듈을 최상단에서 import해서 순환
             from services.discord_service import GROUP_IMAGE_FILENAME
             children.append(MediaGallery(discord.MediaGalleryItem(media=f"attachment://{GROUP_IMAGE_FILENAME}")))
         children.append(Separator())
@@ -171,7 +163,7 @@ class TeamSelectionView(LayoutView):
         except discord.InteractionResponded:
             pass
         except discord.NotFound:
-            pass  # View 만료 가능성
+            pass
         except Exception as e:
             logger.error(f"[뷰] 팀 선택 콜백 처리 실패: {e}", exc_info=True)
             try:

@@ -1,10 +1,3 @@
-"""
-스크림 대시보드
-
-지정 채널에 스크림 대시보드 메시지를 유지한다.
-봇 시작 시 기존 메시지를 찾아 뷰를 재등록하고, 없으면 새로 생성한다.
-만료 판정/다음날 전환/일일 리셋은 models/scrim_orchestrator.py가 담당한다.
-"""
 import asyncio
 from datetime import date
 
@@ -32,14 +25,12 @@ _daily_reset_task: asyncio.Task | None = None
 
 
 async def _refresh_scrim_dashboard(channel: discord.TextChannel) -> None:
-    """스크림 대시보드 메시지를 현재 상태로 갱신한다."""
     team_data_manager = BotManager.get_instance().get_team_data_manager()
     date_info = get_next_scrim_date()
 
     scrim_day = team_data_manager.scrim_day or date_info['day']
     scrim_month = team_data_manager.scrim_month or date_info['month']
 
-    # 자율 스크림 표시용
     try:
         scrim_is_rest_day = (await get_rest_day_info(date(date_info['year'], scrim_month, scrim_day)))["is_rest_day"]
     except ValueError:
@@ -59,7 +50,6 @@ async def _refresh_scrim_dashboard(channel: discord.TextChannel) -> None:
 
 
 async def setup_scrim_dashboard(client: ScrimBot) -> None:
-    """봇 시작 시 스크림 대시보드를 연동한다."""
     global _daily_reset_task
 
     guild = client.guilds[0] if client.guilds else None

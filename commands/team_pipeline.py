@@ -1,11 +1,3 @@
-"""
-팀 등록/수정 파이프라인
-
-TeamModal(등록)과 TeamEditModal(수정)이 공유하는 흐름을 담당한다:
-입력 검증 → 제한 검사 → 닉네임 검증 → MMR 조회 → 저장 → 캐시/백업 → 후속 갱신.
-UI 콜백에는 입력 수집과 임시 메시지 생성만 남기고, 결과 표시를 포함한
-나머지 단계는 모두 이 모듈이 수행한다.
-"""
 from typing import TYPE_CHECKING, List, Optional, Set, Tuple
 
 import discord
@@ -48,10 +40,6 @@ MAINTENANCE_SKIP_NOTICE = (
 )
 
 
-# ──────────────────────────────────────────────
-# 공통 단계
-# ──────────────────────────────────────────────
-
 async def _handle_pipeline_exception(
     interaction: discord.Interaction,
     exc: Exception,
@@ -62,7 +50,6 @@ async def _handle_pipeline_exception(
     generic_message: str,
     generic_log: str,
 ) -> None:
-    """등록/수정 파이프라인 공통 예외 처리 (interaction 만료 / Discord 오류 / 그 외)."""
     if isinstance(exc, discord.NotFound):
         logger.warning(f"[{tag}] interaction 만료 - 팀명: {team_name}")
     elif isinstance(exc, discord.HTTPException):
@@ -74,7 +61,6 @@ async def _handle_pipeline_exception(
 
 
 async def _validate_inputs(team_data: TeamData, temp_message: discord.Message) -> bool:
-    """팀명/멤버 중복/팀 구성 검증. 실패 시 temp_message에 사유를 표시한다."""
     is_name_valid, name_error = validate_team_name(team_data.name)
     if not is_name_valid:
         await update_temp_message(temp_message, name_error, discord.Color.red())
@@ -103,11 +89,7 @@ async def _validate_team_rules(
     original_team_name: Optional[str] = None,
     original_members: Optional[List[str]] = None,
 ) -> Tuple[bool, bool]:
-    """등록/수정 공통 제한 검사와 닉네임 검증. 반환 (통과 여부, 서버 점검 여부).
-
-    순서: 조편성/시간 제한 → 경고 제한 → 봇 팀 중복 → 길드 존재 → 게임 API.
-    수정 경로는 팀명이 바뀐 경우에만 봇 팀 중복을, 경고 제한은 새 팀원만 검사한다.
-    """
+    """반환 (통과 여부, 서버 점검 여부)."""
     team_name = team_data.name
     fail_tag = "팀수정실패" if is_edit else "팀신청실패"
     current_time = get_current_kst_time()
@@ -175,7 +157,6 @@ async def _fetch_team_mmr_or(team_processor: "TeamProcessor", team_data: TeamDat
 
 
 def _save_user_cache(user_id: str, team_data: TeamData) -> None:
-    """다음 신청 프리필용 사용자 캐시를 저장한다."""
     try:
         UserTeamCache().set(user_id, {
             "team_name": team_data.name,
@@ -187,7 +168,6 @@ def _save_user_cache(user_id: str, team_data: TeamData) -> None:
 
 
 def schedule_mmr_refresh(team_data_manager: "TeamDataManager", channel) -> None:
-    """백그라운드 MMR 갱신 + 대시보드 메시지 업데이트를 예약한다 (fire-and-forget)."""
     team_data_manager.spawn_task(_update_mmr_background(team_data_manager, channel))
 
 
@@ -197,16 +177,11 @@ async def _update_mmr_background(team_data_manager: "TeamDataManager", channel) 
     except Exception as e:
         logger.error(f"[팀파이프라인] 팀 MMR 갱신 실패: {e}", exc_info=True)
 
-    # 실패 시 다음 갱신 루프에서 재시도
     try:
         await team_data_manager.update_mmr_message(channel)
     except Exception as e:
         logger.error(f"[팀파이프라인] MMR 메시지 업데이트 실패: {e}", exc_info=True)
 
-
-# ──────────────────────────────────────────────
-# 등록 파이프라인
-# ──────────────────────────────────────────────
 
 async def process_team_registration(
     interaction: discord.Interaction,
@@ -215,7 +190,6 @@ async def process_team_registration(
     *,
     submitter: discord.Member,
 ) -> None:
-    """팀 등록 파이프라인: 검증 → MMR 조회 → 저장 → 캐시 → 결과 표시 → 백그라운드 갱신."""
     team_name = team_data.name
     try:
         team_data_manager = BotManager.get_instance().get_team_data_manager()
@@ -224,7 +198,6 @@ async def process_team_registration(
         if not await _validate_inputs(team_data, temp_message):
             return
 
-        # 테스트 계정이 섞이면 디스코드 닉네임 확인을 생략한다
         await team_processor.ensure_test_accounts_loaded()
         all_members = team_data.all_members
         has_test_account = any(team_processor.is_test_account(member) for member in all_members)
@@ -236,7 +209,6 @@ async def process_team_registration(
                              f"**현재 디스코드 닉네임**: {submitter_name}\n"
                              f"**입력된 팀원**: {', '.join(all_members) if all_members else '정보 없음'}\n\n"
                              f"💡 플레이어 또는 스태프 목록에 본인의 디스코드 닉네임을 포함해주세요.")
-                # 시트에 없는 테스트 계정이 섞였을 수 있으므로 원래 사유에 덧붙인다
                 notice = build_test_account_notice(split_test_nicknames(all_members)[1])
                 if notice:
                     error_msg = f"{error_msg}\n\n{notice}"
@@ -250,11 +222,9 @@ async def process_team_registration(
         if not passed:
             return
 
-        # 실패 시 0 유지, 백그라운드 갱신에서 재시도
         team_mmr = await _fetch_team_mmr_or(team_processor, team_data, 0.0)
         team_data.mmr = team_mmr
 
-        # user_id 는 add_team 에서 자동 설정
         success, failure_reason = await team_data_manager.add_team(team_name, team_data, interaction.user)
         if not success:
             error_message = failure_reason if failure_reason else (
@@ -303,10 +273,6 @@ async def process_team_registration(
         )
 
 
-# ──────────────────────────────────────────────
-# 수정 파이프라인
-# ──────────────────────────────────────────────
-
 async def process_team_edit(
     interaction: discord.Interaction,
     *,
@@ -319,23 +285,16 @@ async def process_team_edit(
     apply_warning: bool = False,
     warning_reason: str = "대타",
 ) -> None:
-    """팀 수정 파이프라인: 검증 → MMR 조회 → 교체 저장 → 캐시 → 조별 갱신 → 결과 표시.
-
-    is_roster_change=True(관리자 로스터 변경)면 모든 검증을 건너뛰고,
-    group_letter가 가리키는 조의 데이터/역할/음성채널/공지 갱신과 주의 부여를 수행한다.
-    조별 팀 목록은 team_data_manager.groups를 단일 소스로 사용한다.
-    """
     new_team_name = new_team_data.name
     try:
         team_data_manager = BotManager.get_instance().get_team_data_manager()
         team_processor = BotManager.get_instance().get_team_processor()
 
-        # 관리자 로스터 변경은 모든 검증을 건너뛴다
         if not is_roster_change:
             if not await _validate_inputs(new_team_data, temp_message):
                 return
 
-        # 로스터 변경도 뒤이어 MMR 을 재계산하므로 경로와 무관하게 갱신한다
+        # 로스터 변경 경로의 MMR 재계산에도 테스트 계정 목록 필요
         await team_processor.ensure_test_accounts_loaded()
 
         is_maintenance = False
@@ -348,15 +307,14 @@ async def process_team_edit(
             if not passed:
                 return
 
-        # 실패 시 기존 MMR 유지
         new_team_mmr = await _fetch_team_mmr_or(team_processor, new_team_data, original_team_data.mmr)
 
-        # 관리자 수정 시 신청자가 바뀌지 않도록 user_id 보존
+        # 관리자가 수정해도 신청자 user_id 유지
         new_team_data.user_id = original_team_data.user_id or str(interaction.user.id)
         new_team_data.created_at = interaction.created_at
         replaced, replace_reason = await team_data_manager.replace_team(original_team_name, new_team_data, new_team_mmr)
         if not replaced:
-            # 모달이 열린 사이 팀이 취소/개명된 경우. 저장 없이 중단해 유령 팀 부활을 막는다
+            # 모달이 열린 사이 팀이 취소되거나 개명된 경우
             await update_temp_message(temp_message, f"❌ {replace_reason}", discord.Color.red())
             return
 
@@ -411,7 +369,6 @@ def _apply_unverified_transition(
     old_name: str,
     new_name: str,
 ) -> None:
-    """점검 중 로스터가 바뀐 팀만 미검증으로 표시하고, 평시와 개명 잔여 마커는 정리한다."""
     if is_maintenance:
         old_norm = {normalize_nickname_for_comparison(p) for p in old_players}
         new_norm = {normalize_nickname_for_comparison(p) for p in new_players}
@@ -431,11 +388,6 @@ def _log_edit_diff(
     new_team_data: TeamData,
     new_team_mmr: float,
 ) -> Tuple[Set[str], Set[str]]:
-    """변경사항 diff 계산 + 로그 기록. Returns (added, removed).
-
-    비교는 정규화 키 기준(_apply_unverified_transition 과 동일)이라
-    대소문자/공백만 고친 수정은 변경으로 집계되지 않고, 표시는 원문을 유지한다.
-    """
     old_by_key = {
         normalize_nickname_for_comparison(name): name
         for name in original_team_data.players + original_team_data.staff
@@ -483,7 +435,6 @@ async def _send_edit_result(
     removed: Set[str],
     is_maintenance: bool,
 ) -> None:
-    """수정 결과 메시지 전송."""
     new_team_name = new_team_data.name
     if is_maintenance:
         await update_temp_message(
@@ -509,10 +460,6 @@ async def _send_edit_result(
     )
 
 
-# ──────────────────────────────────────────────
-# 로스터 변경 후처리 (GroupRosterView 경로 전용)
-# ──────────────────────────────────────────────
-
 def _get_group_teams(team_data_manager: "TeamDataManager", group_letter: str) -> Optional[list]:
     group_index = ord(group_letter) - ord('A')
     if team_data_manager.groups and 0 <= group_index < len(team_data_manager.groups):
@@ -527,7 +474,6 @@ async def _update_changed_team(
     new_team_name: str,
     new_team_mmr: float,
 ) -> None:
-    """변경된 팀의 데이터만 업데이트 (팀 번호/순서 유지)"""
     try:
         current_teams = _get_group_teams(team_data_manager, group_letter)
         if current_teams is None:
@@ -548,7 +494,7 @@ async def _update_changed_team(
         group_teams = list(current_teams)
         group_teams[changed_index] = (new_team_name, updated_team_data, new_team_mmr)
 
-        # groups 갱신 (조별 공지가 새 GroupRosterView를 부착하므로 여기가 단일 소스)
+        # 조별 공지 갱신이 groups를 읽음
         team_data_manager.groups[ord(group_letter) - ord('A')] = group_teams
         team_data_manager.save_backup()
 
@@ -611,7 +557,6 @@ async def _apply_roster_warnings(
     reason: str,
     temp_message: discord.Message,
 ) -> None:
-    """로스터 변경 시 빠지는 팀 선수에게 주의를 부여한다."""
     try:
         admin_name = interaction.user.display_name or interaction.user.name
         warning_manager = BotManager.get_instance().get_warning_manager()

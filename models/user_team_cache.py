@@ -1,4 +1,3 @@
-"""신청 완료 시 자동 저장, 다음 신청 시 프리필용 데이터 제공. user_id당 최근 1건만 유지 (덮어쓰기)."""
 import json
 import os
 from datetime import datetime

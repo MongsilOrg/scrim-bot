@@ -1,10 +1,3 @@
-"""
-일정 대시보드
-
-지정 채널에 일정 대시보드 메시지를 유지한다.
-봇 시작 시 기존 메시지를 찾아 연동하고, 없으면 새로 생성한다.
-매주 토요일 22시에 다음 주로 자동 전환한다.
-"""
 import asyncio
 from datetime import timedelta
 
@@ -21,7 +14,6 @@ _weekly_reset_task: asyncio.Task | None = None
 
 
 def _should_auto_reset(schedule_mgr) -> bool:
-    """현재 주차가 지났는지 (토요일 22시 이후) 확인한다."""
     if not schedule_mgr.week_start:
         return False
     now = get_current_kst_time()
@@ -30,7 +22,6 @@ def _should_auto_reset(schedule_mgr) -> bool:
 
 
 async def _weekly_reset_loop(client: ScrimBot) -> None:
-    """매주 토요일 22시에 다음 주로 자동 전환하는 백그라운드 태스크."""
     await client.wait_until_ready()
     while not client.is_closed():
         now = get_current_kst_time()
@@ -61,7 +52,6 @@ async def _weekly_reset_loop(client: ScrimBot) -> None:
 
 
 async def setup_schedule_dashboard(client: ScrimBot) -> None:
-    """봇 시작 시 일정 대시보드를 연동한다."""
     global _weekly_reset_task
 
     guild = client.guilds[0] if client.guilds else None

@@ -22,7 +22,6 @@ def get_team_members(team_data: 'TeamData') -> tuple:
 
 
 def normalize_player_list(players: List[str]) -> List[str]:
-    """닉네임 비교와 같은 규칙(공백 축약, 소문자)을 쓴다."""
     normalized = []
     for player in players or []:
         norm = normalize_nickname_for_comparison(player)
@@ -32,7 +31,6 @@ def normalize_player_list(players: List[str]) -> List[str]:
 
 
 def save_json_atomic(path: str, data, indent: Optional[int] = None) -> None:
-    """임시 파일에 쓴 뒤 교체해 부분 쓰기를 방지한다."""
     directory = os.path.dirname(path)
     if directory:
         os.makedirs(directory, exist_ok=True)
@@ -43,7 +41,6 @@ def save_json_atomic(path: str, data, indent: Optional[int] = None) -> None:
 
 
 def build_member_lookup(guild: Optional[discord.Guild]) -> Dict[str, discord.Member]:
-    """길드 멤버를 정규화 닉네임(표시명/전역명/계정명)으로 찾는 매핑을 만든다."""
     lookup: Dict[str, discord.Member] = {}
     if not guild:
         return lookup
@@ -53,7 +50,6 @@ def build_member_lookup(guild: Optional[discord.Guild]) -> Dict[str, discord.Mem
     return lookup
 
 
-# KST 타임존 단일 정의. 개별 모듈에서 pytz/timedelta로 재정의하지 말 것
 KST = pytz.timezone('Asia/Seoul')
 
 
@@ -84,7 +80,6 @@ def get_group_role_mention(guild: discord.Guild, group_letter: str) -> str:
 
 
 def effective_scrim_date(current_time: datetime = None) -> date:
-    """스크림 기준일. 익일 전환 규칙(NEXT_SCRIM_OPEN_HOUR 이후 = 익일)의 단일 출처."""
     if current_time is None:
         current_time = get_current_kst_time()
     if current_time.hour >= settings.NEXT_SCRIM_OPEN_HOUR:

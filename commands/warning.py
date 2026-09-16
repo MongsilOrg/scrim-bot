@@ -1,6 +1,3 @@
-"""
-경고 관리 명령어
-"""
 import discord
 
 from utils.layout_helpers import error_view, permission_error_view, send_response
@@ -12,7 +9,6 @@ logger = get_logger('warning')
 
 
 async def 제재부여(interaction: discord.Interaction, user: discord.Member) -> None:
-    """제재 부여 컨텍스트 메뉴 핸들러 (주의/경고 통합)"""
     try:
         admin_name = interaction.user.display_name or interaction.user.name
         target_name = user.display_name or user.name

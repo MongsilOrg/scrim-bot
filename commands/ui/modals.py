@@ -1,6 +1,3 @@
-"""
-Discord Modal 컴포넌트들
-"""
 from typing import TYPE_CHECKING, Tuple, Union
 
 import discord
@@ -24,8 +21,6 @@ def _parse_member_lines(text: str) -> list:
 
 
 class TeamModal(Modal):
-    """선수 3~4명, 스태프 최대 3명."""
-
     def __init__(self, user: discord.Member, default_team_name: str = "", default_players: str = "", default_staff: str = ""):
         super().__init__(title="팀 신청")
         self.user = user

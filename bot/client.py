@@ -1,6 +1,3 @@
-"""
-Discord 클라이언트 설정
-"""
 import discord
 from discord.ext import commands
 

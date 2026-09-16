@@ -1,7 +1,3 @@
-"""팀 데이터 백업/복구 모듈
-
-팀 데이터의 JSON 백업 저장, 복구, 유효성 검사 기능을 담당한다.
-"""
 import json
 import os
 from datetime import datetime
@@ -25,9 +21,7 @@ def _from_iso(raw):
     return datetime.fromisoformat(raw) if raw else None
 
 
-# 백업 대상 필드 명세의 단일 출처: (저장 키, 매니저 속성, to_json, from_json, 로드 기본값).
-# save와 load가 같은 목록을 순회하므로 필드 추가 시 여기 한 줄이면 된다.
-# teams/groups는 인덱스 재구축과 중첩 구조 때문에 별도 처리한다.
+# (저장 키, 매니저 속성, to_json, from_json, 로드 기본값)
 _META_FIELDS = [
     ('scrim_day', 'scrim_day', None, None, None),
     ('scrim_month', 'scrim_month', None, None, None),
@@ -48,8 +42,6 @@ _TOP_FIELDS = [
 
 
 class TeamBackup:
-    """팀 데이터 백업/복구를 담당하는 클래스"""
-
     def __init__(self, manager: "TeamDataManager"):
         self._manager = manager
 
@@ -58,7 +50,6 @@ class TeamBackup:
         return self._manager.BACKUP_FILE
 
     def save(self) -> None:
-        """팀 데이터를 JSON 파일로 백업한다 (날짜 메타데이터 포함)."""
         try:
             serialized_groups = None
             if self._manager.groups is not None:
@@ -91,7 +82,6 @@ class TeamBackup:
             logger.error(f"[팀데이터] 백업 저장 실패: {e}", exc_info=True)
 
     def load(self) -> bool:
-        """JSON 백업에서 팀 데이터를 복구한다. 성공 시 True 반환."""
         try:
             if not os.path.exists(self.backup_file):
                 return False
@@ -140,12 +130,7 @@ class TeamBackup:
             return False
 
     def should_restore(self) -> bool:
-        """백업 파일이 유효한지 확인한다.
-
-        백업 파일이 존재하고 메타데이터가 있으면 항상 유효하다.
-        초기화는 다음 스크림 자동 전환(transition_to_next_scrim)이
-        수행하는 reset_team_data()로만 이루어진다.
-        """
+        """초기화는 transition_to_next_scrim 담당이라 날짜 미검사."""
         try:
             if not os.path.exists(self.backup_file):
                 return False

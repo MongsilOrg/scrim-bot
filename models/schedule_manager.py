@@ -1,9 +1,3 @@
-"""
-주간 일정 관리 모듈
-
-관리자들의 다음 주 참가 가능 요일을 수집하고,
-Load-Balanced Greedy 알고리즘으로 요일별 관리자를 배정한다.
-"""
 import json
 import os
 from collections import defaultdict
@@ -17,8 +11,8 @@ from utils.helpers import KST, get_current_kst_time, save_json_atomic
 logger = get_logger('schedule_manager')
 
 WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일']
-ACTIVE_DAYS = [0, 1, 2, 3, 4, 5]  # 월~토 (일요일 제외)
-POOL_SIZE = 6  # 요일별 후보 풀 크기
+ACTIVE_DAYS = [0, 1, 2, 3, 4, 5]
+POOL_SIZE = 6
 
 EXCLUDED_USER_IDS: Set[int] = {settings.TEST_ACCOUNT_CONTACT_ID}
 
@@ -30,33 +24,23 @@ BACKUP_PATH = os.path.join(
 
 
 class ScheduleManager:
-    """주간 일정 관리자"""
 
     def __init__(self):
-        self.week_label: str = ''  # 예: "3/24 ~ 3/30"
-        self.week_start: Optional[datetime] = None  # 주 시작일 (월요일)
+        self.week_label: str = ''
+        self.week_start: Optional[datetime] = None
 
-        # 관리자별 가용 요일: {user_id: set(요일 인덱스)}
         self.availability: Dict[str, Set[int]] = {}
-        # 관리자별 불참 사유: {user_id: {day_index: reason} 또는 전체 불참 시 {-1: reason}}
+        # 전체 불참은 요일 인덱스 대신 키 -1
         self.absence_reasons: Dict[str, Dict[int, str]] = {}
-        # 관리자 이름 매핑: {user_id: display_name}
         self.admin_names: Dict[str, str] = {}
 
-        # 편성 결과: {day_index: [user_id, ...]}
         self.assignments: Dict[int, List[str]] = {}
-        # 실투입 기록: {day_index: [user_id, ...]}
         self.actual_deployments: Dict[int, List[str]] = {}
 
         self.status_message_id: Optional[int] = None
         self.status_channel_id: Optional[int] = None
 
-    # ------------------------------------------------------------------
-    # 주차 설정
-    # ------------------------------------------------------------------
-
     def initialize_week(self) -> str:
-        """다음 주 월~토 기간을 자동으로 설정한다."""
         now = get_current_kst_time()
         days_until_monday = (7 - now.weekday()) % 7
         if days_until_monday == 0:
@@ -71,7 +55,7 @@ class ScheduleManager:
             f"{next_monday.month}/{next_monday.day} ~ "
             f"{next_saturday.month}/{next_saturday.day}"
         )
-        # 상태 메시지 참조는 갱신에 써야 하므로 남긴다
+        # 상태 메시지 참조는 새 주차 현황 갱신에 재사용
         self.availability.clear()
         self.absence_reasons.clear()
         self.admin_names.clear()
@@ -81,10 +65,6 @@ class ScheduleManager:
         self.save_backup()
         return self.week_label
 
-    # ------------------------------------------------------------------
-    # 관리자 응답 등록
-    # ------------------------------------------------------------------
-
     def register_schedule(
         self,
         user_id: str,
@@ -92,11 +72,6 @@ class ScheduleManager:
         available_days: Set[int],
         absence_reason: Optional[str] = None,
     ) -> None:
-        """참가 요일과 불참 사유를 한 번에 등록한다.
-
-        available_days가 비어 있으면 전체 불참으로 처리한다.
-        available_days가 있으면 참가 등록한다 (불참 사유 제거).
-        """
         self.admin_names[user_id] = display_name
 
         if not available_days:
@@ -108,18 +83,13 @@ class ScheduleManager:
 
         self.save_backup()
 
-    # ------------------------------------------------------------------
-    # 현황 조회
-    # ------------------------------------------------------------------
-
     def get_responded_user_ids(self) -> Set[str]:
         responded = set(self.availability.keys())
-        # 불참 사유 등록자도 응답으로 간주
         responded.update(self.absence_reasons.keys())
         return responded
 
     def get_status_text(self, all_admin_ids: List[Tuple[str, str]]) -> str:
-        """현황 텍스트. all_admin_ids 는 [(user_id, display_name), ...]."""
+        """all_admin_ids는 (user_id, display_name) 목록."""
         responded = self.get_responded_user_ids()
         total = len(all_admin_ids)
         resp_count = len(responded)
@@ -164,7 +134,6 @@ class ScheduleManager:
                 members = self.assignments.get(day_idx, [])
                 deployed = self.actual_deployments.get(day_idx, [])
 
-                # 배정자 + 배정 외 투입자를 합산
                 all_uids = list(members)
                 extra_deployed = [uid for uid in deployed if uid not in members]
 
@@ -190,17 +159,7 @@ class ScheduleManager:
 
         return '\n'.join(lines)
 
-    # ------------------------------------------------------------------
-    # Load-Balanced Greedy 편성 알고리즘
-    # ------------------------------------------------------------------
-
     def generate_assignments(self) -> Dict[int, List[str]]:
-        """요일별 관리자 배정표를 생성한다 (Load-Balanced Greedy).
-
-        1. 가용 인원이 적은 요일부터 처리
-        2. 배정 횟수가 적은 관리자 우선
-        3. 동점 시 가용일이 적은 관리자 우선
-        """
         day_candidates: Dict[int, List[str]] = defaultdict(list)
         for uid, days in self.availability.items():
             for day in days:
@@ -213,7 +172,6 @@ class ScheduleManager:
 
         assignments: Dict[int, List[str]] = {}
 
-        # 가용 인원이 적은 요일부터 정렬
         sorted_days = sorted(
             day_candidates.keys(),
             key=lambda d: len(day_candidates[d]),
@@ -225,13 +183,12 @@ class ScheduleManager:
                 assignments[day] = []
                 continue
 
-            # 후보를 (배정횟수, 가용일수, user_id) 기준으로 정렬
             ranked = sorted(
                 candidates,
                 key=lambda uid: (
                     assign_count[uid],
                     avail_count.get(uid, 0),
-                    uid,  # 안정 정렬용
+                    uid,
                 ),
             )
 
@@ -241,7 +198,6 @@ class ScheduleManager:
             for uid in selected:
                 assign_count[uid] += 1
 
-        # 가용 인원이 없는 요일도 포함
         for day in ACTIVE_DAYS:
             if day not in assignments:
                 assignments[day] = []
@@ -251,12 +207,8 @@ class ScheduleManager:
         logger.info("[일정] 편성 완료")
         return assignments
 
-    # ------------------------------------------------------------------
-    # 동적 재조정
-    # ------------------------------------------------------------------
-
     def toggle_self_deployment(self, day_index: int, user_id: str) -> bool:
-        """본인의 투입 상태를 토글하고 남은 요일 편성을 재조정한다. 반환 True면 등록, False면 해제."""
+        """반환 True면 등록, False면 해제."""
         if day_index not in self.actual_deployments:
             self.actual_deployments[day_index] = []
 
@@ -274,20 +226,11 @@ class ScheduleManager:
         return user_id in self.actual_deployments.get(day_index, [])
 
     def _readjust_remaining(self) -> None:
-        """투입 기록이 없는 요일의 편성을 재조정한다.
-
-        정렬 기준 (오름차순):
-          1. 투입 횟수: 실제 투입이 많을수록 후순위
-          2. 배정 횟수: 나머지 요일 배정이 많을수록 후순위
-          3. 가용일 수: 가용일이 적을수록 우선 (선택지가 적으니 먼저 배정)
-          4. user_id: 안정 정렬
-        """
         deploy_count: Dict[str, int] = defaultdict(int)
         for day_idx, deployed in self.actual_deployments.items():
             for uid in deployed:
                 deploy_count[uid] += 1
 
-        # 실제 투입자가 없는 요일만 재조정 (빈 리스트는 미투입 취급)
         remaining_days = sorted(
             d for d in self.assignments
             if not self.actual_deployments.get(d)
@@ -306,13 +249,11 @@ class ScheduleManager:
             uid: len(days) for uid, days in self.availability.items()
         }
 
-        # 가용 인원 적은 요일부터
         sorted_remaining = sorted(
             remaining_days,
             key=lambda d: len(day_candidates.get(d, [])),
         )
 
-        # 배정 횟수는 투입 횟수와 별도로 추적
         assign_count: Dict[str, int] = defaultdict(int)
 
         for day in sorted_remaining:
@@ -336,12 +277,7 @@ class ScheduleManager:
             for uid in selected:
                 assign_count[uid] += 1
 
-    # ------------------------------------------------------------------
-    # 백업 / 복구
-    # ------------------------------------------------------------------
-
     def save_backup(self) -> None:
-        """현재 상태를 JSON 파일로 백업한다."""
         try:
             data = {
                 'week_label': self.week_label,
@@ -368,7 +304,6 @@ class ScheduleManager:
             logger.error(f"[일정] 백업 저장 실패: {e}", exc_info=True)
 
     def load_backup(self) -> bool:
-        """백업 파일에서 상태를 복구한다."""
         if not os.path.exists(BACKUP_PATH):
             return False
         try:

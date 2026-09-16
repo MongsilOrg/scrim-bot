@@ -1,4 +1,3 @@
-"""스크림 조편성 오케스트레이션 모듈"""
 import asyncio
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
@@ -68,7 +67,6 @@ class ScrimOrchestrator:
                 logger.warning(f"[조편성] 팀 부족으로 중단 - {total_teams_current}팀 < {settings.TEAMS_PER_GROUP}팀")
                 return
 
-            # 시드 마킹도 함께 반영
             await self._refresh_mmr_before_assignment(team_data_manager)
 
             team_data_manager.is_team_assignment_started = True
@@ -80,7 +78,7 @@ class ScrimOrchestrator:
             self._rollback_assignment()
 
     def _rollback_assignment(self) -> None:
-        """플래그만 되돌리면 조편성 감지로 종료된 MMR 루프가 죽은 채 남는다."""
+        """조편성 감지로 이미 종료된 MMR 루프도 재시작 대상."""
         mgr = self._manager
         mgr.is_team_assignment_started = False
         task = mgr.mmr_update_task
@@ -89,7 +87,6 @@ class ScrimOrchestrator:
             logger.info("[조편성] 실패 롤백 - MMR 갱신 루프 재시작")
 
     async def _refresh_mmr_before_assignment(self, team_data_manager) -> None:
-        """조편성 시작 직전 MMR을 새로 fetch하고 이미지를 한 번 갱신한다."""
         try:
             if not team_data_manager.teams:
                 return
@@ -97,7 +94,6 @@ class ScrimOrchestrator:
             success, fail = await team_data_manager.update_all_team_mmr(force=True)
             logger.info(f"[조편성] 직전 MMR 갱신 - 성공: {success}팀, 실패: {fail}팀")
 
-            # 실제 갱신 성공 시 마지막 갱신 시각 반영 (이미지의 '마지막 갱신' 표시)
             if success > 0:
                 team_data_manager.mark_mmr_success()
 
@@ -108,21 +104,18 @@ class ScrimOrchestrator:
             logger.error(f"[조편성] 직전 MMR 갱신 실패 (계속 진행): {e}", exc_info=True)
 
     async def execute_auto_assignment(self) -> None:
-        """실제 조편성을 실행한다."""
         try:
             team_data_manager = self._manager
 
             if not team_data_manager.teams:
                 raise ValueError("팀 데이터가 없어 조편성을 실행할 수 없습니다.")
 
-            # 저장된 클라이언트 참조 사용 (초기화 시 설정됨)
             client = team_data_manager.client
             if not client:
                 client = BotManager.get_instance().get_client()
 
             team_processor = BotManager.get_instance().get_team_processor()
 
-            # 조편성 실행 (Discord 작업 제외) - 최신 인스턴스의 팀 데이터 사용
             groups, unmatched_teams = await team_processor.build_groups(team_data_manager.teams)
 
             team_data_manager.groups = groups
@@ -170,7 +163,6 @@ class ScrimOrchestrator:
             logger.error(f"[Discord] 서비스 실행 실패: {e}", exc_info=True)
 
     async def restore_group_roster_views(self, client) -> None:
-        """조편성 후 재시작 시 GroupRosterView를 복구한다."""
         mgr = self._manager
         if not mgr.groups or not mgr.group_message_ids:
             logger.info("[복구] groups 또는 group_message_ids가 없어 복구 건너뜀")
@@ -220,12 +212,7 @@ class ScrimOrchestrator:
         logger.info(f"[복구] GroupRosterView 복구 완료 - {restored}개 조")
 
 
-# ──────────────────────────────────────────────
-# 스크림 생명주기 (만료 판정 / 다음날 전환 / 일일 리셋)
-# ──────────────────────────────────────────────
-
 def is_scrim_expired(team_data_manager) -> bool:
-    """스크림이 만료되었는지 확인한다 (스크림 당일 22시 기준)."""
     if not team_data_manager.scrim_day or not team_data_manager.scrim_month:
         return True
 
@@ -247,12 +234,10 @@ def is_scrim_expired(team_data_manager) -> bool:
 
 
 async def transition_to_next_scrim(client: "ScrimBot", channel: discord.TextChannel, refresh_dashboard) -> None:
-    """다음날 스크림으로 전환한다. refresh_dashboard(channel)로 대시보드를 갱신한다."""
     bot_manager = BotManager.get_instance()
     old_tdm = bot_manager.get_team_data_manager()
     old_msg_id = old_tdm.dashboard_message_id
 
-    # 기존 MMR 메시지 삭제 (새 날에는 새 MMR 메시지 생성)
     if old_tdm.mmr_message:
         try:
             await old_tdm.mmr_message.delete()
@@ -265,7 +250,6 @@ async def transition_to_next_scrim(client: "ScrimBot", channel: discord.TextChan
         except Exception:
             pass
 
-    # 리셋 + 새 스크림 설정 (dashboard_message_id 보존)
     team_data_manager = await bot_manager.reset_team_data_manager(client)
     if old_msg_id:
         team_data_manager.dashboard_message_id = old_msg_id
@@ -278,7 +262,7 @@ async def transition_to_next_scrim(client: "ScrimBot", channel: discord.TextChan
         scrim_channel_id=settings.SCRIM_CHANNEL_ID,
     )
 
-    # 대시보드 갱신 (메시지 ID가 확정된 후 백업)
+    # 대시보드 메시지 ID 확정 후 백업
     await refresh_dashboard(channel)
     team_data_manager.save_backup()
 
@@ -294,12 +278,10 @@ async def transition_to_next_scrim(client: "ScrimBot", channel: discord.TextChan
 
 
 async def daily_reset_loop(client: "ScrimBot", refresh_dashboard) -> None:
-    """매일 22시에 다음날 스크림으로 자동 전환하는 백그라운드 태스크."""
     await client.wait_until_ready()
     while not client.is_closed():
         now = get_current_kst_time()
 
-        # 오늘 전환 시각까지 대기 (이미 지났으면 내일)
         target = now.replace(hour=settings.NEXT_SCRIM_OPEN_HOUR, minute=0, second=0, microsecond=0)
         if now >= target:
             target += timedelta(days=1)

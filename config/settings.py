@@ -52,7 +52,7 @@ class Settings:
 
     GROUP_CHANNEL_IDS: dict = _parse_group_channel_ids(os.getenv('GROUP_CHANNEL_IDS', ''))
 
-    # {letter}가 조 문자(A, B, C, ...)로 대체되어 음성채널을 동적으로 찾는 데 쓰이다.
+    # {letter}는 조 문자로 치환
     GROUP_CATEGORY_PATTERN: str = os.getenv('GROUP_CATEGORY_PATTERN', 'Group {letter}')
 
     TEAMS_PER_GROUP: int = 8
@@ -71,7 +71,6 @@ class Settings:
     LOG_FILE: str = os.getenv('LOG_FILE', 'scrimbot.log')
 
     ANNOUNCEMENT_MESSAGE: str = os.getenv('ANNOUNCEMENT_MESSAGE', '')
-    # 공휴일 사용자 설정 대전 가이드 링크 (공지사항 하단에 표시)
     CUSTOM_GAME_GUIDE_LINK: str = (
         "[사용자 설정 대전 가이드]"
         "(https://www.notion.so/mongsildev/30125b3fe9fb8082b0e4f286d2f45512?source=copy_link)"
@@ -81,7 +80,6 @@ class Settings:
         'GOOGLE_SHEETS_CREDENTIALS_PATH',
         'credentials/google_sheets_credentials.json'
     )
-    # 시드팀, 테스트 계정, 패널티 공통 사용
     GOOGLE_SHEETS_MAIN_SPREADSHEET_ID: str = os.getenv(
         'GOOGLE_SHEETS_MAIN_SPREADSHEET_ID', ''
     )
@@ -89,7 +87,6 @@ class Settings:
     GOOGLE_SHEETS_WARNING_LOG_WORKSHEET_NAME: str = '패널티로그'
     GOOGLE_SHEETS_SEEDS_WORKSHEET_NAME: str = '시드팀'
     GOOGLE_SHEETS_TEST_ACCOUNTS_WORKSHEET_NAME: str = '테스트'
-    # 마지막 처리 날짜 기록
     MASTERS_STATE_PATH: str = os.getenv('MASTERS_STATE_PATH', 'data/masters_state.json')
 
     @classmethod
@@ -106,7 +103,6 @@ class Settings:
             if not value:
                 errors.append(f"환경변수 '{name}'이(가) 설정되지 않았습니다")
 
-        # 0이면 미설정
         required_int_vars = {
             'GUILD_ID': cls.GUILD_ID,
             'NOTICE_CHANNEL_ID': cls.NOTICE_CHANNEL_ID,

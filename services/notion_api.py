@@ -17,7 +17,6 @@ def _is_number(tag: str) -> bool:
 
 
 def _is_tournament_row(tag_names) -> bool:
-    """비숫자 태그가 하나라도 있으면 대회 행이다."""
     return any(not _is_number(name) for name in tag_names)
 
 
@@ -50,7 +49,7 @@ def get_date_data(data):
     return start_date, end_date, props
 
 def _query_database(payload: dict) -> list:
-    """Notion DB 쿼리. 페이지당 최대 100건이라 커서로 전부 순회한다."""
+    """Notion 쿼리 응답은 페이지당 최대 100건."""
     results = []
     start_cursor = None
     while True:
@@ -133,14 +132,11 @@ def check_notion_for_tags():
 
 
 def get_masters_dates(range_start: date, range_end: date) -> Set[date]:
-    """대회 행(비숫자 태그 포함)의 날짜만 집계하며 KEL 등 미관리 대회는 제외한다.
-
-    조회 실패 시 빈 집합 대신 예외를 던져 호출부가 재시도하게 한다.
-    """
+    """조회 실패는 빈 집합 대신 예외, 재시도는 호출부 몫."""
     payload = {
         "filter": {
             "and": [
-                # Notion date 필터는 시작일 기준. 다일 행 대비 여유 30일
+                # Notion date 필터는 시작일 기준이라 여러 날에 걸친 행 대비 30일 여유
                 { "property": "날짜", "date": { "is_not_empty": True } },
                 { "property": "날짜", "date": { "on_or_after": (range_start - timedelta(days=30)).isoformat() } },
                 { "property": "날짜", "date": { "on_or_before": range_end.isoformat() } },
@@ -174,7 +170,6 @@ def get_masters_dates(range_start: date, range_end: date) -> Set[date]:
     return days
 
 
-# get_server_info TTL 캐시 (5분 주기 MMR 루프가 사이클마다 Notion을 때리지 않도록)
 _SERVER_INFO_TTL_SECONDS = 300
 _server_info_cache: Optional[dict] = None
 _server_info_cached_at: float = 0.0
@@ -199,9 +194,7 @@ def _build_server_info(is_tournament: bool, broadcast: bool) -> dict:
 
 
 def get_server_info() -> dict:
-    """조회 실패 시 만료된 캐시라도 있으면 그것을, 없으면 Live 기본값을 반환하므로
-    호출부는 예외 처리 없이 써도 된다. 실패 시 캐시를 갱신하지 않아 다음 호출에 재시도한다.
-    """
+    """예외 없음, 조회 실패 시 만료 캐시나 Live 기본값 반환."""
     global _server_info_cache, _server_info_cached_at
 
     now = time.monotonic()
