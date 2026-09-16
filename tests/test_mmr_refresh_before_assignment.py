@@ -1,17 +1,10 @@
-"""조편성 직전 MMR 마지막 갱신 회귀 테스트
-
-버그: ScrimOrchestrator._refresh_mmr_before_assignment 가 매니저에 없는
-메서드명을 호출해 매번 AttributeError 발생 → broad except 로 삼켜지고
-MMR 갱신/타임스탬프가 전혀 반영되지 않음. spec mock 으로 실제 공개 표면만
-노출해 재발을 막는다.
-"""
 import unittest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from models.scrim_orchestrator import ScrimOrchestrator
 
-# TeamDataManager 의 실제 공개 표면만 노출 (spec) → 잘못된 메서드명 접근 시 AttributeError 재현
+# TeamDataManager에 실제로 있는 이름만, 호출부의 except가 AttributeError를 삼킴
 MANAGER_ATTRS = [
     'teams', 'update_all_team_mmr', 'update_mmr_message',
     'resolve_mmr_channel', 'mark_mmr_success',
@@ -28,7 +21,6 @@ class TestRefreshMmrBeforeAssignment(unittest.IsolatedAsyncioTestCase):
         return mgr
 
     async def test_refresh_marks_success_time_on_success(self):
-        """직전 갱신 성공 시 마지막 갱신 시각이 기록돼야 함"""
         mgr = self._make_manager((3, 0))
         orch = ScrimOrchestrator(MagicMock())
         await orch._refresh_mmr_before_assignment(mgr)
@@ -37,7 +29,6 @@ class TestRefreshMmrBeforeAssignment(unittest.IsolatedAsyncioTestCase):
         mgr.update_mmr_message.assert_awaited_once()
 
     async def test_refresh_keeps_time_when_all_fail(self):
-        """전체 실패 시 마지막 성공 시각을 갱신하지 않아야 함"""
         mgr = self._make_manager((0, 5))
         orch = ScrimOrchestrator(MagicMock())
         await orch._refresh_mmr_before_assignment(mgr)
@@ -46,11 +37,10 @@ class TestRefreshMmrBeforeAssignment(unittest.IsolatedAsyncioTestCase):
 
 
 class TestUpdateAllTeamMmrForce(unittest.IsolatedAsyncioTestCase):
-    """force=True 면 10분 캐시를 무시하고 실제 fetch 해야 함"""
     async def _run(self, force):
         from models.mmr_updater import MmrUpdater
         team = MagicMock()
-        team.mmr_updated_at = datetime(2026, 6, 1, 16, 59)  # 1분 전 (10분 이내)
+        team.mmr_updated_at = datetime(2026, 6, 1, 16, 59)
         mgr = MagicMock(spec=['teams', 'set_team_mmr', 'save_backup'])
         mgr.teams = {'팀A': team}
         mgr.set_team_mmr = AsyncMock()

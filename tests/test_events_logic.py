@@ -43,8 +43,7 @@ class EventsLogicTest(unittest.TestCase):
 
         self.assertEqual(len(team_data), 2)
 
-        # A: 12 + 8 = 20, kill 5 + 2 = 7
-        # B: 9 + 11 = 20, kill 3 + 4 = 7 -> 동점, 입력 순서 유지 가능
+        # A와 B가 동점이라 순위 배정 순서 미정
         score_map = {
             item["teamName"]: (
                 item["tournament total score"],
@@ -63,7 +62,6 @@ class EventsLogicTest(unittest.TestCase):
         self.assertEqual(ranks, [1, 2])
 
     def test_extract_ban_list(self):
-        """3회 이상 픽만 밴 대상이며 빈/NaN 값은 집계에서 제외한다."""
         df = pd.DataFrame(
             {
                 "character": [
@@ -88,14 +86,12 @@ class EventsLogicTest(unittest.TestCase):
         self.assertEqual(score_aggregation._extract_ban_list(df), [])
 
     def test_normalize_team_name(self):
-        """팀명 정규화: 대소문자 무시, 앞뒤 공백 제거, 중간 공백 축약."""
         self.assertEqual(normalize_team_name(" DM "), normalize_team_name("dm"))
         self.assertEqual(normalize_team_name("Team  Alpha"), normalize_team_name("team alpha"))
         self.assertNotEqual(normalize_team_name("DM"), normalize_team_name("VGX"))
         self.assertEqual(normalize_team_name(""), "")
 
     def test_aggregate_team_scores_normalizes_team_names(self):
-        """대소문자/공백 표기가 달라도 같은 팀으로 집계하고 최초 등장 원형을 표시한다."""
         round1 = pd.DataFrame(
             {
                 "teamName": ["DM ", "DM ", "VGX"],
@@ -116,14 +112,12 @@ class EventsLogicTest(unittest.TestCase):
 
         self.assertEqual(len(team_data), 2)
         score_map = {item["teamName"]: item for item in team_data}
-        # 최초 등장한 원본 팀명이 표시명으로 유지 (teamName은 strip 후 저장)
         self.assertIn("DM", score_map)
         self.assertIn("VGX", score_map)
         self.assertEqual(score_map["DM"]["tournament total score"], 20.0)
         self.assertEqual(score_map["VGX"]["tournament total score"], 20.0)
 
     def test_aggregate_team_scores_default_team_name_resolved(self):
-        """기본 팀명(Team 1)이 이전 라운드 닉네임 기반으로 실제 팀명으로 치환된다."""
         round1 = pd.DataFrame(
             {
                 "teamName": ["DM", "DM", "DM", "VGX", "VGX", "VGX"],
@@ -146,12 +140,10 @@ class EventsLogicTest(unittest.TestCase):
 
         self.assertEqual(len(team_data), 2)
         team_names = {item["teamName"] for item in team_data}
-        # "Team 1"이 "DM"으로 치환되어야 함
         self.assertIn("DM", team_names)
         self.assertNotIn("Team 1", team_names)
 
     def test_aggregate_team_scores_default_team_not_resolved_single_match(self):
-        """닉네임 1명만 일치할 경우 기본 팀명이 치환되지 않는다."""
         round1 = pd.DataFrame(
             {
                 "teamName": ["DM", "DM", "DM"],
@@ -173,7 +165,6 @@ class EventsLogicTest(unittest.TestCase):
         team_data = score_aggregation.aggregate_team_scores(csv_rows)
 
         team_names = {item["teamName"] for item in team_data}
-        # 1명만 일치하므로 치환되지 않아야 함
         self.assertIn("Team 1", team_names)
         self.assertIn("DM", team_names)
 
@@ -188,7 +179,6 @@ class EventsLogicTest(unittest.TestCase):
 
 class ComputeBanListForChannelTest(unittest.IsolatedAsyncioTestCase):
     async def test_no_csv_returns_empty(self):
-        """당일 CSV가 없으면(예: 1라운드) 빈 리스트: 이월 없음."""
         async def fake_collect(channel, start_utc, limit=200):
             return []
 
@@ -197,10 +187,9 @@ class ComputeBanListForChannelTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, [])
 
     async def test_uses_latest_round_by_game_id(self):
-        """gameId 기준 가장 최근 라운드의 픽으로만 밴을 계산한다."""
-        r1 = pd.DataFrame({"character": ["Aya", "Aya", "Aya"]})    # 이전 라운드
-        r2 = pd.DataFrame({"character": ["Hart", "Hart", "Hart"]})  # 최신 라운드
-        # 입력 순서를 일부러 뒤섞어도 gameId 정렬로 r2가 선택되어야 함
+        r1 = pd.DataFrame({"character": ["Aya", "Aya", "Aya"]})
+        r2 = pd.DataFrame({"character": ["Hart", "Hart", "Hart"]})
+        # 일부러 gameId 역순으로 둔 입력
         rows = [(1002, r2, "r2.csv"), (1001, r1, "r1.csv")]
 
         async def fake_collect(channel, start_utc, limit=200):

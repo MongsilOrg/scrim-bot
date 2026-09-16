@@ -1,4 +1,3 @@
-"""팀 MMR 집계의 부분 실패 처리 테스트."""
 import asyncio
 import unittest
 from unittest import mock
@@ -8,7 +7,6 @@ from models.team_processor import TeamProcessor
 
 
 def make_processor(mmr_by_nick: dict, test_accounts: dict = None) -> TeamProcessor:
-    """API/시트 초기화를 건너뛴 프로세서."""
     proc = TeamProcessor.__new__(TeamProcessor)
     proc.test_accounts_data = dict(test_accounts or {})
     proc._test_accounts_by_key = {k.lower(): v for k, v in (test_accounts or {}).items()}
@@ -62,8 +60,6 @@ class TeamMMRPartialFailureTest(unittest.TestCase):
 
 
 class TestAccountZeroMMRTest(unittest.TestCase):
-    """시트 0점은 값, 시트에 없으면 미확정."""
-
     PLAYERS = ['트수급백수', '이런법이어딨어', 'KCW', 'CNJTEST1']
     REAL = {'트수급백수': 8000, '이런법이어딨어': 7500, 'KCW': 7000}
 
@@ -93,8 +89,6 @@ class TestAccountZeroMMRTest(unittest.TestCase):
 
 
 class AssignmentMMRFallbackTest(unittest.TestCase):
-    """조회 실패 시 마지막 확정값 사용."""
-
     def test_fetch_all_falls_back_to_stored_mmr(self):
         proc, fake_api = make_processor({'A선수': None, 'B선수': 8000})
         proc.ensure_test_accounts_loaded = mock.AsyncMock(return_value=True)

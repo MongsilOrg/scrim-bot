@@ -1,4 +1,3 @@
-"""제재 검사 범위 테스트."""
 import asyncio
 import unittest
 from datetime import datetime
@@ -9,8 +8,6 @@ from models.team_data_manager import TeamDataManager
 
 
 class FakeWarningManager:
-    """restricted 목록만 제한으로 응답하는 대역."""
-
     def __init__(self, restricted):
         self.worksheet = object()
         self._restricted = {name.lower() for name in restricted}

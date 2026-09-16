@@ -1,8 +1,3 @@
-"""팀 등록/수정 파이프라인의 순수 판단 로직 테스트.
-
-파이프라인 전체는 Discord interaction에 결합돼 있어 mock 비용이 검증 가치를
-넘으므로, 조용히 틀어지면 화면으로만 드러나는 판단 규칙 세 가지만 지킨다.
-"""
 import unittest
 from datetime import datetime
 from unittest import mock
@@ -22,7 +17,6 @@ def make_team(name: str, players: list, staff: list = None) -> TeamData:
 
 
 def make_manager(markers=()) -> TeamDataManager:
-    """실제 mark/clear_unverified 세터를 쓰되 파일 백업만 차단한 매니저."""
     mgr = TeamDataManager.__new__(TeamDataManager)
     mgr.unverified_teams = set(markers)
     mgr._mmr_dirty = False
@@ -31,8 +25,6 @@ def make_manager(markers=()) -> TeamDataManager:
 
 
 class TeamTimeRulesTest(unittest.TestCase):
-    """마감 판정이 틀리면 차단이 조용히 풀리거나 정상 등록이 막힌다."""
-
     DEADLINE = settings.TEAM_REGISTRATION_DEADLINE_HOUR
 
     def _rules(self, *, started=False, scrim_day=None, is_edit=False, hour=12):
@@ -70,8 +62,6 @@ class TeamTimeRulesTest(unittest.TestCase):
 
 
 class MmrFallbackRulesTest(unittest.IsolatedAsyncioTestCase):
-    """MMR 조회 실패가 기존 MMR을 조용히 지우면 조편성이 왜곡된다."""
-
     async def _run(self, fetch_result=None, fetch_error=None):
         processor = mock.Mock()
         if fetch_error:
@@ -90,8 +80,6 @@ class MmrFallbackRulesTest(unittest.IsolatedAsyncioTestCase):
 
 
 class UnverifiedTransitionTest(unittest.TestCase):
-    """미검증 마커 오류는 크래시 없이 대시보드 표시로만 드러난다."""
-
     def test_unverified_transition_rules(self):
         with self.subTest('점검 중 로스터 변경이면 마커 추가, 개명 시 구명 제거'):
             mgr = make_manager({'옛팀명'})
@@ -125,8 +113,6 @@ class UnverifiedTransitionTest(unittest.TestCase):
 
 
 class EditDiffTest(unittest.TestCase):
-    """diff가 틀리면 수정 로그와 결과 표시가 조용히 어긋난다."""
-
     def _run(self, old: TeamData, new: TeamData):
         manager = mock.Mock()
         interaction = mock.Mock()
@@ -157,8 +143,6 @@ class EditDiffTest(unittest.TestCase):
 
 
 class SanctionPolicyTest(unittest.TestCase):
-    """사유→유형 매핑이 바뀌면 제재 강도가 조용히 달라진다 (정책 고정)."""
-
     def test_reason_type_mapping_fixed(self):
         from commands.ui.warning_modals import REASON_TYPE
 
@@ -171,8 +155,6 @@ class SanctionPolicyTest(unittest.TestCase):
 
 
 class TeamSizeBoundaryTest(unittest.TestCase):
-    """팀 정원 경계가 바뀌면 조편성 운영 전제가 무너진다 (운영 결정 값 고정)."""
-
     def _validate(self, players, staff=()):
         from utils.validators import validate_team_data
 
@@ -197,7 +179,7 @@ class TeamSizeBoundaryTest(unittest.TestCase):
 
 
 class MaintenanceNicknameCheckTest(unittest.IsolatedAsyncioTestCase):
-    """점검 중엔 캐시에 없는 닉네임만 404가 나서 일부 실패가 곧 오타는 아니다."""
+    """점검 중 404는 닉네임 캐시 밖 멤버에게만 발생."""
 
     async def _check(self, known, members, *, hint, season_maintenance=False):
         from utils import validators

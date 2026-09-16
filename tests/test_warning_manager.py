@@ -10,7 +10,6 @@ from services import notion_api
 
 
 def make_manager(worksheet=None, log_worksheet=None):
-    """구글 시트 연결 없이 WarningManager 인스턴스를 만든다."""
     manager = WarningManager.__new__(WarningManager)
     manager.worksheet = worksheet if worksheet is not None else mock.Mock()
     manager.warning_log_worksheet = (
@@ -24,7 +23,7 @@ def make_manager(worksheet=None, log_worksheet=None):
 
 def penalty_row(target='', target_id='', row_type='', restricted_until='',
                 warning_date='2026-08-01'):
-    """패널티 시트 raw 행 (9컬럼)"""
+    """패널티 시트 9열 raw 행."""
     return [
         '2026-08-01 12:00:00', target, target_id, row_type,
         '사유', warning_date, restricted_until, '관리자', '',
@@ -33,11 +32,9 @@ def penalty_row(target='', target_id='', row_type='', restricted_until='',
 
 class MatchesTargetTest(unittest.TestCase):
     def test_both_ids_present_id_decides(self):
-        # ID 일치 → 이름이 달라도 True
         self.assertTrue(
             WarningManager._matches_target('123', 'Alice', '123', 'Bob')
         )
-        # ID 불일치 → 이름이 같아도 False
         self.assertFalse(
             WarningManager._matches_target('123', 'Alice', '456', 'Alice')
         )
@@ -46,7 +43,6 @@ class MatchesTargetTest(unittest.TestCase):
         self.assertTrue(
             WarningManager._matches_target('', 'Alice', '456', 'Alice')
         )
-        # 공백/대소문자 변형은 normalize_nickname_for_comparison 기준으로 동일
         self.assertTrue(
             WarningManager._matches_target('', '  Ali  ce ', '456', 'ali CE')
         )
@@ -67,19 +63,14 @@ class MatchesTargetTest(unittest.TestCase):
 
 
 class RestrictionDaysTest(unittest.TestCase):
-    """운영 규정(경고 1회 3일 / 2회 7일 / 3회 이상 14일)이 원본이고 코드가 사본이다."""
-
     def test_restriction_days_table(self):
         self.assertEqual(WarningManager.restriction_days_for(1), 3)
         self.assertEqual(WarningManager.restriction_days_for(2), 7)
         self.assertEqual(WarningManager.restriction_days_for(3), 14)
-        # 표에 없는 회차는 최대 일수로 수렴
         self.assertEqual(WarningManager.restriction_days_for(10), 14)
 
 
 class CautionConversionTest(unittest.IsolatedAsyncioTestCase):
-    """주의 CAUTION_TO_WARNING_COUNT회 누적 → 경고 전환: 주의 행 삭제 + 경고 행 생성."""
-
     def _make_conversion_manager(self, caution_rows):
         worksheet = mock.Mock()
         worksheet.get_all_values.return_value = [
@@ -87,11 +78,11 @@ class CautionConversionTest(unittest.IsolatedAsyncioTestCase):
             *caution_rows,
         ]
         log_worksheet = mock.Mock()
-        log_worksheet.get_all_records.return_value = []  # 기존 경고 0회
+        log_worksheet.get_all_records.return_value = []
         return make_manager(worksheet=worksheet, log_worksheet=log_worksheet)
 
     async def test_threshold_cautions_convert_to_warning(self):
-        # 방금 추가된 주의까지 포함해 시트에 임계 개수만큼 쌓인 상황
+        # 방금 추가할 주의까지 포함한 시트 상태
         manager = self._make_conversion_manager([
             penalty_row('Alice', '111', '주의')
             for _ in range(WarningManager.CAUTION_TO_WARNING_COUNT)
@@ -108,7 +99,6 @@ class CautionConversionTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ok)
         self.assertIsNotNone(auto_warning)
         self.assertIn('경고 1회가 자동 부여', msg)
-        # 첫 경고 → 1회차 제한 일수 적용 (18시 부여라 경고일 = 당일)
         self.assertEqual(auto_warning['warning_count'], 1)
         self.assertEqual(auto_warning['warning_date'], '2026-08-11')
         self.assertEqual(auto_warning['restricted_until'], '2026-08-14')
@@ -116,17 +106,15 @@ class CautionConversionTest(unittest.IsolatedAsyncioTestCase):
             len(converted), WarningManager.CAUTION_TO_WARNING_COUNT
         )
 
-        # 전환된 주의 행 삭제: 행이 밀리지 않게 아래부터
+        # 위에서부터 지우면 행 번호가 밀림
         manager.worksheet.delete_rows.assert_has_calls(
             [mock.call(3), mock.call(2)]
         )
-        # 패널티 시트 기록: 주의 1건 + 자동 경고 1건
         self.assertEqual(manager.worksheet.append_row.call_count, 2)
         auto_row = manager.worksheet.append_row.call_args_list[1].args[0]
         self.assertEqual(auto_row[3], '경고')        # 유형
         self.assertEqual(auto_row[6], '2026-08-14')  # 제한해제일
         self.assertEqual(auto_row[8], '주의 누적')   # 비고
-        # 영구 로그에도 주의 + 경고 순서로 기록
         log_calls = manager.warning_log_worksheet.append_row.call_args_list
         self.assertEqual([call.args[0][4] for call in log_calls], ['주의', '경고'])
 
@@ -155,15 +143,10 @@ class CountPreviousWarningsTest(unittest.TestCase):
     def test_counts_only_matching_warning_rows(self):
         log_worksheet = mock.Mock()
         log_worksheet.get_all_records.return_value = [
-            # 주의 행은 세지 않는다
             {'유형': '주의', '대상ID': '111', '대상': 'Alice'},
-            # ID 일치 경고 행 → 카운트
             {'유형': '경고', '대상ID': '111', '대상': 'Alice'},
-            # ID 불일치 → 이름이 같아도 제외
             {'유형': '경고', '대상ID': '222', '대상': 'Alice'},
-            # 레거시 행(대상ID 빈 값) → 이름으로 카운트
             {'유형': '경고', '대상ID': '', '대상': 'alice'},
-            # 레거시 행 이름 불일치 → 제외
             {'유형': '경고', '대상ID': '', '대상': 'Bob'},
         ]
         manager = make_manager(log_worksheet=log_worksheet)
@@ -201,7 +184,6 @@ class FindMaxRestrictionTest(unittest.TestCase):
         warnings = [
             {'대상ID': '111', '대상': 'Alice', '제한해제일': '2026-08-10'},
             {'대상ID': '111', '대상': 'Alice', '제한해제일': '2026-08-20'},
-            # 최신 행이지만 최대 날짜가 아니다
             {'대상ID': '111', '대상': 'Alice', '제한해제일': '2026-08-15'},
             {'대상ID': '999', '대상': 'Bob', '제한해제일': '2026-08-30'},
         ]
@@ -262,26 +244,17 @@ class ExtendActiveRestrictionsTest(unittest.TestCase):
         worksheet = mock.Mock()
         worksheet.get_all_values.return_value = [
             WarningManager.PENALTY_HEADERS,
-            # 마스터즈 날 이전 만료 → 건드리지 않음
             penalty_row('Alice', '111', '경고', '2026-08-05'),
-            # 해제일 == 마스터즈 날 → +1일
             penalty_row('Bob', '222', '경고', '2026-08-10'),
-            # 해제일 > 마스터즈 날 → +1일
             penalty_row('Carol', '333', '경고', '2026-08-12'),
-            # 주의 행(해제일 빈 값) → 건드리지 않음
             penalty_row('Dave', '444', '주의', ''),
-            # 해제일 파싱 불가 → 건드리지 않음
             penalty_row('Eve', '555', '경고', '깨진값'),
-            # 경고일 == 마스터즈 날 (당일 부여) → 연장 제외
             penalty_row('Frank', '666', '경고', '2026-08-15',
                         warning_date='2026-08-10'),
-            # 경고일 > 마스터즈 날 (이후 부여) → 연장 제외
             penalty_row('Grace', '777', '경고', '2026-08-15',
                         warning_date='2026-08-11'),
-            # 경고일 빈 값 → 기존처럼 연장 대상
             penalty_row('Heidi', '888', '경고', '2026-08-13',
                         warning_date=''),
-            # 경고일 파싱 불가 → 기존처럼 연장 대상
             penalty_row('Ivan', '999', '경고', '2026-08-14',
                         warning_date='못읽는값'),
         ]
@@ -290,7 +263,7 @@ class ExtendActiveRestrictionsTest(unittest.TestCase):
         extended = manager._extend_active_restrictions(date(2026, 8, 10))
 
         self.assertEqual(extended, 4)
-        # 단일 batch_update 호출, 제한해제일은 G열 (헤더가 1행)
+        # 제한해제일은 G열, 1행은 헤더
         worksheet.batch_update.assert_called_once_with([
             {'range': 'G3', 'values': [['2026-08-11']]},
             {'range': 'G4', 'values': [['2026-08-13']]},
@@ -364,7 +337,6 @@ class ProcessMastersDaysTest(unittest.IsolatedAsyncioTestCase):
 
         get_dates.assert_called_once_with(date(2026, 8, 10), date(2026, 8, 11))
         self.manager._extend_active_restrictions.assert_not_called()
-        # 상태 파일이 갱신되지 않아 다음 주기에 같은 구간을 재시도한다
         self.assertEqual(self._read_state(), '2026-08-09')
 
     async def test_masters_day_extends_and_saves_state(self):
@@ -383,8 +355,6 @@ class ProcessMastersDaysTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self._read_state(), '2026-08-11')
 
     async def test_mid_range_failure_saves_state_up_to_previous_day(self):
-        # 마스터즈 날 2개(08-09, 08-11) 중 두 번째 연장이 실패하면
-        # 상태는 그 직전 날(08-10)까지만 저장되어 다음 주기에 08-11부터 재시도한다
         self._write_state('2026-08-08')
         self.manager._extend_active_restrictions = mock.Mock(
             side_effect=[1, Exception('sheet down')]
@@ -424,15 +394,10 @@ class GetMastersDatesTest(unittest.TestCase):
 
     def test_only_tournament_rows_counted(self):
         results = [
-            # 비숫자 태그 행(대회) → 집계
             notion_row('2026-08-11', '2026-08-11', ['마스터즈']),
-            # 순수 숫자 태그 행 → 제외
             notion_row('2026-08-11', '2026-08-11', ['9.0']),
-            # KEL 태그 행 → 제외
             notion_row('2026-08-11', '2026-08-11', ['KEL', '결승']),
-            # 태그 없는 행 → 제외
             notion_row('2026-08-11', '2026-08-11', []),
-            # 숫자+비숫자 혼합 행 → 대회로 집계
             notion_row('2026-08-12', '2026-08-12', ['9.0', '결승']),
         ]
         with mock.patch(
@@ -447,11 +412,8 @@ class GetMastersDatesTest(unittest.TestCase):
 
     def test_multi_day_rows_clipped_to_range(self):
         results = [
-            # 08-08~08-11 → range와 교차하는 08-10, 08-11만
             notion_row('2026-08-08', '2026-08-11', ['마스터즈']),
-            # 08-12~08-20 → 08-12만
             notion_row('2026-08-12', '2026-08-20', ['결승']),
-            # 08-20~08-25 → range 밖, 제외
             notion_row('2026-08-20', '2026-08-25', ['대회']),
         ]
         with mock.patch(
@@ -467,7 +429,7 @@ class GetMastersDatesTest(unittest.TestCase):
         )
 
     def test_http_failure_propagates(self):
-        # 실패를 삼키면 마스터즈 연장이 조용히 소실된다 (호출부 재시도 계약)
+        # 호출부가 예외를 받아야 다음 주기에 재시도
         with mock.patch(
             'services.notion_api.requests.post',
             side_effect=ConnectionError('notion down'),
@@ -499,7 +461,6 @@ class GetMastersDatesTest(unittest.TestCase):
                 date(2026, 8, 10), date(2026, 8, 12)
             )
 
-        # 두 페이지 결과가 합산 집계된다
         self.assertEqual(days, {date(2026, 8, 10), date(2026, 8, 11)})
         self.assertEqual(post.call_count, 2)
         first_body = post.call_args_list[0].kwargs['json']
