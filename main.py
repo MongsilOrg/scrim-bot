@@ -4,6 +4,11 @@ import os
 import sys
 
 import sentry_sdk
+from dotenv import load_dotenv
+
+# config.settings 를 import 하기 전이라 여기서 .env 를 읽어야 DSN 이 빈 문자열로 안 들어간다
+load_dotenv()
+
 
 def _sentry_before_send(event, hint):
     """일시적 네트워크 에러는 Sentry로 보내지 않는다."""
