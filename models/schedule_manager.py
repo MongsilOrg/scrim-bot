@@ -89,7 +89,7 @@ class ScheduleManager:
         return responded
 
     def get_status_text(self, all_admin_ids: List[Tuple[str, str]]) -> str:
-        """all_admin_ids는 (user_id, display_name) 목록."""
+        """all_admin_ids 항목은 user_id, display_name 쌍."""
         responded = self.get_responded_user_ids()
         total = len(all_admin_ids)
         resp_count = len(responded)

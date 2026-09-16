@@ -200,7 +200,7 @@ class MmrUpdater:
     TEAM_MMR_TTL_SECONDS = 600
 
     async def update_all_team_mmr(self, force: bool = False) -> Tuple[int, int]:
-        """반환 (성공 팀 수, 실패 팀 수), TTL 스킵도 성공으로 집계."""
+        """반환: 성공 팀 수, 실패 팀 수. TTL 스킵도 성공으로 집계."""
         mgr = self._manager
         success_count = 0
         fail_count = 0

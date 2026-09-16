@@ -377,7 +377,7 @@ class TeamDataManager:
         team_data: TeamData,
         user: discord.Member
     ) -> Tuple[bool, str]:
-        """반환 (성공 여부, 실패 사유 또는 빈 문자열)."""
+        """반환: 성공 여부, 실패 사유 또는 빈 문자열."""
         try:
             team = team_data
             if team.name != team_name:
@@ -410,7 +410,7 @@ class TeamDataManager:
             return False, f"팀 추가 중 오류가 발생했습니다: {str(e)}"
 
     async def remove_team(self, team_name: str) -> Tuple[bool, str]:
-        """반환 (성공 여부, 실패 사유 또는 빈 문자열)."""
+        """반환: 성공 여부, 실패 사유 또는 빈 문자열."""
         try:
             async with self._teams_lock:
                 if team_name not in self.teams:
@@ -463,7 +463,7 @@ class TeamDataManager:
 
 
     async def replace_team(self, old_team_name: str, new_team: TeamData, new_mmr: float) -> Tuple[bool, str]:
-        """반환 (성공 여부, 실패 사유)."""
+        """반환: 성공 여부, 실패 사유."""
         async with self._teams_lock:
             if old_team_name not in self.teams:
                 # 검증과 저장 사이에 취소된 팀, 여기서 추가하면 부활

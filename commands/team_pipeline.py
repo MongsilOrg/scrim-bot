@@ -89,7 +89,7 @@ async def _validate_team_rules(
     original_team_name: Optional[str] = None,
     original_members: Optional[List[str]] = None,
 ) -> Tuple[bool, bool]:
-    """반환 (통과 여부, 서버 점검 여부)."""
+    """반환: 통과 여부, 서버 점검 여부."""
     team_name = team_data.name
     fail_tag = "팀수정실패" if is_edit else "팀신청실패"
     current_time = get_current_kst_time()

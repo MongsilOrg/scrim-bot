@@ -164,7 +164,7 @@ class WarningManager:
         return self._sheet_row(self.PENALTY_HEADERS, values)
 
     def _iter_penalty_rows(self) -> Iterator[Tuple[int, Dict]]:
-        """(1-based 행 번호, 레코드 dict) 순회."""
+        """1-based 행 번호와 레코드 dict 순회."""
         all_values = self.worksheet.get_all_values()
         for row_num, row in enumerate(all_values[1:], start=2):
             padded = row + [''] * (len(self.PENALTY_HEADERS) - len(row))
@@ -313,7 +313,7 @@ class WarningManager:
         reason: str,
         admin_display_name: str
     ) -> Tuple[bool, str, Optional[Dict], List[Dict]]:
-        """반환 (성공 여부, 메시지, 자동 생성된 경고 정보, 변환된 주의 내역)."""
+        """반환: 성공 여부, 메시지, 자동 생성된 경고 정보, 변환된 주의 내역."""
         if not self.worksheet:
             return False, "구글 시트 연결이 설정되지 않았습니다.", None, []
         
@@ -498,7 +498,7 @@ class WarningManager:
         return latest
 
     def is_restricted(self, target_id: str = None, target_name: str = None, check_date: Optional[datetime] = None) -> Tuple[bool, Optional[str]]:
-        """반환 (제한 여부, 제한 해제일)."""
+        """반환: 제한 여부, 제한 해제일."""
         if not self.worksheet:
             return False, None
 

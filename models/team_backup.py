@@ -21,7 +21,7 @@ def _from_iso(raw):
     return datetime.fromisoformat(raw) if raw else None
 
 
-# (저장 키, 매니저 속성, to_json, from_json, 로드 기본값)
+# 항목 순서: 저장 키, 매니저 속성, to_json, from_json, 로드 기본값
 _META_FIELDS = [
     ('scrim_day', 'scrim_day', None, None, None),
     ('scrim_month', 'scrim_month', None, None, None),

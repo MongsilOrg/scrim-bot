@@ -148,7 +148,7 @@ async def validate_members_api(
     *,
     maintenance_hint: bool,
 ) -> tuple[bool, list[str], bool]:
-    """반환 (통과 여부, 확인 안 된 닉네임, 점검 여부)."""
+    """반환: 통과 여부, 확인 안 된 닉네임, 점검 여부."""
     try:
         async with BSERAPIClient() as api:
             results = await asyncio.gather(
@@ -193,7 +193,7 @@ async def validate_members_api(
 
 
 def split_test_nicknames(nicknames: List[str]) -> Tuple[List[str], List[str]]:
-    """반환 (일반, 테스트 계정)."""
+    """반환: 일반, 테스트 계정."""
     normal: List[str] = []
     test_like: List[str] = []
     for nickname in nicknames:
