@@ -167,9 +167,11 @@ async def validate_members_api(
                 if isinstance(result, Exception) or not result
             ]
 
+            # 점검 중엔 닉네임 캐시에 없는 멤버만 404가 나므로 실패 수로 점검 여부를 가늠할 수 없다
+            if invalid_members and maintenance_hint:
+                return True, [], True
+
             if invalid_members and len(invalid_members) >= len(members) / 2:
-                if maintenance_hint:
-                    return True, [], True
                 try:
                     is_maintenance = await api.check_server_maintenance()
                 except Exception:

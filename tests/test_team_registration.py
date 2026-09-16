@@ -196,5 +196,32 @@ class TeamSizeBoundaryTest(unittest.TestCase):
             self.assertFalse(self._validate(['a', 'b', 'c'], ['s1', 's2', 's3', 's4']))
 
 
+class MaintenanceNicknameCheckTest(unittest.IsolatedAsyncioTestCase):
+    """점검 중엔 캐시에 없는 닉네임만 404가 나서 일부 실패가 곧 오타는 아니다."""
+
+    async def _check(self, known, members, *, hint, season_maintenance=False):
+        from utils import validators
+
+        api = mock.AsyncMock()
+        api.get_user_uid.side_effect = lambda m: 'uid' if m in known else None
+        api.check_server_maintenance.return_value = season_maintenance
+        client = mock.MagicMock()
+        client.return_value.__aenter__.return_value = api
+        with mock.patch.object(validators, 'BSERAPIClient', client):
+            return await validators.validate_members_api(members, maintenance_hint=hint)
+
+    async def test_cached_majority_during_maintenance_passes(self):
+        result = await self._check({'a', 'b', 'c'}, ['a', 'b', 'c', 'new'], hint=True)
+        self.assertEqual(result, (True, [], True))
+
+    async def test_partial_failure_without_maintenance_rejects(self):
+        result = await self._check({'a', 'b', 'c'}, ['a', 'b', 'c', 'typo'], hint=False)
+        self.assertEqual(result, (False, ['typo'], False))
+
+    async def test_all_valid_during_maintenance_is_not_unverified(self):
+        result = await self._check({'a', 'b', 'c'}, ['a', 'b', 'c'], hint=True)
+        self.assertEqual(result, (True, [], False))
+
+
 if __name__ == '__main__':
     unittest.main()
