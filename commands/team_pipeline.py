@@ -35,7 +35,7 @@ logger = get_logger('team_pipeline')
 
 MAINTENANCE_SKIP_NOTICE = (
     "🔧 서버 점검으로 닉네임 확인을 건너뛰었습니다.\n"
-    "점검 종료 후 자동으로 확인되며, 결과는 DM으로 안내드립니다.\n"
+    "점검 종료 후 자동으로 확인되며, 결과는 DM으로 알려드립니다.\n"
     "💡 닉네임 오타가 없는지 다시 한번 확인해주세요."
 )
 
@@ -255,7 +255,7 @@ async def process_team_registration(
             )
         else:
             success_msg = (
-                f"**{team_name}** 팀이 성공적으로 등록되었습니다!\n\n"
+                f"**{team_name}** 팀이 등록되었습니다.\n\n"
                 f"🎮 선수: {players_str}\n"
                 f"🛠️ 스태프: {staff_str}\n"
                 f"{build_team_mmr_line(team_mmr, team_data.players, team_processor.is_test_account)}"
@@ -405,9 +405,9 @@ def _log_edit_diff(
         staff_str = ', '.join(new_team_data.staff) if new_team_data.staff else '(없음)'
         parts = []
         if original_team_name != new_team_name:
-            parts.append(f"{original_team_name} → {new_team_name}")
+            parts.append(f"이전 팀명 {original_team_name}")
         if removed:
-            parts.append(f"{', '.join(sorted(removed))} → {', '.join(sorted(added))}" if added else f"-{', '.join(sorted(removed))}")
+            parts.append(f"-{', '.join(sorted(removed))} +{', '.join(sorted(added))}" if added else f"-{', '.join(sorted(removed))}")
         elif added:
             parts.append(f"+{', '.join(sorted(added))}")
         detail = ' / '.join(parts) + f" / 선수: {players_str} / 스태프: {staff_str}"
@@ -418,9 +418,9 @@ def _log_edit_diff(
     new_players_str = ', '.join(new_team_data.players) if new_team_data.players else '(없음)'
     new_staff_str = ', '.join(new_team_data.staff) if new_team_data.staff else '(없음)'
     logger.info(
-        f"[팀수정] {original_team_name} → {new_team_name} | MMR: {new_team_mmr:.2f} | "
-        f"선수: [{original_players_str}] → [{new_players_str}] | "
-        f"스태프: [{original_staff_str}] → [{new_staff_str}]"
+        f"[팀수정] {original_team_name}, 수정 후 {new_team_name} | MMR: {new_team_mmr:.2f} | "
+        f"선수: [{original_players_str}], 수정 후 [{new_players_str}] | "
+        f"스태프: [{original_staff_str}], 수정 후 [{new_staff_str}]"
     )
     return added, removed
 
@@ -439,14 +439,14 @@ async def _send_edit_result(
     if is_maintenance:
         await update_temp_message(
             temp_message,
-            f"**{original_team_name}** → **{new_team_name}**\n\n{MAINTENANCE_SKIP_NOTICE}",
+            f"**{new_team_name}** 팀이 수정되었습니다.\n\n{MAINTENANCE_SKIP_NOTICE}",
             discord.Color.green()
         )
         return
 
     diff_parts = []
     if original_team_name != new_team_name:
-        diff_parts.append(f"팀명: {original_team_name} → {new_team_name}")
+        diff_parts.append(f"이전 팀명: {original_team_name}")
     if removed:
         diff_parts.append(f"제외: {', '.join(sorted(removed))}")
     if added:
@@ -601,7 +601,7 @@ async def _apply_roster_warnings(
         try:
             await update_temp_message(
                 temp_message,
-                f"**{original_team_name}** → 로스터 변경 완료\n⚡ {result_text}",
+                f"**{original_team_name}** 로스터 변경 완료\n⚡ {result_text}",
                 discord.Color.green()
             )
         except Exception:

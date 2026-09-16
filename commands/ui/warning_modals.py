@@ -40,14 +40,14 @@ def _caution_history(cautions: list, detailed: bool) -> str:
 
 def _count_summary(auto_warning: dict) -> str:
     info = auto_warning or {}
-    return f"{info.get('warning_count', 'N/A')}회 · 제한 {info.get('duration_days', 'N/A')}일"
+    return f"{info.get('warning_count', 'N/A')}회, 제한 {info.get('duration_days', 'N/A')}일"
 
 
 def _restriction_summary(auto_warning: dict) -> str:
     info = auto_warning or {}
     return (
         f"**{info.get('restricted_until', 'N/A')}**까지 스크림 참여가 제한됩니다. "
-        f"(누적 {_count_summary(info)})"
+        f"누적 {_count_summary(info)}"
     )
 
 

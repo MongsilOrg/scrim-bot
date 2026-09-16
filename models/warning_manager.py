@@ -364,7 +364,7 @@ class WarningManager:
                         '비고': auto_warning['note'],
                     })
                     await asyncio.to_thread(self.worksheet.append_row, auto_row)
-                    logger.info(f"[경고관리] 주의 누적 → 경고 전환 - 대상: {target}, 제한해제: {auto_warning['restricted_until']}")
+                    logger.info(f"[경고관리] 주의 누적으로 경고 전환 - 대상: {target}, 제한해제: {auto_warning['restricted_until']}")
 
                     await asyncio.to_thread(
                         self._add_to_warning_log,
@@ -380,8 +380,8 @@ class WarningManager:
 
                     return True, (
                         f"주의가 추가되었습니다. 주의 {self.CAUTION_TO_WARNING_COUNT}회로 인해 경고 1회가 자동 부여되었습니다. "
-                        f"(누적 {auto_warning['warning_count']}회, 제한 {auto_warning['duration_days']}일, "
-                        f"{auto_warning['restricted_until']}까지 제한)"
+                        f"누적 {auto_warning['warning_count']}회, 제한 {auto_warning['duration_days']}일, "
+                        f"{auto_warning['restricted_until']}까지 제한."
                     ), auto_warning, converted_cautions
 
                 return True, "주의가 추가되었습니다.", None, []
@@ -428,8 +428,8 @@ class WarningManager:
                 self._invalidate_cache()
 
                 return True, (
-                    f"경고가 추가되었습니다. (누적 {warning_count}회, 제한 {duration_days}일, "
-                    f"{restricted_str}까지 제한)"
+                    f"경고가 추가되었습니다. 누적 {warning_count}회, 제한 {duration_days}일, "
+                    f"{restricted_str}까지 제한."
                 ), {
                     'warning_date': warning_date_str,
                     'restricted_until': restricted_str,

@@ -316,7 +316,7 @@ def _build_deploy_view(schedule_mgr, user_id: str) -> LayoutView:
         TextDisplay(
             content=f"## ✅ 투입 기록\n"
             f"{info_line}\n\n"
-            f"투입한 요일을 선택해주세요. (다시 누르면 해제)"
+            f"투입한 요일을 선택해주세요. 다시 누르면 해제됩니다."
         ),
         Separator(),
         TextDisplay(content=FOOTER_TEXT),

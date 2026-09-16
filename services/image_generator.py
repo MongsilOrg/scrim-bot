@@ -58,7 +58,7 @@ def _render_html_to_image(html_str: str, width: int = 800, height: int = None) -
         img_io.seek(0)
         return img_io
     except Exception as e:
-        logger.error(f"[이미지생성] HTML→이미지 변환 실패: {e}", exc_info=True)
+        logger.error(f"[이미지생성] HTML 이미지 변환 실패: {e}", exc_info=True)
         return None
 
 

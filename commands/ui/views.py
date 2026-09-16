@@ -258,7 +258,7 @@ class TeamInputView(LayoutView):
             )
             logger.info(f"[팀취소] {team_name} | 선수: [{players_str}] | 스태프: [{staff_str}]")
 
-            await send_response(interaction, success_view(f"**{team_name}** 팀이 성공적으로 취소되었습니다."))
+            await send_response(interaction, success_view(f"**{team_name}** 팀이 취소되었습니다."))
 
             schedule_mmr_refresh(team_data_manager, interaction.channel)
 

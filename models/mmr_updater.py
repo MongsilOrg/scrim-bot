@@ -311,7 +311,7 @@ class MmrUpdater:
                 mmr_val = f"{team_data.mmr:.0f}" if team_data.mmr else "0"
                 content = (
                     f"## ✅ 닉네임 확인 완료\n"
-                    f"**{team_name}** 팀의 닉네임이 정상 확인되었습니다.\n\n"
+                    f"**{team_name}** 팀의 닉네임이 확인되었습니다.\n\n"
                     f"🎮 선수: {players_str}\n"
                     f"📊 MMR: **{mmr_val}**\n\n"
                     f"💡 MMR이 반영되었습니다."

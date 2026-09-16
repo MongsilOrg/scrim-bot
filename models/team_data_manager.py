@@ -221,7 +221,7 @@ class TeamDataManager:
             try:
                 await asyncio.wait_for(task, timeout=timeout)
             except asyncio.CancelledError:
-                logger.info(f"{label}: 태스크가 정상적으로 취소됨")
+                logger.info(f"{label}: 태스크 취소 완료")
             except asyncio.TimeoutError:
                 logger.warning(f"{label}: 태스크 취소 타임아웃 ({timeout}초), 강제 종료 시도")
                 if not task.done():
@@ -503,7 +503,7 @@ class TeamDataManager:
                     duplicate_details = []
                     for new_member in team_members:
                         if normalize_nickname_for_comparison(new_member) in duplicate_members:
-                            duplicate_details.append(f"• {new_member} → {existing_team_name}")
+                            duplicate_details.append(f"- {new_member}: {existing_team_name} 팀")
                     detail_str = "\n".join(duplicate_details)
                     return False, f"❌ 이미 등록된 팀원이 있습니다.\n{detail_str}"
 
