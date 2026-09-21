@@ -15,6 +15,8 @@ from services.bser_api import BSERAPIClient
 from services.image_generator import TOURNAMENT_COLOR, ImageGenerator
 from services.notion_api import get_server_info
 
+from .team_data import MMR_PENDING_LABEL
+
 if TYPE_CHECKING:
     from .team_data_manager import TeamDataManager
 
@@ -222,9 +224,9 @@ class MmrUpdater:
                             success_count += 1
                             continue
 
-                    _, _, team_mmr = await team_processor.fetch_team_mmr(team_name, team_data)
-                    if team_mmr > 0:
-                        await mgr.set_team_mmr(team_name, team_mmr)
+                    _, _, result = await team_processor.fetch_team_mmr(team_name, team_data)
+                    await mgr.apply_team_mmr(team_name, result)
+                    if result.confirmed:
                         success_count += 1
                     else:
                         fail_count += 1
@@ -274,9 +276,8 @@ class MmrUpdater:
                             invalid_members.append(player)
 
                 if not invalid_members:
-                    _, _, team_mmr = await team_processor.fetch_team_mmr(team_name, team_data)
-                    if team_mmr > 0:
-                        await mgr.set_team_mmr(team_name, team_mmr)
+                    _, _, result = await team_processor.fetch_team_mmr(team_name, team_data)
+                    await mgr.apply_team_mmr(team_name, result)
 
                 await self._send_verification_dm(team_name, team_data, invalid_members)
 
@@ -308,13 +309,15 @@ class MmrUpdater:
             view = LayoutView()
 
             if not invalid_members:
-                mmr_val = f"{team_data.mmr:.0f}" if team_data.mmr else "0"
+                confirmed = team_data.mmr_confirmed
+                mmr_val = f"{team_data.mmr:.0f}" if confirmed else MMR_PENDING_LABEL
+                mmr_notice = "💡 MMR이 반영되었습니다." if confirmed else "💡 잠시 후 자동으로 갱신됩니다."
                 content = (
                     f"## ✅ 닉네임 확인 완료\n"
                     f"**{team_name}** 팀의 닉네임이 확인되었습니다.\n\n"
                     f"🎮 선수: {players_str}\n"
                     f"📊 MMR: **{mmr_val}**\n\n"
-                    f"💡 MMR이 반영되었습니다."
+                    f"{mmr_notice}"
                 )
                 view.add_item(Container(
                     TextDisplay(content=content),

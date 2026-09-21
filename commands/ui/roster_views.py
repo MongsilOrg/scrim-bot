@@ -12,6 +12,7 @@ from utils.layout_helpers import (
     send_response, FOOTER_TEXT,
     send_error_message,
 )
+from models.team_data import format_team_mmr
 from utils.helpers import is_admin
 
 from .modals import TeamEditModal
@@ -124,7 +125,7 @@ class TeamSelectionView(LayoutView):
         else:
             options = [
                 SelectOption(
-                    label=f"{i+1}. {team_name} (MMR: {mmr:.2f})",
+                    label=f"{i+1}. {team_name} (MMR: {format_team_mmr(mmr, team_data.mmr_confirmed)})",
                     value=team_name,
                     description=f"팀원: {', '.join(team_data.players[:3]) or '정보 없음'}"
                 )

@@ -3,11 +3,11 @@ from datetime import datetime
 from unittest import mock
 
 from config.settings import settings
-from models.team_data import TeamData
+from models.team_data import TeamData, TeamMmrResult
 from models.team_data_manager import TeamDataManager
 from commands.team_pipeline import (
     _apply_unverified_transition,
-    _fetch_team_mmr_or,
+    _fetch_team_mmr_result,
     _log_edit_diff,
 )
 
@@ -61,22 +61,30 @@ class TeamTimeRulesTest(unittest.TestCase):
             self.assertTrue(allowed)
 
 
-class MmrFallbackRulesTest(unittest.IsolatedAsyncioTestCase):
+class MmrFetchResultTest(unittest.IsolatedAsyncioTestCase):
     async def _run(self, fetch_result=None, fetch_error=None):
         processor = mock.Mock()
         if fetch_error:
             processor.fetch_team_mmr = mock.AsyncMock(side_effect=fetch_error)
         else:
             processor.fetch_team_mmr = mock.AsyncMock(return_value=(True, [], fetch_result))
-        return await _fetch_team_mmr_or(processor, make_team('팀', ['a', 'b', 'c']), fallback_mmr=42.5)
+        return await _fetch_team_mmr_result(processor, make_team('팀', ['a', 'b', 'c']))
 
-    async def test_mmr_fallback_rules(self):
-        with self.subTest('조회 성공이면 조회값'):
-            self.assertEqual(await self._run(fetch_result=77.0), 77.0)
-        with self.subTest('0 반환이면 기존 MMR 유지'):
-            self.assertEqual(await self._run(fetch_result=0.0), 42.5)
-        with self.subTest('예외면 기존 MMR 유지'):
-            self.assertEqual(await self._run(fetch_error=RuntimeError('api down')), 42.5)
+    async def test_mmr_fetch_result_rules(self):
+        with self.subTest('조회 성공이면 확정값 그대로'):
+            result = await self._run(fetch_result=TeamMmrResult(mmr=77.0, confirmed=True))
+            self.assertEqual((result.mmr, result.confirmed), (77.0, True))
+        with self.subTest('실제 0점도 확정으로 전달'):
+            result = await self._run(fetch_result=TeamMmrResult(mmr=0.0, confirmed=True))
+            self.assertEqual((result.mmr, result.confirmed), (0.0, True))
+        with self.subTest('미확정은 그대로 미확정, 실패 멤버 유지'):
+            result = await self._run(fetch_result=TeamMmrResult(failed_players=('a',)))
+            self.assertFalse(result.confirmed)
+            self.assertEqual(result.failed_players, ('a',))
+        with self.subTest('예외면 전원 실패로 미확정'):
+            result = await self._run(fetch_error=RuntimeError('api down'))
+            self.assertFalse(result.confirmed)
+            self.assertEqual(result.failed_players, ('a', 'b', 'c'))
 
 
 class UnverifiedTransitionTest(unittest.TestCase):

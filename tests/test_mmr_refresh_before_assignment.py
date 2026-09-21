@@ -3,6 +3,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from models.scrim_orchestrator import ScrimOrchestrator
+from models.team_data import TeamMmrResult
 
 # TeamDataManager에 실제로 있는 이름만, 호출부의 except가 AttributeError를 삼킴
 MANAGER_ATTRS = [
@@ -41,15 +42,17 @@ class TestUpdateAllTeamMmrForce(unittest.IsolatedAsyncioTestCase):
         from models.mmr_updater import MmrUpdater
         team = MagicMock()
         team.mmr_updated_at = datetime(2026, 6, 1, 16, 59)
-        mgr = MagicMock(spec=['teams', 'set_team_mmr', 'save_backup'])
+        mgr = MagicMock(spec=['teams', 'apply_team_mmr', 'save_backup'])
         mgr.teams = {'팀A': team}
-        mgr.set_team_mmr = AsyncMock()
+        mgr.apply_team_mmr = AsyncMock()
         mgr.save_backup = MagicMock()
         updater = MmrUpdater(mgr)
 
         tp = MagicMock()
         tp.ensure_test_accounts_loaded = AsyncMock()
-        tp.fetch_team_mmr = AsyncMock(return_value=('x', 'y', 1500))
+        tp.fetch_team_mmr = AsyncMock(
+            return_value=('x', 'y', TeamMmrResult(mmr=1500, confirmed=True))
+        )
         with patch('models.mmr_updater.get_current_kst_time',
                    return_value=datetime(2026, 6, 1, 17, 0)), \
              patch('models.mmr_updater.BotManager') as BM:

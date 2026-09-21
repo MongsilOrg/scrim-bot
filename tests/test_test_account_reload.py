@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from models.team_data import TeamMmrResult
 from models.team_processor import TeamProcessor
 
 
@@ -72,7 +73,9 @@ class TestFetchAllTeamMmrReloadsTestAccounts(unittest.IsolatedAsyncioTestCase):
     async def test_fetch_all_triggers_reload(self):
         tp = _bare_processor()
         tp.ensure_test_accounts_loaded = AsyncMock()
-        tp.fetch_team_mmr = AsyncMock(return_value=("팀A", object(), 1500.0))
+        tp.fetch_team_mmr = AsyncMock(
+            return_value=("팀A", MagicMock(mmr_confirmed=True), TeamMmrResult(mmr=1500.0, confirmed=True))
+        )
 
         await tp._fetch_all_team_mmr({"팀A": object()})
 

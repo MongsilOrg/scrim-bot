@@ -5,6 +5,7 @@ import platform
 from io import BytesIO
 from typing import Dict, List, Optional
 
+from models.team_data import MMR_PENDING_LABEL
 from services.notion_api import get_server_info
 from services.score_aggregation import (
     COL_KILL_SCORE,
@@ -150,6 +151,8 @@ class ImageGenerator:
     @staticmethod
     def _build_team_row_html(rank: int, team_name: str, team_data, *, is_unverified: bool = False) -> str:
         mmr = team_data.mmr
+        mmr_confirmed = team_data.mmr_confirmed
+        stale_players = {p.strip() for p in team_data.mmr_failed_players}
         players = list(team_data.players)
         staff = list(team_data.staff)
         is_seed = getattr(team_data, 'is_seed', False)
@@ -168,8 +171,14 @@ class ImageGenerator:
             team_sub = ''
         team_cell = team_main + team_sub
 
+        def _player_html(name: str) -> str:
+            escaped = _esc(name)
+            if name.strip() in stale_players:
+                return f'<span class="player-stale">{escaped}</span>'
+            return escaped
+
         sep = '<span class="separator">,</span>'
-        players_text = sep.join(_esc(p) for p in players) if players else '-'
+        players_text = sep.join(_player_html(p) for p in players) if players else '-'
         members_main = f'<div class="cell-main">{players_text}</div>'
         members_sub = ''
         if staff:
@@ -177,7 +186,12 @@ class ImageGenerator:
             members_sub = f'<div class="cell-sub staff">{staff_text}</div>'
         members_cell = members_main + members_sub
 
-        mmr_display = '<td class="mmr-unverified">점검</td>' if is_unverified else f'<td class="mmr-value">{mmr:.2f}</td>'
+        if is_unverified:
+            mmr_display = '<td class="mmr-unverified">점검</td>'
+        elif not mmr_confirmed:
+            mmr_display = f'<td class="mmr-pending">{MMR_PENDING_LABEL}</td>'
+        else:
+            mmr_display = f'<td class="mmr-value">{mmr:.2f}</td>'
 
         return f"""<tr class="row {row_class}">
     <td>{rank}</td>

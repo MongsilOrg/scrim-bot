@@ -6,7 +6,7 @@ from bot.manager import BotManager
 from commands.ui.warning_modals import REASON_TYPE, send_sanction_dm
 from config.logging_config import get_logger
 from config.settings import settings
-from models.team_data import TeamData
+from models.team_data import TeamData, TeamMmrResult, format_team_mmr
 from models.user_team_cache import UserTeamCache
 from utils.helpers import build_member_lookup, get_current_kst_time
 from utils.layout_helpers import send_error_message, update_temp_message
@@ -146,14 +146,14 @@ async def _validate_team_rules(
     return True, is_maintenance
 
 
-async def _fetch_team_mmr_or(team_processor: "TeamProcessor", team_data: TeamData, fallback_mmr: float) -> float:
+async def _fetch_team_mmr_result(team_processor: "TeamProcessor", team_data: TeamData) -> TeamMmrResult:
+    """미확정 결과를 어떻게 처리할지는 호출부가 결정."""
     try:
-        _, _, fetched_mmr = await team_processor.fetch_team_mmr(team_data.name, team_data)
-        if fetched_mmr > 0:
-            return fetched_mmr
+        _, _, result = await team_processor.fetch_team_mmr(team_data.name, team_data)
+        return result
     except Exception as e:
         logger.error(f"[팀파이프라인] 팀 MMR 계산 실패 - 팀명: {team_data.name}: {e}", exc_info=True)
-    return fallback_mmr
+        return TeamMmrResult(failed_players=tuple(team_data.players))
 
 
 def _save_user_cache(user_id: str, team_data: TeamData) -> None:
@@ -222,8 +222,11 @@ async def process_team_registration(
         if not passed:
             return
 
-        team_mmr = await _fetch_team_mmr_or(team_processor, team_data, 0.0)
+        mmr_result = await _fetch_team_mmr_result(team_processor, team_data)
+        team_mmr = mmr_result.mmr
         team_data.mmr = team_mmr
+        team_data.mmr_confirmed = mmr_result.confirmed
+        team_data.mmr_failed_players = list(mmr_result.failed_players)
 
         success, failure_reason = await team_data_manager.add_team(team_name, team_data, interaction.user)
         if not success:
@@ -243,7 +246,10 @@ async def process_team_registration(
             "신청", interaction.user, team_name,
             detail=f"선수: {players_str} / 스태프: {staff_str}",
         )
-        logger.info(f"[팀신청] {team_name} | MMR: {team_mmr:.2f} | 선수: [{players_str}] | 스태프: [{staff_str}]")
+        logger.info(
+            f"[팀신청] {team_name} | MMR: {format_team_mmr(team_mmr, mmr_result.confirmed)} | "
+            f"선수: [{players_str}] | 스태프: [{staff_str}]"
+        )
 
         if is_maintenance:
             team_data_manager.mark_unverified(team_name)
@@ -258,7 +264,7 @@ async def process_team_registration(
                 f"**{team_name}** 팀이 등록되었습니다.\n\n"
                 f"🎮 선수: {players_str}\n"
                 f"🛠️ 스태프: {staff_str}\n"
-                f"{build_team_mmr_line(team_mmr, team_data.players, team_processor.is_test_account)}"
+                f"{build_team_mmr_line(team_mmr, team_data.players, team_processor.is_test_account, confirmed=mmr_result.confirmed)}"
             )
         await update_temp_message(temp_message, success_msg, discord.Color.green())
 
@@ -307,7 +313,16 @@ async def process_team_edit(
             if not passed:
                 return
 
-        new_team_mmr = await _fetch_team_mmr_or(team_processor, new_team_data, original_team_data.mmr)
+        mmr_result = await _fetch_team_mmr_result(team_processor, new_team_data)
+        if mmr_result.confirmed:
+            new_team_mmr = mmr_result.mmr
+            new_team_data.mmr_confirmed = True
+            new_team_data.mmr_failed_players = []
+        else:
+            # 새 로스터 조회 실패, 수정 전 확정 상태를 그대로 승계
+            new_team_mmr = original_team_data.mmr
+            new_team_data.mmr_confirmed = original_team_data.mmr_confirmed
+            new_team_data.mmr_failed_players = list(mmr_result.failed_players)
 
         # 관리자가 수정해도 신청자 user_id 유지
         new_team_data.user_id = original_team_data.user_id or str(interaction.user.id)
@@ -418,7 +433,8 @@ def _log_edit_diff(
     new_players_str = ', '.join(new_team_data.players) if new_team_data.players else '(없음)'
     new_staff_str = ', '.join(new_team_data.staff) if new_team_data.staff else '(없음)'
     logger.info(
-        f"[팀수정] {original_team_name}, 수정 후 {new_team_name} | MMR: {new_team_mmr:.2f} | "
+        f"[팀수정] {original_team_name}, 수정 후 {new_team_name} | "
+        f"MMR: {format_team_mmr(new_team_mmr, new_team_data.mmr_confirmed)} | "
         f"선수: [{original_players_str}], 수정 후 [{new_players_str}] | "
         f"스태프: [{original_staff_str}], 수정 후 [{new_staff_str}]"
     )
@@ -452,7 +468,10 @@ async def _send_edit_result(
     if added:
         diff_parts.append(f"추가: {', '.join(sorted(added))}")
     diff_summary = '\n'.join(diff_parts) if diff_parts else "변경 없음"
-    mmr_line = build_team_mmr_line(new_team_mmr, new_team_data.players, team_processor.is_test_account)
+    mmr_line = build_team_mmr_line(
+        new_team_mmr, new_team_data.players, team_processor.is_test_account,
+        confirmed=new_team_data.mmr_confirmed,
+    )
     await update_temp_message(
         temp_message,
         f"**{new_team_name}** 팀이 수정되었습니다.\n\n{diff_summary}\n{mmr_line}",

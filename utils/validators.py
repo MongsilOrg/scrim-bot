@@ -218,8 +218,8 @@ GAME_NICKNAME_ERROR = "❌ 게임 내에서 확인되지 않는 닉네임: **{na
 API_UNAVAILABLE_NOTICE = "❌ 게임 서버 응답이 없어 닉네임을 확인할 수 없습니다.\n💡 잠시 후 다시 시도해주세요."
 
 
-def build_team_mmr_line(team_mmr: float, players: List[str], is_test_account) -> str:
-    if team_mmr > 0:
+def build_team_mmr_line(team_mmr: float, players: List[str], is_test_account, *, confirmed: bool) -> str:
+    if confirmed:
         return f"📊 팀 평균 MMR: **{team_mmr:.2f}**"
     if players and all(is_test_account(player) for player in players):
         return (

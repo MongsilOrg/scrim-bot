@@ -14,7 +14,7 @@ from utils.gsheet_client import create_gspread_client
 from utils.helpers import normalize_player_list
 from utils.validators import normalize_nickname_for_comparison
 
-from .team_data import TeamData
+from .team_data import TeamData, TeamMmrResult
 from services.discord_service import DiscordService
 
 if TYPE_CHECKING:
@@ -199,22 +199,27 @@ class TeamProcessor:
     def _get_test_account_mmr(self, nickname: str) -> Optional[float]:
         return self._test_accounts_by_key.get(normalize_nickname_for_comparison(nickname))
     
-    def _calculate_test_team_mmr(self, players: List[str]) -> float:
+    def _calculate_test_team_mmr(self, players: List[str]) -> TeamMmrResult:
         mmr_list = []
+        failed = []
         for player in players:
             mmr = self._get_test_account_mmr(player)
             if mmr is None:
                 logger.warning(f"[MMR조회] 테스트 계정 시트에 없음 - 플레이어: {player}")
+                failed.append(player)
                 continue
             mmr_list.append(mmr)
 
-        return self._average_top_three(mmr_list, len(players))
+        avg_mmr = self._average_top_three(mmr_list, len(players))
+        if avg_mmr is None:
+            return TeamMmrResult(failed_players=tuple(failed))
+        return TeamMmrResult(mmr=avg_mmr, confirmed=True)
 
     @staticmethod
-    def _average_top_three(mmr_list: List[float], expected_count: int) -> float:
-        """값을 모르는 인원이 있으면 0.0."""
+    def _average_top_three(mmr_list: List[float], expected_count: int) -> Optional[float]:
+        """값을 모르는 인원이 있으면 None, 0.0은 실제 0점."""
         if not mmr_list or len(mmr_list) < expected_count:
-            return 0.0
+            return None
         top_3_mmr = heapq.nlargest(3, mmr_list)
         return sum(top_3_mmr) / len(top_3_mmr)
     
@@ -272,17 +277,23 @@ class TeamProcessor:
         
         return team_priorities
     
-    async def fetch_team_mmr(self, team_name: str, team_data: TeamData) -> Tuple[str, TeamData, float]:
-        """실패 시 0.0. 여기서 team_data.mmr을 바꾸면 set_team_mmr의 _mmr_dirty 감지 무력화."""
+    async def fetch_team_mmr(self, team_name: str, team_data: TeamData) -> Tuple[str, TeamData, TeamMmrResult]:
+        """여기서 team_data.mmr을 바꾸면 apply_team_mmr의 _mmr_dirty 감지 무력화."""
+        players = []
         try:
             players = self._extract_players_only(team_data)
 
             has_test_account = any(self.is_test_account(player) for player in players)
 
             if has_test_account and all(self.is_test_account(player) for player in players):
-                avg_mmr = self._calculate_test_team_mmr(players)
-                return team_name, team_data, avg_mmr
-            
+                result = self._calculate_test_team_mmr(players)
+                if not result.confirmed:
+                    logger.warning(
+                        f"[MMR조회] 테스트 계정 MMR 미등록으로 팀 MMR 미확정 - 팀명: {team_name}, "
+                        f"대상: {list(result.failed_players)}"
+                    )
+                return team_name, team_data, result
+
             try:
                 async with BSERAPIClient() as api_client:
                     async def _fetch_player_mmr(player: str) -> Optional[float]:
@@ -306,20 +317,21 @@ class TeamProcessor:
 
                     results = await asyncio.gather(*[_fetch_player_mmr(p) for p in players])
                     mmr_list = [m for m in results if m is not None]
+                    missing = [p for p, m in zip(players, results) if m is None]
 
                     avg_mmr = self._average_top_three(mmr_list, len(players))
-                    if avg_mmr == 0.0:
-                        missing = [p for p, m in zip(players, results) if m is None]
+                    if avg_mmr is None:
                         logger.warning(f"[MMR조회] 일부 플레이어 MMR 조회 실패로 팀 MMR 미확정 - 팀명: {team_name}, 대상: {missing}")
+                        return team_name, team_data, TeamMmrResult(failed_players=tuple(missing))
 
-                    return team_name, team_data, avg_mmr
+                    return team_name, team_data, TeamMmrResult(mmr=avg_mmr, confirmed=True)
             except Exception as e:
                 logger.error(f"[MMR조회] API 클라이언트 사용 실패: {e}", exc_info=True)
-                return team_name, team_data, 0.0
+                return team_name, team_data, TeamMmrResult(failed_players=tuple(players))
 
         except Exception as e:
             logger.error(f"[MMR조회] 팀 MMR 조회 실패: {e}", exc_info=True)
-            return team_name, team_data, 0.0
+            return team_name, team_data, TeamMmrResult(failed_players=tuple(players))
     
     async def build_groups(self, teams: Dict[str, TeamData]) -> Tuple[List[List], List]:
         try:
@@ -356,8 +368,9 @@ class TeamProcessor:
         ]
 
         team_info = []
-        for team_name, team_data, mmr in await asyncio.gather(*tasks):
-            if mmr <= 0 and team_data.mmr > 0:
+        for team_name, team_data, result in await asyncio.gather(*tasks):
+            mmr = result.mmr
+            if not result.confirmed and team_data.mmr_confirmed:
                 logger.warning(f"[조편성] MMR 조회 실패, 마지막 확정값 사용 - 팀명: {team_name}, MMR: {team_data.mmr:.2f}")
                 mmr = team_data.mmr
             team_info.append((team_name, team_data, mmr))

@@ -14,6 +14,7 @@ from utils.layout_helpers import (
     send_error_message,
 )
 from commands.team_pipeline import schedule_mmr_refresh
+from models.team_data import format_team_mmr
 from models.team_data_manager import ASSIGNMENT_CLOSED_REGISTER_MSG
 from models.user_team_cache import UserTeamCache
 from utils.helpers import get_team_members, is_admin
@@ -177,7 +178,7 @@ class TeamInputView(LayoutView):
             fields = [("선수", members_str)]
             if staff:
                 fields.append(("스태프", staff_str))
-            fields.append(("MMR", f"{team_mmr:.2f}"))
+            fields.append(("MMR", format_team_mmr(team_mmr, bool(team_data and team_data.mmr_confirmed))))
 
             confirm_view = ConfirmView(
                 title="🚫 팀 등록 취소 확인",
@@ -434,7 +435,7 @@ class ForceCancelSelectView(_TimeoutEditView):
             chunk = sorted_names[start:start + _SELECT_OPTION_LIMIT]
             options = [
                 SelectOption(
-                    label=f"{name} (MMR: {getattr(teams[name], 'mmr', 0.0):.2f})"[:100],
+                    label=f"{name} (MMR: {format_team_mmr(getattr(teams[name], 'mmr', 0.0), getattr(teams[name], 'mmr_confirmed', False))})"[:100],
                     value=name,
                     description=(', '.join(getattr(teams[name], 'players', [])[:3]) or '정보 없음')[:100],
                 )

@@ -11,7 +11,7 @@ from config.settings import settings
 from utils.helpers import build_member_lookup, get_current_kst_time
 from utils.validators import member_name_keys, normalize_nickname_for_comparison, normalize_team_name
 
-from .team_data import TeamData
+from .team_data import TeamData, TeamMmrResult
 from .warning_manager import MASTERS_NOT_DEDUCTED
 from .team_backup import TeamBackup
 from .scrim_orchestrator import ScrimOrchestrator
@@ -452,14 +452,27 @@ class TeamDataManager:
         team = self.teams.get(team_name)
         return team.mmr if team else None
 
-    async def set_team_mmr(self, team_name: str, mmr: float) -> None:
+    async def apply_team_mmr(self, team_name: str, result: TeamMmrResult) -> None:
+        """미확정 결과는 마지막 확정값을 덮지 않고 조회 실패 멤버만 기록."""
         async with self._teams_lock:
             team = self.teams.get(team_name)
-            if team:
-                if team.mmr != mmr:
+            if not team:
+                return
+
+            if result.confirmed:
+                if (team.mmr != result.mmr or not team.mmr_confirmed
+                        or team.mmr_failed_players):
                     self._mmr_dirty = True
-                team.mmr = mmr
+                team.mmr = result.mmr
+                team.mmr_confirmed = True
+                team.mmr_failed_players = []
                 team.mmr_updated_at = get_current_kst_time()
+                return
+
+            failed = list(result.failed_players)
+            if team.mmr_failed_players != failed:
+                self._mmr_dirty = True
+            team.mmr_failed_players = failed
 
 
     async def replace_team(self, old_team_name: str, new_team: TeamData, new_mmr: float) -> Tuple[bool, str]:

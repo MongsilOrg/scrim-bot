@@ -1,8 +1,23 @@
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from utils.helpers import get_current_kst_time
+
+MMR_PENDING_LABEL = "미확정"
+
+
+def format_team_mmr(mmr: float, confirmed: bool) -> str:
+    """미확정과 실제 0점을 같은 0.00으로 보여주지 않기 위한 단일 표기 규칙."""
+    return f"{mmr:.2f}" if confirmed else MMR_PENDING_LABEL
+
+
+@dataclass(frozen=True)
+class TeamMmrResult:
+    """confirmed는 인원 전원의 MMR을 알아냈는지, mmr 0.0과는 별개."""
+    mmr: float = 0.0
+    confirmed: bool = False
+    failed_players: Tuple[str, ...] = ()
 
 
 @dataclass
@@ -12,6 +27,9 @@ class TeamData:
     staff: List[str] = field(default_factory=list)
     user_id: Optional[str] = None
     mmr: float = 0.0
+    mmr_confirmed: bool = False
+    # 마지막 갱신에서 MMR을 못 가져온 멤버, 표기에서 흐리게 처리
+    mmr_failed_players: List[str] = field(default_factory=list)
     mmr_updated_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -27,13 +45,19 @@ class TeamData:
     @property
     def all_members(self) -> List[str]:
         return self.players + self.staff
-    
+
+    @property
+    def mmr_display(self) -> str:
+        return format_team_mmr(self.mmr, self.mmr_confirmed)
+
     def to_dict(self) -> Dict:
         result = {
             'players': self.players,
             'staff': self.staff,
             'user_id': self.user_id,
             'mmr': self.mmr,
+            'mmr_confirmed': self.mmr_confirmed,
+            'mmr_failed_players': self.mmr_failed_players,
             'is_seed': self.is_seed,
             'seed_name': self.seed_name,
         }
@@ -54,6 +78,9 @@ class TeamData:
             user_id=data.get('user_id')
         )
         team.mmr = data.get('mmr', 0.0)
+        # 확정 여부가 없는 구버전 백업은 0보다 큰 값을 확정으로 간주
+        team.mmr_confirmed = data.get('mmr_confirmed', team.mmr > 0)
+        team.mmr_failed_players = list(data.get('mmr_failed_players', []))
         team.is_seed = data.get('is_seed', False)
         team.seed_name = data.get('seed_name')
         for attr in ('mmr_updated_at', 'created_at', 'updated_at'):
@@ -63,9 +90,7 @@ class TeamData:
         return team
     
     def __str__(self) -> str:
-        return f"TeamData(name='{self.name}', players={len(self.players)}, staff={len(self.staff)}, mmr={self.mmr:.2f})"
+        return f"TeamData(name='{self.name}', players={len(self.players)}, staff={len(self.staff)}, mmr={self.mmr_display})"
     
     def __repr__(self) -> str:
         return self.__str__()
-
-
