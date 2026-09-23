@@ -315,7 +315,7 @@ class ScheduleManager:
             if ws:
                 dt = datetime.fromisoformat(ws)
                 self.week_start = (
-                    KST.localize(dt) if dt.tzinfo is None else dt.astimezone(KST)
+                    dt.replace(tzinfo=KST) if dt.tzinfo is None else dt.astimezone(KST)
                 )
             else:
                 self.week_start = None

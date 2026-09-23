@@ -630,8 +630,10 @@ class WarningManager:
                 restricted_until_date = self._parse_sheet_date(record['제한해제일'])
                 if restricted_until_date is None:
                     continue
-                cutoff = KST.localize(
-                    datetime.combine(restricted_until_date, datetime.min.time().replace(hour=self.CLEANUP_HOUR))
+                cutoff = datetime.combine(
+                    restricted_until_date,
+                    datetime.min.time().replace(hour=self.CLEANUP_HOUR),
+                    tzinfo=KST,
                 )
                 if current_time > cutoff:
                     rows_to_delete.append(row_num)

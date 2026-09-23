@@ -1,8 +1,7 @@
 import unittest
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from types import SimpleNamespace
-
-import pytz
 
 from commands import room_code
 from utils.helpers import get_start_of_day_utc
@@ -73,8 +72,8 @@ class RoomCodeLogicTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await room_code.get_round_number(channel), 1)
 
     def test_get_start_of_day_utc(self):
-        kst = pytz.timezone('Asia/Seoul')
-        now = kst.localize(datetime(2026, 6, 12, 21, 30, 0))
+        kst = ZoneInfo('Asia/Seoul')
+        now = datetime(2026, 6, 12, 21, 30, 0, tzinfo=kst)
         start = get_start_of_day_utc(now)
         self.assertEqual(start.hour, 15)
         self.assertEqual(start.utcoffset().total_seconds(), 0)

@@ -1,10 +1,10 @@
 import json
 import os
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 import discord
-import pytz
 
 from config.settings import settings
 from utils.validators import member_name_keys, normalize_nickname_for_comparison
@@ -50,7 +50,7 @@ def build_member_lookup(guild: Optional[discord.Guild]) -> Dict[str, discord.Mem
     return lookup
 
 
-KST = pytz.timezone('Asia/Seoul')
+KST = ZoneInfo('Asia/Seoul')
 
 
 def get_current_kst_time() -> datetime:
@@ -61,7 +61,7 @@ def get_start_of_day_utc(now_kst: datetime = None) -> datetime:
     if now_kst is None:
         now_kst = get_current_kst_time()
     start_of_day_kst = now_kst.replace(hour=0, minute=0, second=0, microsecond=0)
-    return start_of_day_kst.astimezone(pytz.utc)
+    return start_of_day_kst.astimezone(timezone.utc)
 
 
 def get_group_letter(channel_id: int) -> str | None:
