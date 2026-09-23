@@ -2,6 +2,7 @@
 import asyncio
 import os
 import platform
+import shutil
 from io import BytesIO
 from typing import Dict, List, Optional
 
@@ -24,9 +25,13 @@ logger = get_logger('image_generator')
 TOURNAMENT_COLOR = '#FB9206'
 
 if platform.system() == 'Windows':
-    WKHTML_PATH = r'C:\Program Files\wkhtmltopdf\bin\wkhtmltoimage.exe'
+    _WKHTML_FALLBACKS = (r'C:\Program Files\wkhtmltopdf\bin\wkhtmltoimage.exe',)
 else:
-    WKHTML_PATH = '/usr/bin/wkhtmltoimage'
+    _WKHTML_FALLBACKS = ('/usr/local/bin/wkhtmltoimage', '/usr/bin/wkhtmltoimage')
+
+WKHTML_PATH = shutil.which('wkhtmltoimage') or next(
+    (p for p in _WKHTML_FALLBACKS if os.path.exists(p)), _WKHTML_FALLBACKS[0]
+)
 
 TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'assets', 'templates')
 
