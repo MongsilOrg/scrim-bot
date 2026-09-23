@@ -4,6 +4,7 @@ import os
 import platform
 import shutil
 from io import BytesIO
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from services.notion_api import get_server_info
@@ -35,6 +36,13 @@ WKHTML_PATH = shutil.which('wkhtmltoimage') or next(
 
 TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'assets', 'templates')
 
+# 서버 OS 에 한글 폰트가 없어도 같은 글꼴로 그리도록 저장소의 폰트 파일을 직접 지정
+_FONT_PATH = Path(__file__).resolve().parent.parent / 'assets' / 'NanumGothic.ttf'
+_FONT_FACE_STYLE = (
+    "<style>@font-face { font-family: 'NanumGothic'; "
+    f"src: url('{_FONT_PATH.as_uri()}') format('truetype'); }}</style>"
+)
+
 def _load_template(name: str) -> str:
     path = os.path.join(TEMPLATES_DIR, name)
     with open(path, 'r', encoding='utf-8') as f:
@@ -58,6 +66,7 @@ def _render_html_to_image(html_str: str, width: int = 800, height: int = None) -
         if height:
             options['height'] = height
 
+        html_str = html_str.replace('<head>', '<head>' + _FONT_FACE_STYLE, 1)
         img_bytes = imgkit.from_string(html_str, False, config=config, options=options)
         img_io = BytesIO(img_bytes)
         img_io.seek(0)
