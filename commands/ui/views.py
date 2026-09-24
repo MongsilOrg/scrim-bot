@@ -254,7 +254,7 @@ class TeamInputView(LayoutView):
             staff_str = ', '.join(staff) if staff else '(없음)'
             team_data_manager.log_action(
                 "취소", interaction.user, team_name,
-                detail=f"선수: {players_str} / 스태프: {staff_str}",
+                detail=f"선수 : {players_str} / 스태프: {staff_str}",
             )
             logger.info(f"[팀취소] {team_name} | 선수: [{players_str}] | 스태프: [{staff_str}]")
 
