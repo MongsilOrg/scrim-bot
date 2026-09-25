@@ -22,6 +22,13 @@ if TYPE_CHECKING:
 logger = get_logger('roster_views')
 
 
+def _team_name_line(team_names: List[str]) -> str:
+    def code(name: str) -> str:
+        return f"`` {name} ``" if '`' in name else f"`{name}`"
+
+    return "  ".join(code(n) for n in team_names)
+
+
 class GroupRosterView(LayoutView):
 
     def __init__(
@@ -43,6 +50,8 @@ class GroupRosterView(LayoutView):
             # discord_service가 이 모듈을 최상단에서 import해서 순환
             from services.discord_service import GROUP_IMAGE_FILENAME
             children.append(MediaGallery(discord.MediaGalleryItem(media=f"attachment://{GROUP_IMAGE_FILENAME}")))
+        if group_teams:
+            children.append(TextDisplay(content=_team_name_line([name for name, _, _ in group_teams])))
         children.append(Separator())
         children.append(TextDisplay(content=FOOTER_TEXT))
         self.add_item(Container(*children, accent_colour=Color.blue()))

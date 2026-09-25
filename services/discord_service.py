@@ -95,7 +95,9 @@ class DiscordService:
         role_mention = get_group_role_mention(guild, group_letter)
         if not role_mention:
             logger.warning(f"[Discord] 조별 역할을 찾을 수 없음 - 역할: {group_letter}조")
-        full_message = role_mention + "\n" + message if role_mention else message
+        title, _, rest = message.partition("\n")
+        info_line = " | ".join(part for part in (role_mention, rest) if part)
+        full_message = "\n".join(line for line in (title, info_line) if line)
 
         roster_view = GroupRosterView(
             group_letter, group,
@@ -449,10 +451,10 @@ class DiscordService:
 
     def create_group_announcement_message(self, group_letter: str, group: List[Tuple[str, "TeamData", float]]) -> str:
         current_time = get_current_kst_time()
-        date_str = current_time.strftime('%m.%d')
+        date_str = f"{current_time.strftime('%m.%d')}({'월화수목금토일'[current_time.weekday()]})"
 
         info = get_server_info()
-        message = f"📢 {date_str} {settings.SCRIM_START_HOUR}시 스크림 {group_letter}조 조편성 결과\n{info['operate']}"
+        message = f"## 📢 {date_str} {settings.SCRIM_START_HOUR}시 스크림 {group_letter}조 조편성 결과\n{info['operate']}"
 
         return message
 
