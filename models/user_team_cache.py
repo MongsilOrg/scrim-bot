@@ -39,7 +39,7 @@ class UserTeamCache:
         try:
             save_json_atomic(self._cache_path, self._data, indent=2)
         except OSError as e:
-            logger.error(f"[캐시] 캐시 파일 저장 실패: {e}")
+            logger.error(f"[캐시] 캐시 파일 저장 실패: {e}", exc_info=True)
 
     def get(self, user_id: str) -> Optional[dict]:
         return self._data.get(user_id)

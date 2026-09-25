@@ -41,7 +41,7 @@ async def fetch_holidays(
                 response.raise_for_status()
                 data = await response.json(content_type=None)
     except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-        logger.error(f"[공휴일] {year}년 공휴일 조회 실패 - {url}: {e}")
+        logger.error(f"[공휴일] {year}년 공휴일 조회 실패 - {url}: {e}", exc_info=True)
         return _holiday_cache.get(year, {})
     except Exception as e:
         logger.error(f"[공휴일] {year}년 공휴일 처리 중 예외 - {url}: {e}", exc_info=True)

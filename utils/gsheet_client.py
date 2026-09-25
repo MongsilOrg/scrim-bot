@@ -49,5 +49,5 @@ def create_gspread_client(
         return client, spreadsheet
 
     except Exception as e:
-        logger.error(f"{prefix}클라이언트 초기화 실패: {e}")
+        logger.error(f"{prefix}클라이언트 초기화 실패: {e}", exc_info=True)
         return None, None

@@ -1,12 +1,17 @@
 import asyncio
 import os
+import socket
 import sys
 
+import aiohttp
 import sentry_sdk
 from dotenv import load_dotenv
 
 # sentry_sdk.init이 config.settings의 load_dotenv보다 먼저 실행
 load_dotenv()
+
+
+_NETWORK_ERROR_TEXTS = ("Connection timeout", "Cannot connect to host", "Temporary failure in name resolution", "네트워크 오류", "연결 중 오류")
 
 
 def _sentry_before_send(event, hint):
@@ -16,9 +21,13 @@ def _sentry_before_send(event, hint):
         msg = str(exc_info[1])
         if name in ("TimeoutError", "ConnectTimeoutError", "ReadTimeout", "ConnectionError", "ClientConnectorError", "ClientOSError", "ServerDisconnectedError", "WSServerHandshakeError", "ConnectionClosed", "ConnectionResetError"):
             return None
-        for _t in ("Connection timeout", "Cannot connect to host", "Temporary failure in name resolution", "네트워크 오류", "연결 중 오류"):
+        for _t in _NETWORK_ERROR_TEXTS:
             if _t in msg:
                 return None
+    logentry = event.get("logentry") or {}
+    msg = logentry.get("formatted") or logentry.get("message") or ""
+    if any(t in msg for t in _NETWORK_ERROR_TEXTS):
+        return None
     return event
 
 
@@ -91,6 +100,9 @@ async def main():
 
         await client.start(settings.DISCORD_TOKEN)
 
+    except (aiohttp.ClientConnectionError, ConnectionError, socket.gaierror, asyncio.TimeoutError) as e:
+        logger.warning(f"[시작] 네트워크 연결 실패 - 오류: {e}")
+        raise
     except Exception as e:
         logger.error(f"[시작] 봇 실행 실패: {e}", exc_info=True)
         raise

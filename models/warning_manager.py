@@ -84,7 +84,7 @@ class WarningManager:
             self._ensure_warning_log_headers()
 
         except Exception as e:
-            logger.error(f"[경고관리] 워크시트 초기화 실패: {e}")
+            logger.error(f"[경고관리] 워크시트 초기화 실패: {e}", exc_info=True)
     
     def _ensure_headers(self) -> None:
         try:
@@ -101,7 +101,7 @@ class WarningManager:
             elif first_row != expected_headers:
                 logger.warning(f"[경고관리] 패널티 시트 헤더 불일치 - 현재: {first_row}")
         except Exception as e:
-            logger.error(f"[경고관리] 패널티 시트 헤더 확인 실패: {e}")
+            logger.error(f"[경고관리] 패널티 시트 헤더 확인 실패: {e}", exc_info=True)
 
     def _ensure_warning_log_headers(self) -> None:
         try:
@@ -118,7 +118,7 @@ class WarningManager:
             elif first_row != expected_headers:
                 logger.warning(f"[경고관리] 패널티로그 시트 헤더 불일치 - 현재: {first_row}")
         except Exception as e:
-            logger.error(f"[경고관리] 경고로그 시트 헤더 확인 실패: {e}")
+            logger.error(f"[경고관리] 경고로그 시트 헤더 확인 실패: {e}", exc_info=True)
 
     def _add_to_warning_log(self, warning_type: str, target: str, date: str, restricted_until: str, reason: str, target_id: str = '') -> None:
         """누락 시 이후 누적 회차 과소 산정."""
@@ -142,7 +142,7 @@ class WarningManager:
                 if attempt == 1:
                     logger.warning(f"[경고관리] 경고로그 추가 실패 - 재시도 - 대상: {target}: {e}")
                 else:
-                    logger.error(f"[경고관리] 경고로그 추가 최종 실패 - 대상: {target}: {e}")
+                    logger.error(f"[경고관리] 경고로그 추가 최종 실패 - 대상: {target}: {e}", exc_info=True)
 
     @classmethod
     def restriction_days_for(cls, warning_count: int) -> int:
@@ -178,7 +178,7 @@ class WarningManager:
                 self.worksheet.delete_rows(row_num)
                 deleted += 1
             except Exception as e:
-                logger.error(f"[경고관리] {label} 행 삭제 실패 - 행: {row_num}: {e}")
+                logger.error(f"[경고관리] {label} 행 삭제 실패 - 행: {row_num}: {e}", exc_info=True)
         return deleted
 
     @staticmethod
@@ -204,7 +204,7 @@ class WarningManager:
         try:
             records = self.warning_log_worksheet.get_all_records(expected_headers=self.LOG_HEADERS)
         except Exception as e:
-            logger.error(f"[경고관리] 경고 횟수 집계 실패: {e}")
+            logger.error(f"[경고관리] 경고 횟수 집계 실패: {e}", exc_info=True)
             return None
 
         count = 0
@@ -255,7 +255,7 @@ class WarningManager:
                 )
             ]
         except Exception as e:
-            logger.error(f"[경고관리] 주의 기록 조회 실패: {e}")
+            logger.error(f"[경고관리] 주의 기록 조회 실패: {e}", exc_info=True)
             return []
 
     def _compute_restriction_terms(
@@ -441,7 +441,7 @@ class WarningManager:
                 return False, "유형은 '주의' 또는 '경고'만 가능합니다.", None, []
 
         except Exception as e:
-            logger.error(f"[경고관리] 경고 추가 실패 - 대상: {target}, 유형: {warning_type}, 오류: {e}")
+            logger.error(f"[경고관리] 경고 추가 실패 - 대상: {target}, 유형: {warning_type}, 오류: {e}", exc_info=True)
             return False, f"경고 추가 중 오류가 발생했습니다: {str(e)}", None, []
     
     def _get_warnings_cache(self) -> List[Dict]:
@@ -465,7 +465,7 @@ class WarningManager:
             return warnings
             
         except Exception as e:
-            logger.error(f"[경고관리] 경고 데이터 캐시 로드 실패: {e}")
+            logger.error(f"[경고관리] 경고 데이터 캐시 로드 실패: {e}", exc_info=True)
             if self._warnings_cache is not None:
                 logger.warning("[경고관리] API 오류 발생 - 캐시된 데이터 사용")
                 return self._warnings_cache
@@ -520,7 +520,7 @@ class WarningManager:
             return False, None
 
         except Exception as e:
-            logger.error(f"[경고관리] 제한 상태 확인 실패: {e}")
+            logger.error(f"[경고관리] 제한 상태 확인 실패: {e}", exc_info=True)
             return False, None
     
     def _load_masters_state(self) -> Optional[date]:
@@ -530,7 +530,7 @@ class WarningManager:
         except FileNotFoundError:
             return None
         except Exception as e:
-            logger.error(f"[경고관리] 마스터즈 상태 파일 읽기 실패: {e}")
+            logger.error(f"[경고관리] 마스터즈 상태 파일 읽기 실패: {e}", exc_info=True)
             return None
         return self._parse_sheet_date(raw)
 
@@ -541,7 +541,7 @@ class WarningManager:
                 {'last_processed': last_processed.strftime('%Y-%m-%d')},
             )
         except Exception as e:
-            logger.error(f"[경고관리] 마스터즈 상태 파일 저장 실패: {e}")
+            logger.error(f"[경고관리] 마스터즈 상태 파일 저장 실패: {e}", exc_info=True)
 
     def _extend_active_restrictions(self, masters_day: date) -> int:
         """개별 update로 쪼개면 부분 적용 뒤 재시도 때 이중 연장."""
@@ -585,7 +585,7 @@ class WarningManager:
                 get_masters_dates, last_processed + timedelta(days=1), today
             )
         except Exception as e:
-            logger.error(f"[경고관리] 마스터즈 일정 조회 실패: {e}")
+            logger.error(f"[경고관리] 마스터즈 일정 조회 실패: {e}", exc_info=True)
             return False
 
         # 상태를 끝에 한 번만 저장하면 중간 실패 뒤 재시도에서 이중 연장
@@ -595,7 +595,7 @@ class WarningManager:
                 try:
                     extended = await asyncio.to_thread(self._extend_active_restrictions, day)
                 except Exception as e:
-                    logger.error(f"[경고관리] 마스터즈 진행일({day}) 연장 실패: {e}")
+                    logger.error(f"[경고관리] 마스터즈 진행일({day}) 연장 실패: {e}", exc_info=True)
                     return False
                 if extended:
                     self._invalidate_cache()
@@ -620,7 +620,7 @@ class WarningManager:
             return deleted_count
 
         except Exception as e:
-            logger.error(f"[경고관리] 만료된 제한 항목 정리 실패: {e}")
+            logger.error(f"[경고관리] 만료된 제한 항목 정리 실패: {e}", exc_info=True)
             return 0
 
     def _cleanup_penalty_sheet(self, current_time: datetime) -> int:
@@ -641,7 +641,7 @@ class WarningManager:
             return self._delete_rows_desc(rows_to_delete, "패널티 시트")
 
         except Exception as e:
-            logger.error(f"[경고관리] 패널티 시트 정리 실패: {e}")
+            logger.error(f"[경고관리] 패널티 시트 정리 실패: {e}", exc_info=True)
             return 0
 
     async def cleanup_loop(self) -> None:
@@ -650,7 +650,7 @@ class WarningManager:
                 try:
                     caught_up = await self.process_masters_days()
                 except Exception as e:
-                    logger.error(f"[경고관리] 마스터즈 처리 실패: {e}")
+                    logger.error(f"[경고관리] 마스터즈 처리 실패: {e}", exc_info=True)
                     caught_up = False
 
                 # 연장 전에 만료 행을 지우면 연장 대상 소실
@@ -662,7 +662,7 @@ class WarningManager:
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            logger.error(f"[경고관리] 정리 루프 실패: {e}")
+            logger.error(f"[경고관리] 정리 루프 실패: {e}", exc_info=True)
     
     def start_cleanup_task(self) -> None:
         if self.cleanup_task and not self.cleanup_task.done():
