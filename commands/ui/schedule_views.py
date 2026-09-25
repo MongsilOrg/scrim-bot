@@ -227,7 +227,8 @@ class ScheduleView(LayoutView):
             await _refresh_schedule_status(btn_interaction)
 
         async def do_back(btn_interaction: discord.Interaction):
-            await btn_interaction.response.defer_update()
+            await btn_interaction.response.defer()
+            await btn_interaction.delete_original_response()
 
         reassign_btn.callback = do_reassign
         cancel_btn.callback = do_cancel
