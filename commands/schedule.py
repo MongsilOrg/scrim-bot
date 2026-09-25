@@ -45,6 +45,7 @@ async def _weekly_reset_loop(client: ScrimBot) -> None:
                 channel = guild.get_channel(settings.SCHEDULE_CHANNEL_ID)
                 if channel:
                     await refresh_dashboard(guild, channel=channel, schedule_mgr=schedule_mgr)
+            logger.info(f"[일정] 자동 주차 전환 완료 - 주차: {schedule_mgr.week_label}")
         except Exception as e:
             logger.error(f"[일정] 자동 주차 전환 실패: {e}", exc_info=True)
 

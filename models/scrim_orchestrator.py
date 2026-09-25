@@ -133,7 +133,7 @@ class ScrimOrchestrator:
                 logger.warning("[조편성] 클라이언트가 없어 Discord 서비스를 건너뜁니다.")
         except Exception as e:
             error_msg = f"[조편성] 자동 조편성 실행 중 오류 발생: {e}"
-            logger.error(error_msg)
+            logger.error(error_msg, exc_info=True)
             team_data_manager = self._manager
             self._rollback_assignment()
 
@@ -241,14 +241,18 @@ async def transition_to_next_scrim(client: "ScrimBot", channel: discord.TextChan
     if old_tdm.mmr_message:
         try:
             await old_tdm.mmr_message.delete()
-        except Exception:
+        except discord.NotFound:
             pass
+        except Exception as e:
+            logger.warning(f"[스크림] 이전 MMR 메시지 삭제 실패: {e}")
     elif old_tdm.mmr_message_id:
         try:
             old_mmr_msg = await channel.fetch_message(old_tdm.mmr_message_id)
             await old_mmr_msg.delete()
-        except Exception:
+        except discord.NotFound:
             pass
+        except Exception as e:
+            logger.warning(f"[스크림] 이전 MMR 메시지 삭제 실패: {e}")
 
     team_data_manager = await bot_manager.reset_team_data_manager(client)
     if old_msg_id:
@@ -292,9 +296,11 @@ async def daily_reset_loop(client: "ScrimBot", refresh_dashboard) -> None:
         try:
             guild = client.guilds[0] if client.guilds else None
             if not guild:
+                logger.warning("[스크림] 자동 전환 건너뜀 - 서버를 찾을 수 없음")
                 continue
             channel = guild.get_channel(settings.SCRIM_CHANNEL_ID)
             if not channel:
+                logger.warning(f"[스크림] 자동 전환 건너뜀 - 채널 없음: {settings.SCRIM_CHANNEL_ID}")
                 continue
 
             await transition_to_next_scrim(client, channel, refresh_dashboard)

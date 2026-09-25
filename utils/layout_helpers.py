@@ -131,8 +131,8 @@ async def send_response(
                 await interaction.followup.send(
                     "오류가 발생했습니다.", ephemeral=True
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[레이아웃] 오류 안내 전송 실패: {e}")
         return None
 
 
@@ -161,8 +161,8 @@ async def send_error_message(interaction: discord.Interaction, message: str) -> 
                 await interaction.response.send_message(f"오류: {message}", ephemeral=True)
             else:
                 await interaction.followup.send(f"오류: {message}", ephemeral=True)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[레이아웃] 오류 안내 전송 실패: {e}")
 
 
 async def upsert_persistent_message(
@@ -193,8 +193,10 @@ async def upsert_persistent_message(
             logger.warning(f"[레이아웃] 상시 메시지 편집 실패 - 재생성: {e}")
             try:
                 await old_message.delete()
-            except Exception:
+            except discord.NotFound:
                 pass
+            except Exception as e:
+                logger.warning(f"[레이아웃] 기존 상시 메시지 삭제 실패: {e}")
 
     send_kwargs: dict = {"view": view}
     if files:

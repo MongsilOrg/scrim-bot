@@ -55,7 +55,7 @@ def _is_scrim_notice_message(message: discord.Message) -> bool:
                 if "스크림 공지" in content:
                     return True
     except Exception:
-        pass
+        logger.debug("[명령어] 공지 메시지 컴포넌트 판별 실패", exc_info=True)
     if message.embeds:
         title = message.embeds[0].title or ""
         if "스크림 공지" in title:
@@ -251,8 +251,10 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                             await interaction.followup.send(
                                 view=warning_view(weather_warning), ephemeral=True
                             )
+                    except discord.HTTPException as e:
+                        logger.warning(f"[명령어] 날씨 경고 전송 실패: {e}")
                     except Exception:
-                        pass
+                        logger.exception("[명령어] 날씨 경고 전송 실패")
                 break
 
             except discord.NotFound:

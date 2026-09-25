@@ -1,4 +1,3 @@
-import asyncio
 from typing import TYPE_CHECKING, List
 
 import discord
@@ -55,7 +54,7 @@ async def bootstrap_on_ready(client: "ScrimBot") -> None:
                 if (team_data_manager.is_scrim_date_today()
                         and current_time.hour >= settings.TEAM_REGISTRATION_DEADLINE_HOUR):
                     logger.info(f"[시작] {settings.TEAM_REGISTRATION_DEADLINE_HOUR}시 이후 재시작 - 조편성 미완료, 즉시 실행")
-                    asyncio.create_task(team_data_manager.start_team_assignment())
+                    team_data_manager.spawn_task(team_data_manager.start_team_assignment())
                 else:
                     team_data_manager.start_background_tasks()
                     logger.info("[시작] 조편성/MMR 태스크 재시작")

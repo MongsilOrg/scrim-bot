@@ -203,8 +203,13 @@ class TeamDataManager:
     def spawn_task(self, coro) -> asyncio.Task:
         task = asyncio.create_task(coro)
         self._pending_tasks.add(task)
-        task.add_done_callback(self._pending_tasks.discard)
+        task.add_done_callback(self._on_task_done)
         return task
+
+    def _on_task_done(self, task: asyncio.Task) -> None:
+        self._pending_tasks.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            logger.error("[팀데이터] 백그라운드 태스크 실패", exc_info=task.exception())
 
     async def _cancel_task_and_wait(self, task: Optional[asyncio.Task], label: str, timeout: float = 10.0) -> None:
         if not task:
