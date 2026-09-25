@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
@@ -66,3 +67,18 @@ class ScrimbotLogger:
 
 def get_logger(name: str) -> logging.Logger:
     return ScrimbotLogger.get_logger(name)
+
+
+_log_once_at: dict[str, float] = {}
+
+
+def log_once(key: str, ttl: float = 1800) -> bool:
+    now = time.monotonic()
+    last = _log_once_at.get(key)
+    if last is not None and now - last < ttl:
+        return False
+    if len(_log_once_at) > 2000:
+        for k in [k for k, t in _log_once_at.items() if now - t >= ttl]:
+            del _log_once_at[k]
+    _log_once_at[key] = now
+    return True

@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 import aiohttp
 
-from config.logging_config import get_logger
+from config.logging_config import get_logger, log_once
 from config.settings import settings
 
 logger = get_logger('bser_api')
@@ -24,7 +24,6 @@ class BSERAPIClient:
     # 일회용 인스턴스 간 공유 캐시, self에 재할당하면 공유가 끊김
     _nickname_cache: Dict[str, Dict[str, Any]] = {}
     _mmr_cache: Dict[str, Dict[str, Any]] = {}
-    _failed_nicknames: Dict[str, float] = {}
 
     def __init__(self):
         self.api_key = settings.BSER_API_KEY
@@ -164,7 +163,8 @@ class BSERAPIClient:
             if data is None:
                 return True
             return data.get("code") != 200
-        except Exception:
+        except Exception as e:
+            logger.warning(f"[API] 점검 여부 확인 실패, 점검으로 간주 - 오류: {e}")
             return True
 
 
@@ -188,14 +188,8 @@ class BSERAPIClient:
                 return uid
             logger.warning(f"[API] UID 필드를 찾을 수 없음 - 닉네임: '{user_nickname}'")
         elif data.get("code") == 404:
-            current_time = time.time()
-            last_log_time = self._failed_nicknames.get(user_nickname, 0)
-            if current_time - last_log_time > 300:
+            if log_once(f"nickname404:{user_nickname}"):
                 logger.warning(f"[API] 닉네임 조회 실패 (404) - 닉네임: '{user_nickname}'")
-                if len(self._failed_nicknames) > self.CACHE_MAX_ENTRIES:
-                    for k in [k for k, t in self._failed_nicknames.items() if current_time - t > 300]:
-                        del self._failed_nicknames[k]
-                self._failed_nicknames[user_nickname] = current_time
         else:
             logger.warning(f"[API] 닉네임 조회 API 응답 코드 오류 - 닉네임: '{user_nickname}', 코드: {data.get('code')}, 메시지: {data.get('message')}")
         
@@ -216,7 +210,8 @@ class BSERAPIClient:
             return {"userRank": {"mmr": 0}}
 
         if data.get('code') == 404:
-            logger.warning(f"[API] 사용자 MMR 조회 실패 (404) - UID: {uid}, 존재하지 않는 사용자 또는 랭크 데이터 없음")
+            if log_once(f"rank404:{uid}"):
+                logger.warning(f"[API] 사용자 MMR 조회 실패 (404) - UID: {uid}, 존재하지 않는 사용자 또는 랭크 데이터 없음")
         else:
             logger.warning(f"[API] 사용자 MMR 조회 API 응답 코드 오류 - UID: {uid}, 코드: {data.get('code')}, 메시지: {data.get('message')}")
         return None

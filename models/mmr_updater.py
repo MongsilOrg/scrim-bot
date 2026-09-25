@@ -48,7 +48,7 @@ class MmrUpdater:
             )
 
             if not img_io:
-                logger.error("[MMR메시지] 이미지 생성 실패", exc_info=True)
+                logger.warning("[MMR메시지] 이미지 생성 실패")
                 return
 
             update_time = mgr._last_success_time or get_current_kst_time().strftime('%H:%M')
@@ -95,8 +95,10 @@ class MmrUpdater:
                     logger.warning(f"[MMR메시지] 편집 실패 - 재시도: {e}")
                     try:
                         await mgr.mmr_message.delete()
-                    except Exception:
+                    except discord.NotFound:
                         pass
+                    except Exception as e:
+                        logger.warning(f"[MMR메시지] 기존 메시지 삭제 실패: {e}")
                     mgr.mmr_message = None
                     mgr.mmr_message_id = None
 
@@ -115,12 +117,14 @@ class MmrUpdater:
 
     # 스킵 조건이 놓친 표시 변화의 최대 반영 지연
     RENDER_BACKSTOP_SECONDS = 1800
+    OUTAGE_ALERT_CYCLES = 3
 
     async def mmr_update_loop(self) -> None:
         team_data_manager = self._manager
         last_fail_count: Optional[int] = None
         last_server_info: Optional[dict] = None
         last_render_at: float = 0.0
+        all_fail_cycles = 0
         try:
             # setup_scrim_dashboard와 동시 실행 시 충돌
             await asyncio.sleep(10)
@@ -152,7 +156,13 @@ class MmrUpdater:
                                 f"[MMR갱신] 서버 점검 감지 - 실패: {fail}팀, "
                                 f"갱신 주기 {settings.MMR_UPDATE_MAINTENANCE_INTERVAL_SECONDS // 60}분"
                             )
+                            all_fail_cycles += 1
+                            if all_fail_cycles == self.OUTAGE_ALERT_CYCLES:
+                                logger.error(
+                                    f"[MMR갱신] BSER 조회 전체 실패 지속 - 연속: {all_fail_cycles}회, 실패: {fail}팀"
+                                )
                         else:
+                            all_fail_cycles = 0
                             team_data_manager.is_maintenance = False
                             if success > 0:
                                 team_data_manager.mark_mmr_success()
