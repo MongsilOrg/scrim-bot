@@ -27,7 +27,7 @@ class ScrimbotLogger:
         level = getattr(logging, log_level.upper(), logging.INFO)
         
         formatter = KSTFormatter(
-            '%(asctime)s | %(name)s | %(levelname)s | %(message)s',
+            '%(asctime)s | %(levelname)-7s | %(name)s | %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         
@@ -61,7 +61,7 @@ class ScrimbotLogger:
     def get_logger(cls, name: str) -> logging.Logger:
         if not cls._initialized:
             cls.setup_logging()
-        return logging.getLogger(f'scrimbot.{name}')
+        return logging.getLogger(f'scrim-bot.{name}')
 
 
 def get_logger(name: str) -> logging.Logger:
