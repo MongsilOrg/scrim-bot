@@ -5,13 +5,13 @@ from datetime import datetime, timedelta
 import aiohttp
 import discord
 from discord import ButtonStyle
-from discord.ui import ActionRow, Button, Container, LayoutView, Separator, TextDisplay
+from discord.ui import ActionRow, Button, Container, DynamicItem, LayoutView, Separator, TextDisplay
 
 from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
 from services.score_aggregation import compute_ban_list_for_channel
-from utils.layout_helpers import error_view, warning_view, send_response, FOOTER_TEXT
+from utils.layout_helpers import error_view, permission_error_view, warning_view, send_response, FOOTER_TEXT
 from utils.helpers import (
     get_current_kst_time,
     get_group_letter,
@@ -119,40 +119,85 @@ class RoomCodeView(LayoutView):
 
         self.add_item(Container(*children, accent_colour=discord.Color.blue()))
 
-        if weather_options:
-            buttons = []
-            for weather_name in weather_options:
-                btn = Button(label=weather_name, style=ButtonStyle.secondary)
-                btn.callback = self._make_weather_callback(weather_name)
-                buttons.append(btn)
+        if weather_options and group_letter:
+            buttons = [
+                WeatherButton(group_letter, round_number, cleaned_room_code, round_start_str, SUB_WEATHERS.index(name))
+                for name in weather_options
+            ]
             self.add_item(ActionRow(*buttons))
 
-    def _make_weather_callback(self, weather_name: str):
-        async def callback(interaction: discord.Interaction) -> None:
-            if not is_admin(interaction.user):
-                await send_response(interaction, error_view("관리자만 날씨를 선택할 수 있습니다."))
-                return
 
-            team_data_manager = BotManager.get_instance().get_team_data_manager()
-            team_data_manager.add_selected_weather(self.group_letter, weather_name)
+BAN_PREFIX = "🚫 밴: "
 
-            main_weather = MAIN_WEATHERS.get(self.round_number, "알 수 없음")
-            new_weather = f"`{main_weather}` / `{weather_name}`"
 
-            new_view = RoomCodeView(
-                round_number=self.round_number,
-                cleaned_room_code=self.cleaned_room_code,
-                weather_value=new_weather,
-                round_start_str=self.round_start_str,
-                ban_display=self.ban_display,
-                role_mention=self.role_mention,
-                group_letter=self.group_letter,
-            )
+def _find_ban_display(message: discord.Message | None) -> str | None:
+    for component in getattr(message, 'components', None) or []:
+        for child in getattr(component, 'children', None) or []:
+            content = getattr(child, 'content', '') or ''
+            if content.startswith(BAN_PREFIX):
+                return content[len(BAN_PREFIX):]
+    return None
 
-            await interaction.response.edit_message(view=new_view)
-            logger.info(f"[날씨] {self.group_letter}조 {self.round_number}R 서브 날씨 선택: {weather_name}")
 
-        return callback
+class WeatherButton(
+    DynamicItem[Button],
+    template=r"scrim:weather:(?P<group>[A-Z]):(?P<round>\d+):(?P<code>\d{6}):(?P<start>\d{4}):(?P<index>\d)",
+):
+    def __init__(self, group_letter: str, round_number: int, room_code: str, round_start_str: str, weather_index: int):
+        self.group_letter = group_letter
+        self.round_number = round_number
+        self.room_code = room_code
+        self.round_start_str = round_start_str
+        self.weather_index = weather_index
+        start = round_start_str.replace(":", "")
+        super().__init__(Button(
+            label=SUB_WEATHERS[weather_index],
+            style=ButtonStyle.secondary,
+            custom_id=f"scrim:weather:{group_letter}:{round_number}:{room_code}:{start}:{weather_index}",
+        ))
+
+    @classmethod
+    async def from_custom_id(cls, interaction: discord.Interaction, item: Button, match) -> "WeatherButton":
+        start = match["start"]
+        return cls(
+            match["group"], int(match["round"]), match["code"],
+            f"{start[:2]}:{start[2:]}", int(match["index"]),
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not is_admin(interaction.user):
+            await send_response(interaction, error_view("관리자만 날씨를 선택할 수 있습니다."))
+            return
+        if self.weather_index >= len(SUB_WEATHERS):
+            await send_response(interaction, error_view("알 수 없는 날씨입니다."))
+            return
+
+        weather_name = SUB_WEATHERS[self.weather_index]
+        team_data_manager = BotManager.get_instance().get_team_data_manager()
+        team_data_manager.add_selected_weather(self.group_letter, weather_name)
+
+        main_weather = MAIN_WEATHERS.get(self.round_number, "알 수 없음")
+        role_mention = get_group_role_mention(interaction.guild, self.group_letter) if interaction.guild else ""
+
+        new_view = RoomCodeView(
+            round_number=self.round_number,
+            cleaned_room_code=self.room_code,
+            weather_value=f"`{main_weather}` / `{weather_name}`",
+            round_start_str=self.round_start_str,
+            ban_display=_find_ban_display(interaction.message),
+            role_mention=role_mention,
+            group_letter=self.group_letter,
+        )
+
+        await interaction.response.edit_message(view=new_view)
+        logger.info(f"[날씨] {self.group_letter}조 {self.round_number}R 서브 날씨 선택: {weather_name}")
+
+
+def _can_post_room_code(member: discord.Member, group_letter: str) -> bool:
+    if is_admin(member):
+        return True
+    role_name = f"{group_letter}조"
+    return any(role.name == role_name for role in getattr(member, 'roles', []))
 
 
 async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
@@ -171,6 +216,21 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
                 logger.warning("[명령어] Interaction 만료됨")
             return
 
+        group_letter = get_group_letter(interaction.channel.id)
+        if not group_letter:
+            await send_response(interaction, error_view("방코드는 조별 채널에서만 공지할 수 있습니다."))
+            return
+        if not _can_post_room_code(interaction.user, group_letter):
+            logger.info(f"[명령어] 방코드 권한 없음 - 사용자: {interaction.user}, 조: {group_letter}조")
+            await send_response(interaction, permission_error_view(f"관리자 또는 {group_letter}조 참가자만 방코드를 공지할 수 있습니다."))
+            return
+
+        # 채널 기록 스캔과 CSV 집계가 3초 응답 제한을 넘김
+        try:
+            await interaction.response.defer()
+        except discord.NotFound:
+            logger.warning("[명령어] Interaction 만료되어 defer 불가 - 채널로 직접 전송")
+
         cleaned_room_code = clean_room_code(room_code)
 
         now = get_current_kst_time()
@@ -178,47 +238,38 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
 
         round_number = await get_round_number(interaction.channel)
 
-        group_letter = get_group_letter(interaction.channel.id)
         main_weather = MAIN_WEATHERS.get(round_number, "알 수 없음")
         weather_options = None
         weather_warning = None
 
-        if group_letter:
-            team_data_manager = BotManager.get_instance().get_team_data_manager()
-            selected = team_data_manager.get_selected_weathers(group_letter)
-            available = [w for w in SUB_WEATHERS if w not in selected]
+        team_data_manager = BotManager.get_instance().get_team_data_manager()
+        selected = team_data_manager.get_selected_weathers(group_letter)
+        available = [w for w in SUB_WEATHERS if w not in selected]
 
-            expected_selected = round_number - 1
-            if len(selected) < expected_selected:
-                missed = expected_selected - len(selected)
-                weather_warning = f"이전 라운드의 서브 날씨가 {missed}개 미선택 상태입니다."
+        expected_selected = round_number - 1
+        if len(selected) < expected_selected:
+            missed = expected_selected - len(selected)
+            weather_warning = f"이전 라운드의 서브 날씨가 {missed}개 미선택 상태입니다."
 
-            if len(available) == 1:
-                sub_weather = available[0]
-                team_data_manager.add_selected_weather(group_letter, sub_weather)
-                weather_value = f"`{main_weather}` / `{sub_weather}`"
-            elif len(available) == 0:
-                weather_value = f"`{main_weather}`"
-            else:
-                sub_list = ", ".join(f"`{w}`" for w in available)
-                weather_value = f"`{main_weather}` / {sub_list}"
-                weather_options = available
+        if len(available) == 1:
+            sub_weather = available[0]
+            team_data_manager.add_selected_weather(group_letter, sub_weather)
+            weather_value = f"`{main_weather}` / `{sub_weather}`"
+        elif len(available) == 0:
+            weather_value = f"`{main_weather}`"
         else:
-            weather_value = f"`{main_weather}` / {', '.join(f'`{w}`' for w in SUB_WEATHERS)}"
+            sub_list = ", ".join(f"`{w}`" for w in available)
+            weather_value = f"`{main_weather}` / {sub_list}"
+            weather_options = available
 
         ban_display = None
-        if group_letter:
-            ban_list = await compute_ban_list_for_channel(interaction.channel)
-            if ban_list:
-                ban_display = " ".join(f"`{char}`" for char in ban_list)
+        ban_list = await compute_ban_list_for_channel(interaction.channel)
+        if ban_list:
+            ban_display = " ".join(f"`{char}`" for char in ban_list)
 
-        role_mention = ""
-        if group_letter:
-            role_mention = get_group_role_mention(interaction.guild, group_letter)
-            if not role_mention:
-                logger.warning(f"[명령어] 조별 역할을 찾을 수 없음 - 역할: {group_letter}조")
-        else:
-            logger.warning(f"[명령어] 채널에 해당하는 조를 찾을 수 없음 - 채널 ID: {interaction.channel.id}")
+        role_mention = get_group_role_mention(interaction.guild, group_letter)
+        if not role_mention:
+            logger.warning(f"[명령어] 조별 역할을 찾을 수 없음 - 역할: {group_letter}조")
 
         room_code_view = RoomCodeView(
             round_number=round_number,
@@ -239,18 +290,14 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
 
         for attempt in range(max_retries):
             try:
-                if interaction.response.is_done():
-                    await interaction.followup.send(**send_kwargs)
-                else:
-                    await interaction.response.send_message(**send_kwargs)
+                await interaction.followup.send(**send_kwargs)
 
                 logger.debug(f"[명령어] Round {round_number} 방코드 공지 완료: {cleaned_room_code}")
                 if weather_warning:
                     try:
-                        if interaction.response.is_done():
-                            await interaction.followup.send(
-                                view=warning_view(weather_warning), ephemeral=True
-                            )
+                        await interaction.followup.send(
+                            view=warning_view(weather_warning), ephemeral=True
+                        )
                     except discord.HTTPException as e:
                         logger.warning(f"[명령어] 날씨 경고 전송 실패: {e}")
                     except Exception:

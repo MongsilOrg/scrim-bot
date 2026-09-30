@@ -104,6 +104,8 @@ async def on_message(message: discord.Message) -> None:
         return
     if not any(is_csv_filename(att.filename) for att in message.attachments):
         return
+    if not get_group_letter(message.channel.id):
+        return
 
     try:
         await _process_csv_attachments(message)
