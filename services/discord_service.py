@@ -172,7 +172,8 @@ class DiscordService:
                 logger.warning(f"[Discord] 조별 공지 메시지를 찾을 수 없음 - 조: {group_letter}조")
                 return
 
-            message = self.create_group_announcement_message(group_letter, group_teams)
+            info = await asyncio.to_thread(get_server_info)
+            message = self.create_group_announcement_message(group_letter, group_teams, info)
             # dict 삽입 순서가 곧 팀 번호 순서
             teams_by_name = {team_name: team_data for team_name, team_data, _ in group_teams}
             img_io = await self._processor.generate_group_image(
@@ -216,6 +217,8 @@ class DiscordService:
                 logger.error(f"[Discord] 휴무일 정보 조회 실패, 자율 진행 안내 생략: {e}", exc_info=True)
                 is_rest_day = False
 
+            info = await asyncio.to_thread(get_server_info)
+
             for group_letter in settings.GROUP_CHANNEL_IDS.keys():
                 try:
                     channel_id = settings.GROUP_CHANNEL_IDS.get(group_letter)
@@ -228,7 +231,7 @@ class DiscordService:
                             group_index = ord(group_letter) - ord('A')
                             if group_index < len(groups) and len(groups[group_index]) > 0:
                                 group = groups[group_index]
-                                message = self.create_group_announcement_message(group_letter, group)
+                                message = self.create_group_announcement_message(group_letter, group, info)
                                 await self.send_group_announcement_with_image(channel, message, group, is_rest_day=is_rest_day)
                             else:
                                 pass
@@ -449,11 +452,10 @@ class DiscordService:
         except Exception as e:
             logger.error(f"[Discord] 음성채널 이름 변경 실패: {e}", exc_info=True)
 
-    def create_group_announcement_message(self, group_letter: str, group: List[Tuple[str, "TeamData", float]]) -> str:
+    def create_group_announcement_message(self, group_letter: str, group: List[Tuple[str, "TeamData", float]], info: dict) -> str:
         current_time = get_current_kst_time()
         date_str = f"{current_time.strftime('%m.%d')}({'월화수목금토일'[current_time.weekday()]})"
 
-        info = get_server_info()
         message = f"## 📢 {date_str} {settings.SCRIM_START_HOUR}시 스크림 {group_letter}조 조편성 결과\n{info['operate']}"
 
         return message

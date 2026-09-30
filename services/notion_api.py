@@ -64,11 +64,14 @@ def _query_database(payload: dict) -> list:
     return results
 
 
-def get_notion_data():
+def get_notion_data(since: date):
     payload = {
         "filter": {
-            "property": "날짜",
-            "date": { "is_not_empty": True }
+            "and": [
+                { "property": "날짜", "date": { "is_not_empty": True } },
+                # get_masters_dates와 같은 30일 여유
+                { "property": "날짜", "date": { "on_or_after": (since - timedelta(days=30)).isoformat() } },
+            ]
         }
     }
     return _query_database(payload)
@@ -128,7 +131,7 @@ def check_notion_for_tags():
     today = effective_scrim_date(now)
     tomorrow = (now + timedelta(days=1)).date()
 
-    return _decide(get_notion_data(), today, tomorrow)
+    return _decide(get_notion_data(min(today, tomorrow)), today, tomorrow)
 
 
 def get_masters_dates(range_start: date, range_end: date) -> Set[date]:
