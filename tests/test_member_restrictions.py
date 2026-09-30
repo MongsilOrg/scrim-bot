@@ -13,6 +13,9 @@ class FakeWarningManager:
         self._restricted = {name.lower() for name in restricted}
         self.checked = []
 
+    async def ensure_connected(self):
+        return True
+
     def is_restricted(self, target_id=None, target_name=None, check_date=None):
         self.checked.append(target_name)
         if target_name and target_name.lower() in self._restricted:

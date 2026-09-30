@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import tempfile
@@ -18,6 +19,7 @@ def make_manager(worksheet=None, log_worksheet=None):
     manager._warnings_cache = None
     manager._cache_timestamp = None
     manager._cache_ttl = 300
+    manager._write_lock = asyncio.Lock()
     return manager
 
 

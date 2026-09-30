@@ -262,7 +262,7 @@ class TeamDataManager:
         previous_members: Optional[List[str]] = None,
     ) -> Tuple[bool, str]:
         warning_manager = BotManager.get_instance().get_warning_manager()
-        if not (warning_manager and warning_manager.worksheet):
+        if not (warning_manager and await warning_manager.ensure_connected()):
             return True, ""
 
         member_names = list(new_team.all_members) if new_team else []
@@ -408,7 +408,7 @@ class TeamDataManager:
 
         except Exception as e:
             logger.error(f"[팀데이터] 팀 추가 실패: {e}", exc_info=True)
-            return False, f"팀 추가 중 오류가 발생했습니다: {str(e)}"
+            return False, "팀 등록 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
 
     async def remove_team(self, team_name: str) -> Tuple[bool, str]:
         """반환: 성공 여부, 실패 사유 또는 빈 문자열."""
@@ -430,7 +430,7 @@ class TeamDataManager:
 
         except Exception as e:
             logger.error(f"[팀데이터] 팀 제거 실패: {e}", exc_info=True)
-            return False, f"팀 제거 중 오류가 발생했습니다: {str(e)}"
+            return False, "팀 취소 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
 
     def find_user_team(self, user_id: str, member: Optional[discord.Member] = None) -> Optional[str]:
         for team_name, team_data in self.teams.items():

@@ -1,11 +1,13 @@
 import asyncio
 import json
+import time
 from datetime import date, datetime, timedelta
 from typing import Dict, Iterator, List, Optional, Tuple
 
 import gspread
 from gspread.utils import rowcol_to_a1
 
+from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
 from utils.gsheet_client import create_gspread_client
@@ -45,8 +47,51 @@ class WarningManager:
         self._warnings_cache: Optional[List[Dict]] = None
         self._cache_timestamp: Optional[datetime] = None
         self._cache_ttl: int = 300
-        self._initialize_client()
-    
+        self._write_lock = asyncio.Lock()
+        self._connect_lock = asyncio.Lock()
+        self._last_connect_attempt: float = 0.0
+        self._connect_failure_notified = False
+
+    RECONNECT_COOLDOWN_SECONDS = 60
+
+    async def ensure_connected(self) -> bool:
+        """시트 연결이 없으면 재시도, 실패는 로그 채널에 연속 실패당 한 번 알림."""
+        if self.worksheet:
+            return True
+        async with self._connect_lock:
+            if self.worksheet:
+                return True
+            now = time.monotonic()
+            if self._last_connect_attempt and now - self._last_connect_attempt < self.RECONNECT_COOLDOWN_SECONDS:
+                return False
+            self._last_connect_attempt = now
+            try:
+                await asyncio.to_thread(self._initialize_client)
+            except Exception as e:
+                logger.error(f"[경고관리] 시트 연결 실패: {e}", exc_info=True)
+
+            if self.worksheet:
+                if self._connect_failure_notified:
+                    self._connect_failure_notified = False
+                    await self._notify_log_channel("✅ 경고 시트 연결이 복구되었습니다.")
+                return True
+
+            if not self._connect_failure_notified:
+                self._connect_failure_notified = True
+                await self._notify_log_channel(
+                    "⚠️ 경고 시트에 연결하지 못했습니다. 연결될 때까지 팀 등록에서 제재 여부를 확인하지 않습니다."
+                )
+            return False
+
+    async def _notify_log_channel(self, text: str) -> None:
+        try:
+            client = BotManager.get_instance().get_client()
+            channel = client.get_channel(settings.LOG_CHANNEL_ID) if client else None
+            if channel:
+                await channel.send(text)
+        except Exception as e:
+            logger.warning(f"[경고관리] 로그 채널 알림 실패: {e}")
+
     def _initialize_client(self) -> None:
         self.client, self.spreadsheet = create_gspread_client(caller='경고관리')
 
@@ -82,9 +127,11 @@ class WarningManager:
 
             self._ensure_headers()
             self._ensure_warning_log_headers()
+            logger.info("[경고관리] 시트 연결 완료")
 
         except Exception as e:
             logger.error(f"[경고관리] 워크시트 초기화 실패: {e}", exc_info=True)
+            self.worksheet = None
     
     def _ensure_headers(self) -> None:
         try:
@@ -163,17 +210,24 @@ class WarningManager:
     def _penalty_row(self, values: Dict[str, str]) -> List[str]:
         return self._sheet_row(self.PENALTY_HEADERS, values)
 
+    def _row_record(self, row: List[str]) -> Dict:
+        padded = row + [''] * (len(self.PENALTY_HEADERS) - len(row))
+        return dict(zip(self.PENALTY_HEADERS, padded))
+
     def _iter_penalty_rows(self) -> Iterator[Tuple[int, Dict]]:
         """1-based 행 번호와 레코드 dict 순회."""
         all_values = self.worksheet.get_all_values()
         for row_num, row in enumerate(all_values[1:], start=2):
-            padded = row + [''] * (len(self.PENALTY_HEADERS) - len(row))
-            yield row_num, dict(zip(self.PENALTY_HEADERS, padded))
+            yield row_num, self._row_record(row)
 
-    def _delete_rows_desc(self, row_nums: List[int], label: str) -> int:
-        """위에서부터 지우면 행 번호가 밀림. 반환 삭제 성공 수."""
+    def _delete_rows_desc(self, rows: List[Tuple[int, Dict]], label: str) -> int:
+        """위에서부터 지우면 행 번호가 밀림. 시트를 직접 고쳐 내용이 바뀐 행은 건너뜀. 반환 삭제 성공 수."""
+        current = self.worksheet.get_all_values()
         deleted = 0
-        for row_num in sorted(row_nums, reverse=True):
+        for row_num, record in sorted(rows, key=lambda item: item[0], reverse=True):
+            if row_num > len(current) or self._row_record(current[row_num - 1]) != record:
+                logger.warning(f"[경고관리] {label} 행 내용이 바뀌어 삭제 건너뜀 - 행: {row_num}")
+                continue
             try:
                 self.worksheet.delete_rows(row_num)
                 deleted += 1
@@ -289,7 +343,7 @@ class WarningManager:
             converted_rows = cautions[-self.CAUTION_TO_WARNING_COUNT:][::-1]
             converted_cautions = [record for _, record in converted_rows]
 
-            self._delete_rows_desc([row_num for row_num, _ in converted_rows], "주의")
+            self._delete_rows_desc(converted_rows, "주의")
 
             return {
                 'target': target,
@@ -314,9 +368,21 @@ class WarningManager:
         admin_display_name: str
     ) -> Tuple[bool, str, Optional[Dict], List[Dict]]:
         """반환: 성공 여부, 메시지, 자동 생성된 경고 정보, 변환된 주의 내역."""
-        if not self.worksheet:
-            return False, "구글 시트 연결이 설정되지 않았습니다.", None, []
-        
+        if not await self.ensure_connected():
+            return False, "구글 시트에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.", None, []
+
+        # 정리 루프의 행 삭제와 행 번호가 엇갈리지 않게 직렬화
+        async with self._write_lock:
+            return await self._add_warning_locked(target, target_id, warning_type, reason, admin_display_name)
+
+    async def _add_warning_locked(
+        self,
+        target: str,
+        target_id: str,
+        warning_type: str,
+        reason: str,
+        admin_display_name: str
+    ) -> Tuple[bool, str, Optional[Dict], List[Dict]]:
         try:
             current_time = get_current_kst_time()
 
@@ -442,7 +508,10 @@ class WarningManager:
 
         except Exception as e:
             logger.error(f"[경고관리] 경고 추가 실패 - 대상: {target}, 유형: {warning_type}, 오류: {e}", exc_info=True)
-            return False, f"경고 추가 중 오류가 발생했습니다: {str(e)}", None, []
+            return False, (
+                "제재 기록 중 오류가 발생했습니다. "
+                "시트에 일부만 기록되었을 수 있으니 패널티 시트를 확인해주세요."
+            ), None, []
     
     def _get_warnings_cache(self) -> List[Dict]:
         current_time = get_current_kst_time()
@@ -636,7 +705,7 @@ class WarningManager:
                     tzinfo=KST,
                 )
                 if current_time > cutoff:
-                    rows_to_delete.append(row_num)
+                    rows_to_delete.append((row_num, record))
 
             return self._delete_rows_desc(rows_to_delete, "패널티 시트")
 
@@ -647,17 +716,19 @@ class WarningManager:
     async def cleanup_loop(self) -> None:
         try:
             while True:
-                try:
-                    caught_up = await self.process_masters_days()
-                except Exception as e:
-                    logger.error(f"[경고관리] 마스터즈 처리 실패: {e}", exc_info=True)
-                    caught_up = False
+                if await self.ensure_connected():
+                    async with self._write_lock:
+                        try:
+                            caught_up = await self.process_masters_days()
+                        except Exception as e:
+                            logger.error(f"[경고관리] 마스터즈 처리 실패: {e}", exc_info=True)
+                            caught_up = False
 
-                # 연장 전에 만료 행을 지우면 연장 대상 소실
-                if caught_up:
-                    await asyncio.to_thread(self.cleanup_expired_restrictions)
-                else:
-                    logger.warning("[경고관리] 마스터즈 처리 미완 - 만료 정리 보류")
+                        # 연장 전에 만료 행을 지우면 연장 대상 소실
+                        if caught_up:
+                            await asyncio.to_thread(self.cleanup_expired_restrictions)
+                        else:
+                            logger.warning("[경고관리] 마스터즈 처리 미완 - 만료 정리 보류")
                 await asyncio.sleep(3600)
         except asyncio.CancelledError:
             pass

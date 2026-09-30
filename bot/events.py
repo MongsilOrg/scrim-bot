@@ -66,10 +66,8 @@ async def bootstrap_on_ready(client: "ScrimBot") -> None:
     else:
         team_data_manager.clear_backup()
 
-    warning_manager = bot_manager.get_warning_manager()
-    if warning_manager.worksheet:
-        warning_manager.start_cleanup_task()
-        logger.info("[시작] 경고 관리 시스템 초기화 완료")
+    # 시트 연결 재시도는 정리 루프와 사용 시점 몫
+    bot_manager.get_warning_manager().start_cleanup_task()
 
     try:
         await setup_scrim_dashboard(client)
