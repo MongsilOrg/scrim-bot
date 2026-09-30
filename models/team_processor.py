@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import heapq
 import json
 import time
@@ -274,7 +275,9 @@ class TeamProcessor:
         
         return team_priorities
     
-    async def fetch_team_mmr(self, team_name: str, team_data: TeamData) -> Tuple[str, TeamData, float]:
+    async def fetch_team_mmr(
+        self, team_name: str, team_data: TeamData, api_client: Optional[BSERAPIClient] = None,
+    ) -> Tuple[str, TeamData, float]:
         """실패 시 0.0. 여기서 team_data.mmr을 바꾸면 set_team_mmr의 _mmr_dirty 감지 무력화."""
         try:
             players = self._extract_players_only(team_data)
@@ -286,7 +289,10 @@ class TeamProcessor:
                 return team_name, team_data, avg_mmr
             
             try:
-                async with BSERAPIClient() as api_client:
+                async with contextlib.AsyncExitStack() as stack:
+                    if api_client is None:
+                        api_client = await stack.enter_async_context(BSERAPIClient())
+
                     async def _fetch_player_mmr(player: str) -> Optional[float]:
                         try:
                             if self.is_test_account(player):

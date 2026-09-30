@@ -25,8 +25,25 @@ class MmrUpdater:
 
     def __init__(self, manager: "TeamDataManager"):
         self._manager = manager
+        self._render_lock = asyncio.Lock()
+        self._render_waiters = 0
 
     async def update_mmr_message(self, channel: discord.TextChannel, mmr_fail_count: int = 0) -> None:
+        self._render_waiters += 1
+        try:
+            await self._render_lock.acquire()
+        finally:
+            self._render_waiters -= 1
+        try:
+            if self._render_waiters > 0:
+                # 대기 중인 뒤 요청이 더 새 상태로 그림
+                logger.debug("[MMR메시지] 뒤 요청에 합쳐 갱신 생략")
+                return
+            await self._render_mmr_message(channel, mmr_fail_count)
+        finally:
+            self._render_lock.release()
+
+    async def _render_mmr_message(self, channel: discord.TextChannel, mmr_fail_count: int) -> None:
         mgr = self._manager
         # get_server_info는 TTL 캐시
         info = await asyncio.to_thread(get_server_info)
@@ -208,6 +225,7 @@ class MmrUpdater:
             team_data_manager.mmr_update_task = None
 
     TEAM_MMR_TTL_SECONDS = 600
+    TEAM_FETCH_CONCURRENCY = 3
 
     async def update_all_team_mmr(self, force: bool = False) -> Tuple[int, int]:
         """반환: 성공 팀 수, 실패 팀 수. TTL 스킵도 성공으로 집계."""
@@ -222,27 +240,38 @@ class MmrUpdater:
             current_time = get_current_kst_time()
             skipped = 0
 
-            teams_copy = dict(mgr.teams)
-            for team_name, team_data in teams_copy.items():
-                try:
-                    if not force and team_data.mmr_updated_at:
-                        elapsed = (current_time - team_data.mmr_updated_at).total_seconds()
-                        if elapsed < self.TEAM_MMR_TTL_SECONDS:
-                            skipped += 1
-                            success_count += 1
-                            continue
+            targets = []
+            for team_name, team_data in dict(mgr.teams).items():
+                if not force and team_data.mmr_updated_at:
+                    elapsed = (current_time - team_data.mmr_updated_at).total_seconds()
+                    if elapsed < self.TEAM_MMR_TTL_SECONDS:
+                        skipped += 1
+                        continue
+                targets.append((team_name, team_data))
+            success_count += skipped
 
-                    _, _, team_mmr = await team_processor.fetch_team_mmr(team_name, team_data)
-                    if team_mmr > 0:
-                        await mgr.set_team_mmr(team_name, team_mmr)
-                        success_count += 1
-                    else:
-                        fail_count += 1
+            if targets:
+                semaphore = asyncio.Semaphore(self.TEAM_FETCH_CONCURRENCY)
 
-                except Exception as e:
-                    logger.error(f"[MMR갱신] 팀 MMR 갱신 실패 - 팀명: {team_name}: {e}", exc_info=True)
-                    fail_count += 1
-                    continue
+                async def _refresh(team_name, team_data, api_client) -> bool:
+                    try:
+                        async with semaphore:
+                            _, _, team_mmr = await team_processor.fetch_team_mmr(
+                                team_name, team_data, api_client=api_client
+                            )
+                        if team_mmr > 0:
+                            await mgr.set_team_mmr(team_name, team_mmr)
+                            return True
+                    except Exception as e:
+                        logger.error(f"[MMR갱신] 팀 MMR 갱신 실패 - 팀명: {team_name}: {e}", exc_info=True)
+                    return False
+
+                async with BSERAPIClient() as api_client:
+                    results = await asyncio.gather(
+                        *(_refresh(name, data, api_client) for name, data in targets)
+                    )
+                success_count += sum(results)
+                fail_count += len(results) - sum(results)
 
             if skipped > 0:
                 logger.debug(f"[MMR갱신] {skipped}개 팀 캐시 히트 (TTL 이내 갱신됨)")
