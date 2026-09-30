@@ -32,6 +32,7 @@ ASSIGNMENT_CLOSED_CANCEL_MSG = (
 ASSIGNMENT_CLOSED_FORCE_CANCEL_MSG = (
     f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시 조편성이 완료되어 강제취소가 불가능합니다."
 )
+MODAL_SERVER_ERROR_MSG = "Discord 서버 오류로 입력 창을 열지 못했습니다. 잠시 후 다시 시도해주세요."
 
 
 class TeamInputView(LayoutView):
@@ -142,6 +143,9 @@ class TeamInputView(LayoutView):
 
         except discord.NotFound:
             logger.warning("[뷰] 팀 추가 interaction 만료")
+        except discord.DiscordServerError as e:
+            logger.warning(f"[뷰] 팀 추가 모달 표시 실패 - Discord 서버 오류 {e.status}")
+            await send_error_message(interaction, MODAL_SERVER_ERROR_MSG)
         except Exception as e:
             logger.error(f"[뷰] 팀 추가 콜백 처리 실패: {e}", exc_info=True)
             await send_error_message(interaction, "팀 추가 중 오류가 발생했습니다.")
@@ -221,6 +225,9 @@ class TeamInputView(LayoutView):
 
         except discord.NotFound:
             logger.warning("[뷰] 팀 수정 모달 interaction 만료")
+        except discord.DiscordServerError as e:
+            logger.warning(f"[뷰] 팀 수정 모달 표시 실패 - Discord 서버 오류 {e.status}")
+            await send_error_message(interaction, MODAL_SERVER_ERROR_MSG)
         except Exception as e:
             logger.error(f"[뷰] 팀 수정 모달 표시 실패: {e}", exc_info=True)
             await send_error_message(interaction, "팀 수정 모달 표시 중 오류가 발생했습니다.")

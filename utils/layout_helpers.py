@@ -103,6 +103,10 @@ def image_response_view(
     return view
 
 
+def is_interaction_expired(exc: BaseException) -> bool:
+    return isinstance(exc, discord.NotFound) and exc.code == 10062
+
+
 async def send_response(
     interaction: discord.Interaction,
     view: LayoutView,
@@ -121,7 +125,13 @@ async def send_response(
         else:
             return await interaction.followup.send(**kwargs, wait=True)
     except Exception as e:
-        logger.error(f"[레이아웃] 응답 전송 실패: {e}", exc_info=True)
+        if is_interaction_expired(e):
+            logger.warning("[레이아웃] 응답 전송 실패 - interaction 만료")
+            return None
+        if isinstance(e, discord.DiscordServerError):
+            logger.warning(f"[레이아웃] 응답 전송 실패 - Discord 서버 오류 {e.status}")
+        else:
+            logger.error(f"[레이아웃] 응답 전송 실패: {e}", exc_info=True)
         try:
             if not interaction.response.is_done():
                 await interaction.response.send_message(
