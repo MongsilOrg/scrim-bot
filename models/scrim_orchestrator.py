@@ -6,7 +6,7 @@ import discord
 
 from bot.manager import BotManager
 from commands.ui.roster_views import GroupRosterView
-from utils.layout_helpers import error_view
+from utils.layout_helpers import custom_view, error_view
 from config.logging_config import get_logger
 from config.settings import settings
 from utils.helpers import get_current_kst_time, get_next_scrim_date
@@ -23,21 +23,27 @@ class ScrimOrchestrator:
     def __init__(self, manager: "TeamDataManager"):
         self._manager = manager
 
+    # 호스트 절전 등으로 긴 sleep이 밀릴 때의 최대 지연
+    MAX_ASSIGN_WAIT_SECONDS = 3600
+
     async def check_and_auto_assign(self) -> None:
         while True:
             try:
-                await asyncio.sleep(settings.AUTO_ASSIGNMENT_CHECK_INTERVAL)
-
                 team_data_manager = self._manager
-
-                if not team_data_manager._should_check_auto_assign():
-                    continue
-
                 current_time = get_current_kst_time()
 
-                if current_time.hour >= settings.TEAM_REGISTRATION_DEADLINE_HOUR:
+                if (team_data_manager._should_check_auto_assign()
+                        and current_time.hour >= settings.TEAM_REGISTRATION_DEADLINE_HOUR):
                     await self.start_team_assignment()
                     break
+
+                target = current_time.replace(
+                    hour=settings.TEAM_REGISTRATION_DEADLINE_HOUR, minute=0, second=0, microsecond=0
+                )
+                if current_time >= target:
+                    target += timedelta(days=1)
+                wait_seconds = (target - current_time).total_seconds()
+                await asyncio.sleep(min(wait_seconds, self.MAX_ASSIGN_WAIT_SECONDS) + 1)
 
             except asyncio.CancelledError:
                 break
@@ -60,11 +66,21 @@ class ScrimOrchestrator:
             if team_data_manager.is_team_assignment_started:
                 return
 
+            last = team_data_manager.last_auto_assignment
+            if last and last.date() == current_time.date():
+                logger.info("[조편성] 오늘 조편성 처리 완료 상태 - 건너뜀")
+                return
+
             total_teams_current = len(team_data_manager.teams)
             logger.info(f"[조편성] 조편성 시작 - {total_teams_current}팀")
 
             if total_teams_current < settings.TEAMS_PER_GROUP:
                 logger.warning(f"[조편성] 팀 부족으로 중단 - {total_teams_current}팀 < {settings.TEAMS_PER_GROUP}팀")
+                # 재시작 때 취소 공지 재전송 방지
+                team_data_manager.last_auto_assignment = current_time
+                team_data_manager.save_backup()
+                if total_teams_current:
+                    await self._send_cancellation_notice(team_data_manager, total_teams_current)
                 return
 
             await self._refresh_mmr_before_assignment(team_data_manager)
@@ -76,6 +92,31 @@ class ScrimOrchestrator:
         except Exception as e:
             logger.error(f"[조편성] 자동 조편성 중 오류: {str(e)}", exc_info=True)
             self._rollback_assignment()
+
+    async def _send_cancellation_notice(self, team_data_manager, team_count: int) -> None:
+        try:
+            client = team_data_manager.client or BotManager.get_instance().get_client()
+            channel = client.get_channel(team_data_manager.scrim_channel_id) if client and team_data_manager.scrim_channel_id else None
+            if not channel:
+                logger.warning("[조편성] 스크림 채널을 찾을 수 없어 취소 공지 생략")
+                return
+
+            date_str = f"{team_data_manager.scrim_month}/{team_data_manager.scrim_day}"
+            mentions = " ".join(
+                f"<@{team.user_id}>" for team in team_data_manager.teams.values() if team.user_id
+            )
+            description = (
+                f"등록된 팀이 {team_count}팀으로 최소 {settings.TEAMS_PER_GROUP}팀에 미달하여 "
+                f"오늘 스크림은 진행하지 않습니다.\n"
+                f"다음 스크림 신청은 {settings.NEXT_SCRIM_OPEN_HOUR}시에 열립니다."
+            )
+            if mentions:
+                description = f"{mentions}\n{description}"
+            view = custom_view(f"📢 {date_str} 스크림 취소 안내", description, discord.Color.orange())
+            await channel.send(view=view, allowed_mentions=discord.AllowedMentions(users=True))
+            logger.info(f"[조편성] 팀 부족 취소 공지 전송 - {team_count}팀")
+        except Exception as e:
+            logger.error(f"[조편성] 취소 공지 전송 실패: {e}", exc_info=True)
 
     def _rollback_assignment(self) -> None:
         """조편성 감지로 이미 종료된 MMR 루프도 재시작 대상."""
@@ -132,8 +173,7 @@ class ScrimOrchestrator:
             else:
                 logger.warning("[조편성] 클라이언트가 없어 Discord 서비스를 건너뜁니다.")
         except Exception as e:
-            error_msg = f"[조편성] 자동 조편성 실행 중 오류 발생: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(f"[조편성] 자동 조편성 실행 중 오류 발생: {e}", exc_info=True)
             team_data_manager = self._manager
             self._rollback_assignment()
 
@@ -142,7 +182,9 @@ class ScrimOrchestrator:
                 if client and team_data_manager.scrim_channel_id:
                     channel = client.get_channel(team_data_manager.scrim_channel_id)
                     if channel:
-                        await channel.send(view=error_view(error_msg))
+                        await channel.send(view=error_view(
+                            "자동 조편성 중 오류가 발생했습니다.\n관리자에게 문의해주세요."
+                        ))
             except Exception as e2:
                 logger.error(f"[Discord] 오류 메시지 전송 실패: {e2}", exc_info=True)
 
