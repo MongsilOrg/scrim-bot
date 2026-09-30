@@ -52,7 +52,3 @@ class UserTeamCache:
             "cached_at": datetime.now(KST).isoformat(),
         }
         self._save()
-
-    def delete(self, user_id: str) -> None:
-        self._data.pop(user_id, None)
-        self._save()

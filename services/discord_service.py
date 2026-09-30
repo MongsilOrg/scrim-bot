@@ -253,7 +253,7 @@ class DiscordService:
             try:
                 await coro_factory()
                 return
-            except (discord.HTTPException, discord.Forbidden) as e:
+            except discord.HTTPException as e:
                 if retry == retries - 1:
                     logger.error(f"{error_message}: {e}", exc_info=True)
                 else:
@@ -395,11 +395,11 @@ class DiscordService:
         try:
             await voice_channel.edit(name=new_name)
             return True
-        except discord.HTTPException as e:
-            logger.error(f"[Discord] 음성채널 이름 변경 실패 - {context}, 채널: {voice_channel.name}: {e}", exc_info=True)
-            return False
         except discord.Forbidden:
             logger.error(f"[Discord] 음성채널 이름 변경 권한 없음 - {context}, 채널: {voice_channel.name}")
+            return False
+        except discord.HTTPException as e:
+            logger.error(f"[Discord] 음성채널 이름 변경 실패 - {context}, 채널: {voice_channel.name}: {e}", exc_info=True)
             return False
 
     async def rename_group_voice_channel(self, guild: discord.Guild, group_letter: str, team_index: int, team_name: str) -> None:

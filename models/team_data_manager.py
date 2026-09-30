@@ -142,10 +142,6 @@ class TeamDataManager:
             key = normalize_nickname_for_comparison(member)
             self.team_by_member[key] = team_name
 
-    def get_team_by_member(self, member_name: str) -> Optional[str]:
-        key = normalize_nickname_for_comparison(member_name)
-        return self.team_by_member.get(key)
-
     async def reset_team_data(self) -> None:
         try:
             logger.debug("[팀데이터] 초기화 시작")
