@@ -118,7 +118,7 @@ def build_rest_day_guide_view(team_name: str, user_id: Optional[str] = None) -> 
 class TeamSelectionView(LayoutView):
 
     def __init__(self, parent_view: 'GroupRosterView'):
-        super().__init__(timeout=None)
+        super().__init__(timeout=300)
         self.parent_view = parent_view
         self.is_empty = not parent_view.group_teams
 

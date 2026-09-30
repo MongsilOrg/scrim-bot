@@ -343,7 +343,7 @@ class TeamInputView(LayoutView):
 
 
 class _TimeoutEditView(LayoutView):
-    def __init__(self, *, timeout: float = 60):
+    def __init__(self, *, timeout: float = 180):
         super().__init__(timeout=timeout)
         self.message: Optional[discord.Message] = None
 
