@@ -19,6 +19,8 @@ from utils.layout_helpers import (
 )
 from utils.helpers import is_admin
 
+from .views import ConfirmView
+
 logger = get_logger('schedule_views')
 
 
@@ -216,15 +218,35 @@ class ScheduleView(LayoutView):
             )
             await _refresh_schedule_status(btn_interaction)
 
-        async def do_cancel(btn_interaction: discord.Interaction):
+        async def execute_cancel(confirm_interaction: discord.Interaction):
+            if not is_admin(confirm_interaction.user):
+                await send_response(confirm_interaction, permission_error_view())
+                return
             schedule_mgr.assignments.clear()
             schedule_mgr.actual_deployments.clear()
             schedule_mgr.save_backup()
+            logger.info(f"[일정] 편성 취소 - 관리자: {confirm_interaction.user}")
             await send_response(
-                btn_interaction,
+                confirm_interaction,
                 success_view("주간 일정 편성과 투입 기록이 초기화되었습니다.", title="↩️ 편성 취소"),
             )
-            await _refresh_schedule_status(btn_interaction)
+            await _refresh_schedule_status(confirm_interaction)
+
+        async def do_cancel(btn_interaction: discord.Interaction):
+            deploy_count = len(schedule_mgr.actual_deployments)
+            body = "주간 일정 편성을 취소하시겠습니까?"
+            if deploy_count:
+                body += f"\n투입 기록 {deploy_count}건도 함께 삭제됩니다."
+            confirm_view = ConfirmView(
+                title="↩️ 편성 취소 확인",
+                body=body,
+                confirm_label="편성 취소하기",
+                confirm_emoji="⚠️",
+                accent_colour=Color.orange(),
+                error_text="편성 취소 중 오류가 발생했습니다.",
+                on_confirm=execute_cancel,
+            )
+            confirm_view.message = await send_response(btn_interaction, confirm_view)
 
         async def do_back(btn_interaction: discord.Interaction):
             await btn_interaction.response.defer()
