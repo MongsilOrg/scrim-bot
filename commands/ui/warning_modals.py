@@ -30,7 +30,7 @@ def _caution_history(cautions: list, detailed: bool) -> str:
         caution_date = caution.get('날짜', 'N/A')
         caution_reason = caution.get('사유', 'N/A')
         if detailed:
-            lines.append(f"`{i}회` {caution_date}\n└ {caution_reason}")
+            lines.append(f"`{i}회` {caution_date}\n{caution_reason}")
         else:
             lines.append(f"`{i}회` {caution_date}: {caution_reason}")
     if not lines:
@@ -105,15 +105,15 @@ class WarningReasonModal(Modal):
             options=[
                 RadioGroupOption(label="지각", value="지각", description="경고, 참여 제한"),
                 RadioGroupOption(label="대타", value="대타", description="주의"),
-                RadioGroupOption(label="기타 (주의)", value="기타주의", description="사유 직접 입력"),
-                RadioGroupOption(label="기타 (경고)", value="기타경고", description="사유 직접 입력"),
+                RadioGroupOption(label="기타 주의", value="기타주의", description="사유 직접 입력"),
+                RadioGroupOption(label="기타 경고", value="기타경고", description="사유 직접 입력"),
             ],
             required=True,
         )
         self.add_item(Label(text="사유", component=self.reason_radio))
 
         self.detail_input = TextInput(
-            placeholder="기타 선택 시 필수 / 그 외 추가 설명 (선택사항)",
+            placeholder="기타 선택 시 필수, 그 외에는 추가 설명",
             max_length=200,
             required=False,
             style=discord.TextStyle.paragraph,

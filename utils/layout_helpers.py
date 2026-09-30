@@ -45,8 +45,8 @@ def info_view(description: str, title: str = "스크림 안내") -> LayoutView:
     return _build_view(title, description, discord.Color.blue())
 
 
-def processing_view(description: str = "잠시만 기다려주세요.") -> LayoutView:
-    return _build_view("⏳ 처리 중...", description, discord.Color.blue())
+def processing_view(description: str = "잠시 기다려주세요.") -> LayoutView:
+    return _build_view("⏳ 처리 중", description, discord.Color.blue())
 
 
 def timeout_view(description: str = "시간이 초과되었습니다. 다시 시도해주세요.") -> LayoutView:

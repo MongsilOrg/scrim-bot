@@ -103,7 +103,7 @@ def build_rest_day_guide_view(team_name: str, user_id: Optional[str] = None) -> 
         "아래 링크를 확인한 뒤 참여해주세요.\n\n"
         f"`{team_name}` 팀은 사설방 개설 후 양식에 맞춰 업로드해주세요.\n"
         f"{settings.CUSTOM_GAME_GUIDE_LINK}\n\n"
-        "공휴일/주말 스크림 간에 발생한 문제는 당일 중으로 문의주셔야 원활한 처리가 가능하니 참고 부탁드립니다."
+        "공휴일, 주말 스크림 중 발생한 문제는 당일 안에 문의해주세요."
     )
     view = LayoutView(timeout=None)
     view.add_item(Container(

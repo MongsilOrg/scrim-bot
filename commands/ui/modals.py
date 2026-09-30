@@ -26,8 +26,8 @@ class TeamModal(Modal):
         self.user = user
 
         self.team_name_input = TextInput(
-            label="팀명 (3~12글자, 한글/영어)",
-            placeholder="예: Team ER",
+            label="팀명 3~12글자",
+            placeholder="한글과 영어만 가능, 예: Team ER",
             min_length=3,
             max_length=12,
             required=True,
@@ -36,7 +36,7 @@ class TeamModal(Modal):
         self.add_item(self.team_name_input)
 
         self.players_input = TextInput(
-            label="플레이어 (3~4명)",
+            label="플레이어 3~4명",
             placeholder="한 줄에 하나씩 입력",
             max_length=200,
             required=True,
@@ -46,7 +46,7 @@ class TeamModal(Modal):
         self.add_item(self.players_input)
 
         self.staff_input = TextInput(
-            label="스태프 (선택사항)",
+            label="스태프",
             placeholder="한 줄에 하나씩 입력",
             max_length=200,
             required=False,
@@ -92,8 +92,8 @@ class TeamEditModal(Modal):
         self.original_team_name, self.original_team_data, self.original_mmr = team_data
 
         self.team_name_input = TextInput(
-            label="팀명 (3~12글자, 한글/영어)",
-            placeholder="예: Team ER",
+            label="팀명 3~12글자",
+            placeholder="한글과 영어만 가능, 예: Team ER",
             min_length=3,
             max_length=12,
             required=True,
@@ -105,7 +105,7 @@ class TeamEditModal(Modal):
         players_text = '\n'.join(original_players)
 
         self.players_input = TextInput(
-            label="플레이어 (3~4명)",
+            label="플레이어 3~4명",
             placeholder="한 줄에 하나씩 입력",
             max_length=200,
             required=True,
@@ -117,7 +117,7 @@ class TeamEditModal(Modal):
         staff_text = '\n'.join(self.original_team_data.staff)
 
         self.staff_input = TextInput(
-            label="스태프 (선택사항)",
+            label="스태프",
             placeholder="한 줄에 하나씩 입력",
             max_length=200,
             required=False,

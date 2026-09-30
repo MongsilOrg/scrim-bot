@@ -54,7 +54,7 @@ async def _handle_pipeline_exception(
         logger.warning(f"[{tag}] interaction 만료 - 팀명: {team_name}")
     elif isinstance(exc, discord.HTTPException):
         logger.error(f"[{tag}] Discord API 오류: {exc.status} {exc.text}", exc_info=exc)
-        await send_error_message(interaction, f"❌ {action} 중 Discord 오류가 발생했습니다.\n\n💡 잠시 후 다시 시도해주세요.")
+        await send_error_message(interaction, f"{action} 중 Discord 오류가 발생했습니다.\n\n💡 잠시 후 다시 시도해주세요.")
     else:
         logger.error(f"[{tag}] {generic_log}: {exc}", exc_info=exc)
         await send_error_message(interaction, generic_message)
@@ -204,7 +204,7 @@ async def process_team_registration(
         if not has_test_account:
             submitter_name = submitter.display_name
             if not validate_discord_user_in_team(team_data, submitter):
-                error_msg = (f"❌ 본인의 디스코드 닉네임이 팀원 목록에 포함되어 있지 않습니다.\n\n"
+                error_msg = (f"본인의 디스코드 닉네임이 팀원 목록에 포함되어 있지 않습니다.\n\n"
                              f"📌 **참가팀의 팀원만 신청할 수 있습니다.**\n\n"
                              f"**현재 디스코드 닉네임**: {submitter_name}\n"
                              f"**입력된 팀원**: {', '.join(all_members) if all_members else '정보 없음'}\n\n"
@@ -228,8 +228,8 @@ async def process_team_registration(
         success, failure_reason = await team_data_manager.add_team(team_name, team_data, interaction.user)
         if not success:
             error_message = failure_reason if failure_reason else (
-                "❌ 팀 등록에 실패했습니다.\n\n"
-                "💡 신청 시간 제한을 확인해주세요."
+                "팀 등록에 실패했습니다.\n\n"
+                "💡 등록 시간 제한을 확인해주세요."
             )
             logger.info(f"[팀신청실패] {team_name} | 단계: 저장 | 사유: {failure_reason or '(사유 없음)'}")
             await update_temp_message(temp_message, error_message, discord.Color.red())
@@ -237,8 +237,8 @@ async def process_team_registration(
 
         _save_user_cache(str(interaction.user.id), team_data)
 
-        players_str = ', '.join(team_data.players) if team_data.players else '(없음)'
-        staff_str = ', '.join(team_data.staff) if team_data.staff else '(없음)'
+        players_str = ', '.join(team_data.players) if team_data.players else '없음'
+        staff_str = ', '.join(team_data.staff) if team_data.staff else '없음'
         team_data_manager.log_action(
             "신청", interaction.user, team_name,
             detail=f"선수: {players_str} / 스태프: {staff_str}",
@@ -268,7 +268,7 @@ async def process_team_registration(
         await _handle_pipeline_exception(
             interaction, e,
             tag="팀등록", action="팀 등록", team_name=team_name,
-            generic_message="❌ 팀 등록 중 오류가 발생했습니다.\n\n💡 다시 시도해도 문제가 지속되면 관리자에게 문의해주세요.",
+            generic_message="팀 등록 중 오류가 발생했습니다.\n\n💡 다시 시도해도 문제가 지속되면 관리자에게 문의해주세요.",
             generic_log="팀 등록 실패",
         )
 
@@ -315,7 +315,7 @@ async def process_team_edit(
         replaced, replace_reason = await team_data_manager.replace_team(original_team_name, new_team_data, new_team_mmr)
         if not replaced:
             # 모달이 열린 사이 팀이 취소되거나 개명된 경우
-            await update_temp_message(temp_message, f"❌ {replace_reason}", discord.Color.red())
+            await update_temp_message(temp_message, replace_reason, discord.Color.red())
             return
 
         _save_user_cache(str(interaction.user.id), new_team_data)
@@ -402,7 +402,7 @@ def _log_edit_diff(
     new_team_name = new_team_data.name
     if (original_team_name != new_team_name) or added or removed:
         players_str = ', '.join(new_team_data.players)
-        staff_str = ', '.join(new_team_data.staff) if new_team_data.staff else '(없음)'
+        staff_str = ', '.join(new_team_data.staff) if new_team_data.staff else '없음'
         parts = []
         if original_team_name != new_team_name:
             parts.append(f"이전 팀명 {original_team_name}")

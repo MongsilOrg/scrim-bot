@@ -510,7 +510,7 @@ class TeamDataManager:
                         if normalize_nickname_for_comparison(new_member) in duplicate_members:
                             duplicate_details.append(f"- {new_member}: {existing_team_name} 팀")
                     detail_str = "\n".join(duplicate_details)
-                    return False, f"❌ 이미 등록된 팀원이 있습니다.\n{detail_str}"
+                    return False, f"이미 등록된 팀원이 있습니다.\n{detail_str}"
 
             return True, ""
 

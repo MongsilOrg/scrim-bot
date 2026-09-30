@@ -42,7 +42,7 @@ class TeamInputView(LayoutView):
         scrim_label = "자율 스크림" if is_rest_day else "스크림"
         title = f"🏆 {scrim_month}/{scrim_day} ({scrim_weekday}) {scrim_label}"
         deadline_line = f"`{settings.TEAM_REGISTRATION_DEADLINE_HOUR}:00` 팀 등록 마감, 조편성\n"
-        start_line = f"`{settings.SCRIM_START_HOUR}:00` 스크림 시작 ({settings.TOTAL_ROUNDS}라운드)\n"
+        start_line = f"`{settings.SCRIM_START_HOUR}:00` 스크림 시작, {settings.TOTAL_ROUNDS}라운드\n"
         open_line = f"`{settings.NEXT_SCRIM_OPEN_HOUR}:00` 다음날 스크림 오픈"
         if is_rest_day:
             schedule = (
@@ -158,7 +158,7 @@ class TeamInputView(LayoutView):
             
             if not user_team:
                 logger.info(f"[팀취소시도] 팀 없음 | 요청자: {interaction.user}")
-                await send_error_message(interaction, "등록한 팀이 없습니다.")
+                await send_error_message(interaction, "등록된 팀이 없습니다.")
                 return
 
             logger.info(f"[팀취소시도] {user_team} | 요청자: {interaction.user}")
@@ -171,8 +171,8 @@ class TeamInputView(LayoutView):
             if team_data:
                 players, staff = get_team_members(team_data)
 
-            members_str = ', '.join(players) if players else '(없음)'
-            staff_str = ', '.join(staff) if staff else '(없음)'
+            members_str = ', '.join(players) if players else '없음'
+            staff_str = ', '.join(staff) if staff else '없음'
             cancel_text = f"**{user_team}** 팀의 등록을 취소하시겠습니까?"
             fields = [("선수", members_str)]
             if staff:
@@ -250,11 +250,11 @@ class TeamInputView(LayoutView):
                 await send_response(interaction, error_view(error_message))
                 return
 
-            players_str = ', '.join(players) if players else '(없음)'
-            staff_str = ', '.join(staff) if staff else '(없음)'
+            players_str = ', '.join(players) if players else '없음'
+            staff_str = ', '.join(staff) if staff else '없음'
             team_data_manager.log_action(
                 "취소", interaction.user, team_name,
-                detail=f"선수 : {players_str} / 스태프: {staff_str}",
+                detail=f"선수: {players_str} / 스태프: {staff_str}",
             )
             logger.info(f"[팀취소] {team_name} | 선수: [{players_str}] | 스태프: [{staff_str}]")
 
@@ -283,7 +283,7 @@ class TeamInputView(LayoutView):
 
             teams = team_data_manager.get_all_teams()
             if not teams:
-                await send_response(interaction, info_view("신청한 팀이 없습니다."))
+                await send_response(interaction, info_view("등록된 팀이 없습니다."))
                 return
 
             view = ForceCancelSelectView(self, teams)
@@ -322,9 +322,9 @@ class TeamInputView(LayoutView):
                 await send_response(interaction, error_view(failure_reason or "강제취소에 실패했습니다."))
                 return
 
-            players_str = ', '.join(players) if players else '(없음)'
-            staff_str = ', '.join(staff) if staff else '(없음)'
-            applicant = f"<@{applicant_id}>" if applicant_id else "(미상)"
+            players_str = ', '.join(players) if players else '없음'
+            staff_str = ', '.join(staff) if staff else '없음'
+            applicant = f"<@{applicant_id}>" if applicant_id else "알 수 없음"
             team_data_manager.log_action(
                 "강제취소", interaction.user, team_name,
                 detail=f"신청자: {applicant} / 선수: {players_str} / 스태프: {staff_str}",
