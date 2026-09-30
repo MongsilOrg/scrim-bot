@@ -44,10 +44,7 @@ class TeamProcessor:
         self.gspread_spreadsheet: Optional[gspread.Spreadsheet] = None
         self.group_image_cache: Dict[str, bytes] = {}
 
-        self._initialize_gspread_client()
-
-        self._load_test_accounts_data_sync()
-
+        # 시트 연결과 테스트 계정 로드는 ensure_test_accounts_loaded가 스레드에서 처리
         self._discord_service = DiscordService(self, team_data_manager)
     
     def update_client(self, client: Optional[commands.Bot]) -> None:
