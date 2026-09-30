@@ -62,6 +62,7 @@ def _render_html_to_image(html_str: str, width: int = 800, height: int = None) -
             'format': 'png',
             'encoding': 'UTF-8',
             'enable-local-file-access': '',
+            'quiet': '',
         }
         if height:
             options['height'] = height

@@ -270,7 +270,7 @@ class TeamProcessor:
         priority_1_count = sum(1 for priority in team_priorities.values() if priority == 1)
         priority_2_count = sum(1 for priority in team_priorities.values() if priority == 2)
         
-        logger.info(f"[조편성] 시드팀 식별 완료 - 시드팀: {priority_1_count}개, 비시드팀: {priority_2_count}개")
+        logger.debug(f"[조편성] 시드팀 식별 완료 - 시드팀: {priority_1_count}개, 비시드팀: {priority_2_count}개")
         
         return team_priorities
     
