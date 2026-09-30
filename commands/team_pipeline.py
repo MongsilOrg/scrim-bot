@@ -109,7 +109,7 @@ async def _validate_team_rules(
     team_members = team_data.all_members
     real_members = [m for m in team_members if not team_processor.is_test_account(m)]
 
-    if local_error is None and (not is_edit or team_name != original_team_name):
+    if local_error is None:
         is_bot_valid, bot_error = team_data_manager.check_duplicate_with_bot_teams(
             team_name, team_members, exclude_team=original_team_name
         )

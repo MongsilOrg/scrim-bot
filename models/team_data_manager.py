@@ -471,6 +471,14 @@ class TeamDataManager:
                 logger.warning(f"[팀데이터] 교체 대상 팀 없음 - 교체 중단: {old_team_name}")
                 return False, f"'{old_team_name}' 팀이 등록되어 있지 않습니다. 이미 취소되었을 수 있습니다."
 
+            new_key = normalize_team_name(new_team.name)
+            if any(
+                name != old_team_name and normalize_team_name(name) == new_key
+                for name in self.teams
+            ):
+                logger.info(f"[팀데이터] 교체 거부 - 이미 있는 팀명: {new_team.name}")
+                return False, f"이미 등록된 팀명입니다: {new_team.name}"
+
             old_team = self.teams[old_team_name]
             self._remove_member_index(old_team_name, old_team)
             del self.teams[old_team_name]
