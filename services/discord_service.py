@@ -277,6 +277,18 @@ class DiscordService:
         except Exception as e:
             logger.error(f"[Discord] 멤버 역할 업데이트 실패 - 멤버: {member.display_name}: {e}", exc_info=True)
 
+    async def _edit_member_roles_with_retry(self, member, roles_to_remove, roles_to_add):
+        def edit():
+            # 보내는 시점의 역할 목록에서 계산해 다른 경로로 바뀐 역할을 덮어쓰지 않음
+            roles = [r for r in member.roles if not r.is_default() and r not in roles_to_remove]
+            roles += [r for r in roles_to_add if r not in roles]
+            return member.edit(roles=roles)
+
+        try:
+            await self._retry_discord(edit, error_message=f"[Discord] 역할 변경 실패 - 멤버: {member.display_name}")
+        except Exception as e:
+            logger.error(f"[Discord] 멤버 역할 업데이트 실패 - 멤버: {member.display_name}: {e}", exc_info=True)
+
     def _resolve_guild(self, guild: Optional[discord.Guild]) -> Optional[discord.Guild]:
         if not guild and self._processor.client:
             guild = self._processor.client.get_guild(settings.GUILD_ID)
@@ -315,15 +327,26 @@ class DiscordService:
         return role_updates
 
     async def _apply_role_updates(self, role_updates: list) -> None:
-        batch_size = 10
-        for i in range(0, len(role_updates), batch_size):
-            batch = role_updates[i:i + batch_size]
-            tasks = [self._update_member_roles_with_retry(member, roles_to_remove, roles_to_add)
-                    for member, roles_to_remove, roles_to_add in batch]
-            await asyncio.gather(*tasks, return_exceptions=True)
+        # 역할 추가와 제거는 서버당 10초 10건 한도를 같이 쓰고 멤버 수정은 한도가 따로라 두 줄로 나눠 동시에 보냄
+        edits, singles = [], []
+        edit_calls = single_calls = 0
+        for update in sorted(role_updates, key=lambda u: len(u[1]) + len(u[2]), reverse=True):
+            calls = len(update[1]) + len(update[2])
+            if calls > 1 or edit_calls < single_calls:
+                edits.append(update)
+                edit_calls += 1
+            else:
+                singles.append(update)
+                single_calls += calls
 
-            if i + batch_size < len(role_updates):
-                await asyncio.sleep(0.5)
+        async def run(updates, apply):
+            for member, roles_to_remove, roles_to_add in updates:
+                await apply(member, roles_to_remove, roles_to_add)
+
+        await asyncio.gather(
+            run(edits, self._edit_member_roles_with_retry),
+            run(singles, self._update_member_roles_with_retry),
+        )
 
     async def handle_discord_roles(self, guild: discord.Guild, groups: List[List]) -> None:
         try:
