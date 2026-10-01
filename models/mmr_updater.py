@@ -134,7 +134,8 @@ class MmrUpdater:
 
     # 스킵 조건이 놓친 표시 변화의 최대 반영 지연
     RENDER_BACKSTOP_SECONDS = 1800
-    OUTAGE_ALERT_CYCLES = 3
+    # 패치 날 정기 점검이 약 4시간이라 그보다 길게 실패할 때만 경보. 점검 주기 10분 기준 5시간
+    OUTAGE_ALERT_CYCLES = 30
 
     async def mmr_update_loop(self) -> None:
         team_data_manager = self._manager
