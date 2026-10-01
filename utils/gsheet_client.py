@@ -9,7 +9,10 @@ from config.settings import settings
 
 logger = get_logger('gsheet_client')
 
-GSHEET_SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+GSHEET_SCOPES = [
+    'https://spreadsheets.google.com/feeds',
+    'https://www.googleapis.com/auth/drive'
+]
 
 
 def create_gspread_client(
