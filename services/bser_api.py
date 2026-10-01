@@ -157,12 +157,21 @@ class BSERAPIClient:
         cls._mmr_cache.clear()
 
     async def check_server_maintenance(self) -> bool:
-        url = "https://open-api.bser.io/v2/data/Season"
+        # 패치 점검 중에도 시즌 API는 정상이고 닉네임 검색만 멈춤. 랭킹 1위 닉네임 검색으로 판정
         try:
-            data = await self._request("GET", url)
-            if data is None:
+            data = await self._request("GET", "https://open-api.bser.io/v2/data/Season")
+            if not data or data.get("code") != 200:
                 return True
-            return data.get("code") != 200
+            current = next((x for x in data.get("data", []) if x.get("isCurrent") == 1), None)
+            if not current:
+                return False
+            top = await self._request("GET", f"{self.base_url}/rank/top/{current['seasonID']}/3/10")
+            ranks = (top or {}).get("topRanks") or []
+            if not ranks:
+                return False
+            probe = await self._request("GET", f"{self.base_url}/user/nickname",
+                                        params={"query": ranks[0]["nickname"]})
+            return not probe or probe.get("code") != 200
         except Exception as e:
             logger.warning(f"[API] 점검 여부 확인 실패, 점검으로 간주 - 오류: {e}")
             return True
