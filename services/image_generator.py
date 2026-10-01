@@ -3,6 +3,7 @@ import asyncio
 import os
 import platform
 import shutil
+import tempfile
 from io import BytesIO
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -51,7 +52,7 @@ def _load_template(name: str) -> str:
 def _render_html_to_image(html_str: str, width: int = 800, height: int = None) -> Optional[BytesIO]:
     try:
         if not os.path.exists(WKHTML_PATH):
-            logger.error(f"[이미지생성] wkhtmltoimage를 찾을 수 없음 - 경로: {WKHTML_PATH}")
+            logger.error("[이미지생성] wkhtmltoimage를 찾을 수 없음", extra={"wkhtml_path": WKHTML_PATH})
             return None
 
         config = imgkit.config(wkhtmltoimage=WKHTML_PATH)
@@ -68,7 +69,13 @@ def _render_html_to_image(html_str: str, width: int = 800, height: int = None) -
             options['height'] = height
 
         html_str = html_str.replace('<head>', '<head>' + _FONT_FACE_STYLE, 1)
-        img_bytes = imgkit.from_string(html_str, False, config=config, options=options)
+        # 표준입력으로 넘기면 wkhtmltoimage가 /tmp/wktemp-*.html을 남기고 지우지 않음
+        with tempfile.NamedTemporaryFile('w', suffix='.html', encoding='utf-8', delete=False) as f:
+            f.write('<meta charset="UTF-8">' + html_str)
+        try:
+            img_bytes = imgkit.from_file(f.name, False, config=config, options=options)
+        finally:
+            os.unlink(f.name)
         img_io = BytesIO(img_bytes)
         img_io.seek(0)
         return img_io
