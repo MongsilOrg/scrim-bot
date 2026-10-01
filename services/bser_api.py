@@ -206,6 +206,7 @@ class BSERAPIClient:
     
     
     async def get_user_rank(self, uid: str) -> Optional[Dict]:
+        # 시즌 API의 isCurrent가 실제 랭크 시즌과 어긋날 때가 있어 직접 지정
         url = f"{self.base_url}/rank/uid/{uid}/41/3"
         data = await self._request("GET", url)
         if not data:
