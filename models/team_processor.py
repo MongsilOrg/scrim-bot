@@ -333,8 +333,6 @@ class TeamProcessor:
     
     async def build_groups(self, teams: Dict[str, TeamData]) -> Tuple[List[List], List]:
         try:
-            # 닉네임 캐시는 불변 데이터라 유지
-            BSERAPIClient.clear_mmr_cache()
             self.group_image_cache.clear()
 
             if await self._load_seeds_data():
