@@ -85,7 +85,7 @@ class UnverifiedTransitionTest(unittest.TestCase):
             mgr = make_manager({'옛팀명'})
             _apply_unverified_transition(
                 mgr, is_maintenance=True,
-                old_players=['a', 'b', 'c'], new_players=['a', 'b', 'd'],
+                old_members=['a', 'b', 'c'], new_members=['a', 'b', 'd'],
                 old_name='옛팀명', new_name='새팀명',
             )
             self.assertEqual(mgr.unverified_teams, {'새팀명'})
@@ -95,17 +95,26 @@ class UnverifiedTransitionTest(unittest.TestCase):
             mgr = make_manager()
             _apply_unverified_transition(
                 mgr, is_maintenance=True,
-                old_players=['Alpha', 'bravo', 'C'], new_players=[' alpha ', 'BRAVO', 'c'],
+                old_members=['Alpha', 'bravo', 'C'], new_members=[' alpha ', 'BRAVO', 'c'],
                 old_name='팀', new_name='팀',
             )
             self.assertEqual(mgr.unverified_teams, set())
             self.assertFalse(mgr._mmr_dirty)
 
+        with self.subTest('점검 중 스태프만 바뀌어도 마커 추가'):
+            mgr = make_manager()
+            _apply_unverified_transition(
+                mgr, is_maintenance=True,
+                old_members=['a', 'b', 'c', 's1'], new_members=['a', 'b', 'c', 's2'],
+                old_name='팀', new_name='팀',
+            )
+            self.assertEqual(mgr.unverified_teams, {'팀'})
+
         with self.subTest('평시 수정이면 기존 마커 제거'):
             mgr = make_manager({'팀'})
             _apply_unverified_transition(
                 mgr, is_maintenance=False,
-                old_players=['a', 'b', 'c'], new_players=['a', 'b', 'd'],
+                old_members=['a', 'b', 'c'], new_members=['a', 'b', 'd'],
                 old_name='팀', new_name='팀',
             )
             self.assertEqual(mgr.unverified_teams, set())

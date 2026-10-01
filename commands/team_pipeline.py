@@ -323,8 +323,8 @@ async def process_team_edit(
         _apply_unverified_transition(
             team_data_manager,
             is_maintenance=is_maintenance,
-            old_players=original_team_data.players,
-            new_players=new_team_data.players,
+            old_members=original_team_data.all_members,
+            new_members=new_team_data.all_members,
             old_name=original_team_name,
             new_name=new_team_name,
         )
@@ -364,14 +364,14 @@ def _apply_unverified_transition(
     team_data_manager: "TeamDataManager",
     *,
     is_maintenance: bool,
-    old_players: List[str],
-    new_players: List[str],
+    old_members: List[str],
+    new_members: List[str],
     old_name: str,
     new_name: str,
 ) -> None:
     if is_maintenance:
-        old_norm = {normalize_nickname_for_comparison(p) for p in old_players}
-        new_norm = {normalize_nickname_for_comparison(p) for p in new_players}
+        old_norm = {normalize_nickname_for_comparison(p) for p in old_members}
+        new_norm = {normalize_nickname_for_comparison(p) for p in new_members}
         if old_norm != new_norm:
             team_data_manager.mark_unverified(new_name)
     else:

@@ -301,17 +301,17 @@ class MmrUpdater:
                 continue
 
             team_data = mgr.teams[team_name]
-            players = list(team_data.players)
+            members = team_data.all_members
             invalid_members = []
 
             try:
                 async with BSERAPIClient() as api:
-                    for player in players:
-                        if team_processor.is_test_account(player):
+                    for member in members:
+                        if team_processor.is_test_account(member):
                             continue
-                        uid = await api.get_user_uid(player)
+                        uid = await api.get_user_uid(member)
                         if not uid:
-                            invalid_members.append(player)
+                            invalid_members.append(member)
 
                 if not invalid_members:
                     _, _, team_mmr = await team_processor.fetch_team_mmr(team_name, team_data)
