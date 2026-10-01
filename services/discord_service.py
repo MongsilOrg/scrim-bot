@@ -1,4 +1,5 @@
 import asyncio
+import time
 from typing import List, Optional, Tuple, TYPE_CHECKING
 
 import discord
@@ -326,6 +327,7 @@ class DiscordService:
 
     async def handle_discord_roles(self, guild: discord.Guild, groups: List[List]) -> None:
         try:
+            started = time.monotonic()
             guild = self._resolve_guild(guild)
 
             group_roles = {}
@@ -345,7 +347,10 @@ class DiscordService:
                 today_participants[group_letter] |= self._team_participants(group)
 
             role_updates = self._build_role_updates(guild, group_roles, today_participants)
+            applying = time.monotonic()
             await self._apply_role_updates(role_updates)
+            changes = sum(len(remove) + len(add) for _, remove, add in role_updates)
+            logger.info(f"[Discord] 조 역할 갱신 - 멤버 {len(role_updates)}명, 변경 {changes}건, 전체 {time.monotonic() - started:.1f}초, 적용 {time.monotonic() - applying:.1f}초")
 
         except Exception as e:
             logger.error(f"[Discord] 역할 처리 실패: {e}", exc_info=True)
