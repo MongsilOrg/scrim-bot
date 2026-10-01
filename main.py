@@ -34,7 +34,7 @@ def _sentry_before_send(event, hint):
 sentry_sdk.init(
     dsn=os.getenv("SENTRY_DSN", ""),
     traces_sample_rate=0.1,
-    environment="production", before_send=_sentry_before_send,
+    before_send=_sentry_before_send,
 )
 
 import discord
