@@ -210,7 +210,12 @@ def get_server_info() -> dict:
         if _server_info_cache is not None:
             logger.warning(f"[노션] 서버 정보 조회 실패, 만료된 캐시 사용: {e}")
             return _server_info_cache
-        logger.error(f"[노션] 서버 정보 조회 실패, Live 기본값 사용: {e}", exc_info=True)
+        status = e.response.status_code if isinstance(e, requests.HTTPError) and e.response is not None else None
+        # 노션 쪽 일시 장애는 경고만. 인증이나 요청 오류는 손봐야 하므로 ERROR
+        if isinstance(e, (requests.ConnectionError, requests.Timeout)) or (status and (status >= 500 or status == 429)):
+            logger.warning(f"[노션] 서버 정보 조회 실패, Live 기본값 사용: {e}")
+        else:
+            logger.error(f"[노션] 서버 정보 조회 실패, Live 기본값 사용: {e}", exc_info=True)
         return _build_server_info(False, True)
 
     info = _build_server_info(is_tournament, broadcast)
