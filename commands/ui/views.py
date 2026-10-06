@@ -8,16 +8,18 @@ from config.logging_config import get_logger
 from config.settings import settings
 from utils.layout_helpers import (
     check_cooldown,
-    error_view, success_view, info_view,
+    custom_view, error_view, success_view, info_view,
     timeout_view, permission_error_view,
     send_response, FOOTER_TEXT,
     send_error_message,
+    format_kr_date,
 )
 from commands.team_pipeline import recall_failed_input, schedule_mmr_refresh
 from models.team_data_manager import (
     NEXT_OPEN_NOTICE, PHASE_ASSIGNED, PHASE_CANCELLED, PHASE_CLOSED, PHASE_OPEN,
 )
 from models.user_team_cache import UserTeamCache
+from models.warning_manager import MASTERS_NOT_DEDUCTED
 from utils.helpers import get_current_kst_time, get_team_members, is_admin
 
 from .modals import TeamEditModal, TeamModal
@@ -33,6 +35,9 @@ NO_TEAMS_MSG = "신청된 팀이 없습니다."
 OPEN_INPUT_ERROR_MSG = "입력 창을 여는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
 TEAM_ALREADY_GONE_MSG = "이미 취소된 팀입니다."
 MODAL_SERVER_ERROR_MSG = "Discord 서버 오류로 입력 창을 열지 못했습니다. 잠시 후 다시 시도해주세요."
+MY_SANCTIONS_TITLE = "📋 내 제재"
+NO_SANCTIONS_MSG = "받은 제재가 없습니다."
+SANCTION_LOOKUP_FAILED_MSG = "제재 기록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요."
 
 
 def dashboard_status_line(phase: str, team_count: int) -> str:
@@ -46,6 +51,28 @@ def dashboard_status_line(phase: str, team_count: int) -> str:
             f"{settings.NEXT_SCRIM_OPEN_HOUR}시에 다음 스크림 신청이 열립니다."
         )
     return f"현재 {team_count}팀 신청, {settings.TEAMS_PER_GROUP}팀 미만이면 취소됩니다."
+
+
+def my_sanctions_view(summary: dict) -> LayoutView:
+    if not summary.get('has_records'):
+        return info_view(NO_SANCTIONS_MSG, title=MY_SANCTIONS_TITLE)
+
+    counts = f"주의 {summary['cautions']}회, 누적 경고 {summary['warnings']}회"
+    fields = []
+    restricted_until = summary.get('restricted_until')
+    if restricted_until:
+        fields.append((
+            "참가 제한",
+            f"{format_kr_date(restricted_until)}까지 스크림에 참가할 수 없습니다.\n{MASTERS_NOT_DEDUCTED}",
+        ))
+    lines = [
+        f"{format_kr_date(item['date'])} {item['type']}: {item['reason'] or '사유 없음'}"
+        for item in summary.get('history') or []
+    ]
+    if lines:
+        fields.append(("최근 내역", "\n".join(lines)))
+    color = Color.red() if restricted_until else Color.blue()
+    return custom_view(MY_SANCTIONS_TITLE, counts, color, fields=fields)
 
 
 def applicant_only_cancel_msg(applicant_id: Optional[str]) -> str:
@@ -118,9 +145,15 @@ class TeamInputView(LayoutView):
             custom_id="scrim_dashboard_cancel", disabled=not registration_open,
         )
         self.cancel_team_button.callback = self.cancel_team_callback
+        self.my_sanctions_button = Button(
+            label="내 제재", style=ButtonStyle.secondary, custom_id="scrim_dashboard_my_sanctions",
+        )
+        self.my_sanctions_button.callback = self.my_sanctions_callback
         self.manage_button = Button(label="관리", style=ButtonStyle.secondary, custom_id="scrim_dashboard_manage")
         self.manage_button.callback = self.manage_callback
-        self.add_item(ActionRow(self.add_team_button, self.cancel_team_button, self.manage_button))
+        self.add_item(ActionRow(
+            self.add_team_button, self.cancel_team_button, self.my_sanctions_button, self.manage_button,
+        ))
 
     async def add_team_callback(self, interaction: discord.Interaction) -> None:
         if await check_cooldown(interaction):
@@ -302,6 +335,24 @@ class TeamInputView(LayoutView):
         except Exception as e:
             logger.error(f"[뷰] 팀 취소 실패: {e}", exc_info=True)
             return error_view("팀 취소 중 오류가 발생했습니다.")
+
+    async def my_sanctions_callback(self, interaction: discord.Interaction) -> None:
+        if await check_cooldown(interaction):
+            return
+        try:
+            # 캐시가 비면 시트 두 장을 읽어 3초를 넘길 수 있음
+            await interaction.response.defer(ephemeral=True, thinking=True)
+            warning_manager = BotManager.get_instance().get_warning_manager()
+            summary = await warning_manager.get_member_sanctions(str(interaction.user.id))
+            if summary is None:
+                await send_error_message(interaction, SANCTION_LOOKUP_FAILED_MSG)
+                return
+            await send_response(interaction, my_sanctions_view(summary))
+        except discord.NotFound:
+            logger.warning("[뷰] 내 제재 interaction 만료")
+        except Exception as e:
+            logger.error(f"[뷰] 내 제재 조회 실패: {e}", exc_info=True)
+            await send_error_message(interaction, SANCTION_LOOKUP_FAILED_MSG)
 
     async def manage_callback(self, interaction: discord.Interaction) -> None:
         if await check_cooldown(interaction):

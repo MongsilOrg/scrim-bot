@@ -32,7 +32,7 @@ def _phase_manager(*, started=False, last=None, groups=None):
 def _buttons(view):
     return {
         button.label: button
-        for button in (view.add_team_button, view.cancel_team_button, view.manage_button)
+        for button in (view.add_team_button, view.cancel_team_button, view.my_sanctions_button, view.manage_button)
     }
 
 
@@ -80,7 +80,7 @@ class DashboardViewTest(unittest.TestCase):
     def test_buttons_disabled_after_deadline(self):
         self.assertEqual(
             [b.label for b in self._view(PHASE_OPEN).children[1].children],
-            ["신청 및 수정", "취소", "관리"],
+            ["신청 및 수정", "취소", "내 제재", "관리"],
         )
         for phase in (PHASE_OPEN, PHASE_CLOSED, PHASE_ASSIGNED, PHASE_CANCELLED):
             with self.subTest(phase):
@@ -88,13 +88,14 @@ class DashboardViewTest(unittest.TestCase):
                 closed = phase != PHASE_OPEN
                 self.assertEqual(buttons["신청 및 수정"].disabled, closed)
                 self.assertEqual(buttons["취소"].disabled, closed)
+                self.assertFalse(buttons["내 제재"].disabled)
                 self.assertFalse(buttons["관리"].disabled)
 
     def test_custom_ids_fixed_across_refreshes(self):
         first = {label: b.custom_id for label, b in _buttons(self._view(PHASE_OPEN)).items()}
         second = {label: b.custom_id for label, b in _buttons(self._view(PHASE_CLOSED)).items()}
         self.assertEqual(first, second)
-        self.assertEqual(len(set(first.values())), 3)
+        self.assertEqual(len(set(first.values())), 4)
         self.assertTrue(all(cid.startswith("scrim_dashboard_") for cid in first.values()))
 
 

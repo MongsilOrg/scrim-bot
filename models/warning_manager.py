@@ -11,7 +11,7 @@ from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
 from utils.gsheet_client import create_gspread_client
-from utils.helpers import KST, get_current_kst_time, save_json_atomic
+from utils.helpers import KST, effective_scrim_date, get_current_kst_time, save_json_atomic
 from utils.validators import normalize_nickname_for_comparison
 
 logger = get_logger('warning_manager')
@@ -46,6 +46,8 @@ class WarningManager:
         self.cleanup_task: Optional[asyncio.Task] = None
         self._warnings_cache: Optional[List[Dict]] = None
         self._cache_timestamp: Optional[datetime] = None
+        self._log_cache: Optional[List[Dict]] = None
+        self._log_cache_timestamp: Optional[datetime] = None
         self._cache_ttl: int = 300
         self._write_lock = asyncio.Lock()
         self._connect_lock = asyncio.Lock()
@@ -517,30 +519,47 @@ class WarningManager:
     
     def _get_warnings_cache(self) -> Optional[List[Dict]]:
         """None은 조회 실패에 캐시도 없음."""
-        current_time = get_current_kst_time()
+        records = self._get_penalty_records()
+        if records is None:
+            return None
+        return [record for record in records if str(record.get('유형', '')).strip() == '경고']
 
-        if (self._warnings_cache is not None and
-            self._cache_timestamp is not None and
-            (current_time - self._cache_timestamp).total_seconds() < self._cache_ttl):
-            return self._warnings_cache
+    def _get_penalty_records(self) -> Optional[List[Dict]]:
+        return self._read_cached(
+            self.worksheet, self.PENALTY_HEADERS, '_warnings_cache', '_cache_timestamp', '패널티',
+        )
+
+    def _get_log_records(self) -> Optional[List[Dict]]:
+        return self._read_cached(
+            self.warning_log_worksheet, self.LOG_HEADERS, '_log_cache', '_log_cache_timestamp', '패널티로그',
+        )
+
+    def _read_cached(
+        self, worksheet, headers: List[str], cache_attr: str, stamp_attr: str, label: str,
+    ) -> Optional[List[Dict]]:
+        """시트 전체 행을 TTL 동안 재사용. None은 조회 실패에 캐시도 없음."""
+        current_time = get_current_kst_time()
+        cached = getattr(self, cache_attr, None)
+        stamp = getattr(self, stamp_attr, None)
+
+        if (cached is not None and stamp is not None
+                and (current_time - stamp).total_seconds() < self._cache_ttl):
+            return cached
 
         try:
-            if not self.worksheet:
+            if not worksheet:
                 return []
             # expected_headers 없으면 빈 헤더 셀에서 gspread 중복 헤더 오류
-            all_records = self.worksheet.get_all_records(expected_headers=self.PENALTY_HEADERS)
-            warnings = [record for record in all_records if str(record.get('유형', '')).strip() == '경고']
+            records = worksheet.get_all_records(expected_headers=headers)
+            setattr(self, cache_attr, records)
+            setattr(self, stamp_attr, current_time)
+            return records
 
-            self._warnings_cache = warnings
-            self._cache_timestamp = current_time
-
-            return warnings
-            
         except Exception as e:
-            logger.error(f"[경고관리] 경고 데이터 캐시 로드 실패: {e}", exc_info=True)
-            if self._warnings_cache is not None:
+            logger.error(f"[경고관리] {label} 시트 캐시 로드 실패: {e}", exc_info=True)
+            if cached is not None:
                 logger.warning("[경고관리] API 오류 발생 - 캐시된 데이터 사용")
-                return self._warnings_cache
+                return cached
             return None
 
     def _notify_lookup_failure(self) -> None:
@@ -573,6 +592,8 @@ class WarningManager:
     def _invalidate_cache(self) -> None:
         self._warnings_cache = None
         self._cache_timestamp = None
+        self._log_cache = None
+        self._log_cache_timestamp = None
     
     def _find_max_restriction(
         self, warnings: List[Dict], target_id: str = None, target_name: str = None
@@ -626,6 +647,63 @@ class WarningManager:
             logger.error(f"[경고관리] 제한 상태 확인 실패: {e}", exc_info=True)
             return False, None
     
+    MY_SANCTION_HISTORY_LIMIT = 5
+
+    async def get_member_sanctions(self, target_id: str) -> Optional[Dict]:
+        """대상ID가 같은 행만 집계, ID가 빈 옛 기록은 이름이 같아도 빠짐. None은 조회 실패."""
+        target_id = str(target_id or '').strip()
+        if not target_id or not await self.ensure_connected():
+            return None
+
+        def _load():
+            return self._get_penalty_records(), self._get_log_records()
+
+        penalty_records, log_records = await asyncio.to_thread(_load)
+        if penalty_records is None or log_records is None:
+            return None
+
+        def _is_mine(record: Dict) -> bool:
+            return str(record.get('대상ID', '')).strip() == target_id
+
+        def _type_of(record: Dict) -> str:
+            return str(record.get('유형', '')).strip()
+
+        cautions = sum(1 for r in penalty_records if _is_mine(r) and _type_of(r) == '주의')
+        warnings = sum(1 for r in log_records if _is_mine(r) and _type_of(r) == '경고')
+
+        # 마스터즈 연장은 패널티 시트 제한해제일에만 반영됨
+        latest = self._find_max_restriction(
+            [r for r in penalty_records if _type_of(r) == '경고'], target_id=target_id,
+        )
+        restricted_until = None
+        if latest and effective_scrim_date(get_current_kst_time()) <= latest['restricted_until']:
+            restricted_until = latest['restricted_until']
+
+        mine = [r for r in log_records if _is_mine(r)]
+        history = [
+            {
+                'date': str(r.get('날짜', '')).strip(),
+                'type': _type_of(r),
+                'reason': self._history_reason(r.get('사유', '')),
+            }
+            for r in reversed(mine[-self.MY_SANCTION_HISTORY_LIMIT:])
+        ]
+        return {
+            'cautions': cautions,
+            'warnings': warnings,
+            'restricted_until': restricted_until,
+            'history': history,
+            'has_records': bool(mine) or cautions > 0 or restricted_until is not None,
+        }
+
+    @staticmethod
+    def _history_reason(value) -> str:
+        reason = str(value or '').strip()
+        # 자동 전환 경고 사유는 바뀐 주의 목록을 여러 줄로 담음
+        if reason.startswith('[주의 누적]'):
+            return '주의 누적'
+        return ' '.join(reason.split())
+
     def _load_masters_state(self) -> Optional[date]:
         try:
             with open(self.MASTERS_STATE_FILE, 'r', encoding='utf-8') as f:
