@@ -122,7 +122,7 @@ class TeamProcessor:
             return True
 
         except Exception as e:
-            logger.error(f"[조편성] 시드 데이터 로드 실패 (기존 데이터 유지): {e}", exc_info=True)
+            logger.error(f"[조편성] 시드 데이터 로드 실패, 기존 데이터 유지: {e}", exc_info=True)
             return False
     
     def _load_test_accounts_data_sync(self) -> bool:
@@ -186,7 +186,7 @@ class TeamProcessor:
         try:
             loaded = await asyncio.to_thread(self._load_test_accounts_data_sync)
         except Exception as e:
-            logger.error(f"[테스트계정] 시트 재로드 실패 (기존 데이터 유지): {e}", exc_info=True)
+            logger.error(f"[테스트계정] 시트 재로드 실패, 기존 데이터 유지: {e}", exc_info=True)
             loaded = False
 
         if loaded:

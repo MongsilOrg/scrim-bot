@@ -698,11 +698,11 @@ class WarningManager:
                 try:
                     extended = await asyncio.to_thread(self._extend_active_restrictions, day)
                 except Exception as e:
-                    logger.error(f"[경고관리] 마스터즈 진행일({day}) 연장 실패: {e}", exc_info=True)
+                    logger.error(f"[경고관리] 마스터즈 진행일 연장 실패 - 날짜: {day}: {e}", exc_info=True)
                     return False
                 if extended:
                     self._invalidate_cache()
-                    logger.info(f"[경고관리] 마스터즈 진행일({day}) 제한 연장 - {extended}건 +1일")
+                    logger.info(f"[경고관리] 마스터즈 진행일 제한 연장 - 날짜: {day}, {extended}건 1일씩")
             self._save_masters_state(day)
             day += timedelta(days=1)
         return True

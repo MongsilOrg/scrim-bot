@@ -167,7 +167,7 @@ class DiscordService:
                 try:
                     target_message = await channel.fetch_message(message_id)
                 except discord.NotFound:
-                    logger.warning(f"[Discord] 저장된 공지 메시지를 찾을 수 없음 (id={message_id})")
+                    logger.warning(f"[Discord] 저장된 공지 메시지를 찾을 수 없음 - 메시지 ID: {message_id}")
 
             if not target_message:
                 logger.warning(f"[Discord] 조별 공지 메시지를 찾을 수 없음 - 조: {group_letter}조")
@@ -293,7 +293,7 @@ class DiscordService:
         if not guild and self._processor.client:
             guild = self._processor.client.get_guild(settings.GUILD_ID)
             if not guild:
-                raise ValueError(f"서버 정보를 찾을 수 없습니다. (ID: {settings.GUILD_ID})")
+                raise ValueError(f"서버 정보를 찾을 수 없습니다. 서버 ID: {settings.GUILD_ID}")
         return guild
 
     @staticmethod

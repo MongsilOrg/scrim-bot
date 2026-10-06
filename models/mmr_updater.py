@@ -57,7 +57,7 @@ class MmrUpdater:
                 team_processor = BotManager.get_instance().get_team_processor()
                 await team_processor.ensure_seeds_marked(mgr.teams)
             except Exception as e:
-                logger.warning(f"[MMR메시지] 시드 마킹 실패 (계속 진행): {e}")
+                logger.warning(f"[MMR메시지] 시드 마킹 실패, 갱신은 계속함: {e}")
 
             # 렌더 스레드 도중 팀 변경에 대비한 스냅샷
             img_io = await ImageGenerator.generate_mmr_image_async(
@@ -70,11 +70,11 @@ class MmrUpdater:
 
             update_time = mgr._last_success_time or get_current_kst_time().strftime('%H:%M')
             if mgr.is_maintenance:
-                desc = f"🔧 서버 점검 중 / 마지막 갱신: `{update_time}`"
+                desc = f"서버 점검 중 / 마지막 갱신: `{update_time}`"
             else:
                 desc = f"총 **{len(mgr.teams)}**팀 / 마지막 갱신: `{update_time}`"
                 if mmr_fail_count > 0:
-                    desc += f"\n⚠️ {mmr_fail_count}개 팀 MMR 갱신 실패"
+                    desc += f"\n{mmr_fail_count}개 팀 MMR 갱신 실패"
 
             children = [
                 TextDisplay(content=f"## 📊 팀 MMR 정보\n{desc}"),
@@ -278,7 +278,7 @@ class MmrUpdater:
                 fail_count += len(results) - sum(results)
 
             if skipped > 0:
-                logger.debug(f"[MMR갱신] {skipped}개 팀 캐시 히트 (TTL 이내 갱신됨)")
+                logger.debug(f"[MMR갱신] {skipped}개 팀은 TTL 안에 갱신돼 조회 생략")
 
         except Exception as e:
             logger.error(f"[MMR갱신] 전체 팀 MMR 갱신 실패: {e}", exc_info=True)
