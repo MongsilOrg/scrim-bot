@@ -5,7 +5,7 @@ from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from config.logging_config import get_logger
+from config.logging_config import get_logger, log_once
 from utils.helpers import get_current_kst_time, get_start_of_day_utc
 from utils.validators import normalize_nickname_for_comparison, normalize_team_name
 
@@ -28,14 +28,23 @@ def is_csv_filename(filename: str) -> bool:
 
 
 async def collect_today_csv_data(channel, start_utc: datetime, limit: int = 200) -> List[CSVRow]:
+    """같은 gameId는 먼저 올라온 파일 하나만 남김."""
     csv_data_list: List[CSVRow] = []
+    seen_game_ids = set()
     async for msg in channel.history(after=start_utc, oldest_first=True, limit=limit):
         for attachment in msg.attachments:
             if not is_csv_filename(attachment.filename):
                 continue
             parsed = await _read_and_parse_csv_attachment(attachment)
-            if parsed is not None:
-                csv_data_list.append(parsed)
+            if parsed is None:
+                continue
+            game_id = parsed[0]
+            if game_id in seen_game_ids:
+                if log_once(f"csv-dup:{attachment.id}", 86400):
+                    logger.info(f"[점수집계] 같은 gameId CSV 제외 - 파일: {attachment.filename}, gameId: {game_id}")
+                continue
+            seen_game_ids.add(game_id)
+            csv_data_list.append(parsed)
     return csv_data_list
 
 
@@ -47,7 +56,8 @@ async def _read_and_parse_csv_attachment(attachment) -> Optional[CSVRow]:
 
         missing_cols = [col for col in REQUIRED_SCORE_COLUMNS if col not in df.columns]
         if missing_cols:
-            logger.warning(f"[점수집계] CSV 필수 컬럼 누락 - 파일: {attachment.filename}, 누락된 컬럼: {missing_cols}")
+            if log_once(f"csv-missing:{attachment.id}", 86400):
+                logger.warning(f"[점수집계] CSV 필수 컬럼 누락, 집계에서 제외 - 파일: {attachment.filename}, 누락된 컬럼: {missing_cols}")
             return None
 
         game_id = _extract_game_id(df, attachment.filename)
@@ -88,7 +98,12 @@ def _build_team_nickname_map(df: pd.DataFrame) -> dict:
 
 
 def _resolve_default_team_names(current_df: pd.DataFrame, previous_rounds_nicknames: list) -> pd.DataFrame:
-    if 'nickname' not in current_df.columns or not previous_rounds_nicknames:
+    if 'nickname' not in current_df.columns:
+        default_names = sorted({n for n in current_df[COL_TEAM_NAME] if _is_default_team_name(str(n))})
+        if default_names and log_once(f"csv-no-nickname:{default_names}", 3600):
+            logger.warning(f"[점수집계] nickname 컬럼이 없어 기본 팀명을 바꾸지 못함 - 팀: {default_names}")
+        return current_df
+    if not previous_rounds_nicknames:
         return current_df
 
     current_team_nicks = _build_team_nickname_map(current_df)
@@ -181,7 +196,11 @@ async def compute_ban_list_for_channel(channel) -> List[str]:
 
 
 def _extract_ban_list(last_csv_df: Optional[pd.DataFrame]) -> List[str]:
-    if last_csv_df is None or 'character' not in last_csv_df.columns:
+    if last_csv_df is None:
+        return []
+    if 'character' not in last_csv_df.columns:
+        if log_once("csv-no-character", 3600):
+            logger.warning("[점수집계] character 컬럼이 없어 밴 목록을 만들지 못함")
         return []
 
     counts: Dict[str, int] = {}
