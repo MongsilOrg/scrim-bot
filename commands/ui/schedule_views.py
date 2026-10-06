@@ -386,6 +386,11 @@ class DeployView(TimeoutEditView):
             logger.debug(f"[뷰] 투입 기록 닫힘 안내 편집 실패: {e}")
 
 
+def schedule_members(guild: discord.Guild) -> list[discord.Member]:
+    """일정에 응답해야 하는 관리자"""
+    return [m for m in guild.members if is_admin(m) and not m.bot and m.id not in EXCLUDED_USER_IDS]
+
+
 async def refresh_dashboard(
     guild: discord.Guild,
     channel=None,
@@ -394,10 +399,7 @@ async def refresh_dashboard(
     if schedule_mgr is None:
         schedule_mgr = BotManager.get_instance().get_schedule_manager()
 
-    all_admins: list[tuple[str, str]] = []
-    for member in guild.members:
-        if is_admin(member) and not member.bot and member.id not in EXCLUDED_USER_IDS:
-            all_admins.append((str(member.id), member.display_name))
+    all_admins = [(str(m.id), m.display_name) for m in schedule_members(guild)]
 
     status_text = schedule_mgr.get_status_text(all_admins)
     has_assignments = bool(schedule_mgr.assignments)

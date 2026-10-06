@@ -13,6 +13,9 @@ logger = get_logger('schedule_manager')
 
 WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일']
 ACTIVE_DAYS = [0, 1, 2, 3, 4, 5]
+# 다음 주 일정이 토요일 22시에 열리고, 미응답자 알림은 일요일 21시
+REMINDER_WEEKDAY = 6
+REMINDER_HOUR = 21
 POOL_SIZE = 6
 
 EXCLUDED_USER_IDS: Set[int] = {settings.TEST_ACCOUNT_CONTACT_ID}
@@ -82,6 +85,8 @@ class ScheduleManager:
             self.absence_reasons.pop(user_id, None)
 
         self.save_backup()
+        answer = ', '.join(WEEKDAYS[d] for d in sorted(available_days)) if available_days else '불참'
+        logger.info(f"[일정] 응답 - {display_name}: {answer}, 주차: {self.week_label}")
 
     def get_responded_user_ids(self) -> Set[str]:
         responded = set(self.availability.keys())
@@ -125,6 +130,8 @@ class ScheduleManager:
         elif total > 0:
             lines.append('')
             lines.append('> 모든 관리자가 응답했습니다.')
+        if not_responded and not self.assignments:
+            lines.append(f'-# 응답하지 않은 관리자는 {WEEKDAYS[REMINDER_WEEKDAY]}요일 {REMINDER_HOUR}시에 알림을 받습니다.')
 
         if self.assignments:
             total_assigned = sum(len(v) for v in self.assignments.values())
