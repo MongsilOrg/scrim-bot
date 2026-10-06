@@ -38,6 +38,7 @@ sentry_sdk.init(
 )
 
 import discord
+from discord import app_commands
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -68,6 +69,8 @@ def _register_app_commands(client: ScrimBot) -> None:
         description="방 코드를 공지합니다",
         guild=discord.Object(id=settings.GUILD_ID),
     )
+    @app_commands.rename(room_code="코드")
+    @app_commands.describe(room_code="6자리 방 코드")
     async def room_code_command(interaction: discord.Interaction, room_code: str):
         await 방코드(interaction, room_code)
 
