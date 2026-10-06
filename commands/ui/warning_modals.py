@@ -57,7 +57,8 @@ async def send_sanction_dm(
     reason: str,
     auto_warning: dict = None,
     converted_cautions: list = None,
-) -> None:
+) -> bool:
+    """대상자에게 DM이 갔으면 True."""
     try:
         if auto_warning and converted_cautions:
             fields = [
@@ -88,11 +89,39 @@ async def send_sanction_dm(
             dm_view = custom_view("⚡ 주의 알림", "**주의**가 부여되었습니다.", CAUTION_COLOR, fields=fields)
 
         await target_user.send(view=dm_view)
+        return True
 
     except discord.Forbidden:
         logger.warning(f"[제재DM] 발송 실패 (DM 차단) - 대상: {target_user.display_name}")
     except Exception as e:
         logger.error(f"[제재DM] 발송 실패 - 대상: {target_user.display_name}, 오류: {e}", exc_info=True)
+    return False
+
+
+DM_FAILED_TEXT = "DM을 보내지 못했습니다. 대상자에게 직접 알려주세요."
+
+
+def _registered_team(target_user: discord.Member) -> str | None:
+    try:
+        team_data_manager = BotManager.get_instance().get_team_data_manager()
+        return team_data_manager.find_user_team(str(target_user.id), member=target_user)
+    except Exception as e:
+        logger.warning(f"[모달] 등록 팀 조회 실패 - 대상: {target_user.display_name}, 오류: {e}")
+        return None
+
+
+def _follow_up_fields(target_user: discord.Member, dm_sent: bool, restricted: bool) -> list:
+    fields = []
+    if not dm_sent:
+        fields.append(("DM", DM_FAILED_TEXT))
+    if restricted:
+        team_name = _registered_team(target_user)
+        if team_name:
+            fields.append((
+                "신청 팀",
+                f"현재 **{team_name}** 팀에 등록되어 있습니다. 필요하면 관리 버튼에서 강제 취소해주세요.",
+            ))
+    return fields
 
 
 class WarningReasonModal(Modal):
@@ -158,6 +187,12 @@ class WarningReasonModal(Modal):
             )
 
             if success:
+                dm_sent = await send_sanction_dm(
+                    self.target_user, warning_type, reason,
+                    auto_warning=auto_warning,
+                    converted_cautions=converted_cautions,
+                )
+                follow_up = _follow_up_fields(self.target_user, dm_sent, restricted=bool(auto_warning))
 
                 if auto_warning and converted_cautions:
                     fields = [
@@ -166,6 +201,7 @@ class WarningReasonModal(Modal):
                         ("📊 누적 경고", _count_summary(auto_warning)),
                         ("📝 이번 주의 사유", reason),
                         ("📋 누적 주의 내역", _caution_history(converted_cautions, detailed=False)),
+                        *follow_up,
                     ]
                     view_result = custom_view(
                         "🚨 경고 자동 부여 완료",
@@ -181,6 +217,7 @@ class WarningReasonModal(Modal):
                         ("🚫 참여 제한", f"`{warning_info.get('restricted_until', 'N/A')}`까지"),
                         ("📊 누적 경고", _count_summary(warning_info)),
                         ("📝 사유", reason),
+                        *follow_up,
                     ]
                     view_result = custom_view("🚨 경고 부여 완료", "", discord.Color.red(), fields=fields)
 
@@ -189,14 +226,9 @@ class WarningReasonModal(Modal):
                         ("📌 대상", f"{self.target_user.mention} (`{target_nickname}`)"),
                         ("📝 사유", reason),
                         ("💡 참고", f"주의 {WarningManager.CAUTION_TO_WARNING_COUNT}회 누적 시 경고로 자동 전환됩니다."),
+                        *follow_up,
                     ]
                     view_result = custom_view("⚡ 주의 부여 완료", "", CAUTION_COLOR, fields=fields)
-
-                await send_sanction_dm(
-                    self.target_user, warning_type, reason,
-                    auto_warning=auto_warning,
-                    converted_cautions=converted_cautions,
-                )
             else:
                 logger.error(f"[모달] {warning_type} 추가 실패 - 대상: {target_nickname}, 메시지: {message}")
                 view_result = error_view(message, title="❌ 처리 실패")
