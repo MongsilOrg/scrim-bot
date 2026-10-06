@@ -36,7 +36,7 @@ class DiscordService:
         try:
             notice_channel = guild.get_channel(settings.NOTICE_CHANNEL_ID)
             if not notice_channel:
-                logger.warning("[Discord] 전체 공지 채널을 찾을 수 없음")
+                logger.error("[Discord] 전체 공지 채널을 찾을 수 없음")
                 return
 
             date_str = get_current_kst_time().strftime('%m.%d')
@@ -95,7 +95,7 @@ class DiscordService:
     def _build_group_notice(self, guild: discord.Guild, group_letter: str, group: List[Tuple[str, "TeamData", float]], message: str, *, has_image: bool):
         role_mention = get_group_role_mention(guild, group_letter)
         if not role_mention:
-            logger.warning(f"[Discord] 조별 역할을 찾을 수 없음 - 역할: {group_letter}조")
+            logger.error(f"[Discord] 조별 역할을 찾을 수 없음 - 역할: {group_letter}조")
         title, _, rest = message.partition("\n")
         info_line = " | ".join(part for part in (role_mention, rest) if part)
         full_message = "\n".join(line for line in (title, info_line) if line)
@@ -110,7 +110,7 @@ class DiscordService:
         try:
             group_letter = get_group_letter(channel.id)
             if not group_letter:
-                logger.warning(f"[Discord] 채널에 해당하는 조를 찾을 수 없음 - 채널 ID: {channel.id}")
+                logger.error(f"[Discord] 채널에 해당하는 조를 찾을 수 없음 - 채널 ID: {channel.id}")
                 group_letter = "A"
 
             group_teams = {team_name: team_data for team_name, team_data, _ in group}
@@ -237,9 +237,9 @@ class DiscordService:
                             else:
                                 pass
                         else:
-                            logger.warning(f"[Discord] 조별 채널을 찾을 수 없음 - 조: {group_letter}조, 채널 ID: {channel_id}")
+                            logger.error(f"[Discord] 조별 채널을 찾을 수 없음 - 조: {group_letter}조, 채널 ID: {channel_id}")
                     else:
-                        logger.warning(f"[Discord] 조별 채널 ID가 설정되지 않음 - 조: {group_letter}조")
+                        logger.error(f"[Discord] 조별 채널 ID가 설정되지 않음 - 조: {group_letter}조")
                 except Exception as e:
                     logger.error(f"[Discord] 조별 공지 전송 실패 - 조: {group_letter}조: {e}", exc_info=True)
                     continue
@@ -360,13 +360,15 @@ class DiscordService:
                 if role:
                     group_roles[group_letter] = role
                 else:
-                    logger.warning(f"[Discord] 역할을 찾을 수 없음 - 역할: {role_name}")
+                    logger.error(f"[Discord] 역할을 찾을 수 없음, 이 조는 역할 갱신 생략 - 역할: {role_name}")
 
             today_participants = {letter: set() for letter in group_roles.keys()}
             for group_idx, group in enumerate(groups):
                 if not group:
                     continue
                 group_letter = chr(65 + group_idx)
+                if group_letter not in today_participants:
+                    continue
                 today_participants[group_letter] |= self._team_participants(group)
 
             role_updates = self._build_role_updates(guild, group_roles, today_participants)
@@ -385,7 +387,7 @@ class DiscordService:
             role_name = f"{group_letter}조"
             group_role = discord.utils.get(guild.roles, name=role_name)
             if not group_role:
-                logger.warning(f"[Discord] 역할을 찾을 수 없음 - 역할: {role_name}")
+                logger.error(f"[Discord] 역할을 찾을 수 없음 - 역할: {role_name}")
                 return
 
             participants = self._team_participants(group_teams)
@@ -403,12 +405,12 @@ class DiscordService:
     def _sorted_group_voice_channels(guild: discord.Guild, group_letter: str) -> Optional[List[discord.VoiceChannel]]:
         category_name = settings.GROUP_CATEGORY_PATTERN.format(letter=group_letter)
         if not category_name:
-            logger.warning(f"[Discord] 카테고리 패턴이 설정되지 않음 - 조: {group_letter}조")
+            logger.error(f"[Discord] 카테고리 패턴이 설정되지 않음 - 조: {group_letter}조")
             return None
 
         category = discord.utils.get(guild.categories, name=category_name)
         if not category:
-            logger.warning(f"[Discord] 카테고리를 찾을 수 없음 - 카테고리: {category_name}")
+            logger.error(f"[Discord] 카테고리를 찾을 수 없음 - 카테고리: {category_name}")
             return None
 
         voice_channels = [ch for ch in category.voice_channels if isinstance(ch, discord.VoiceChannel)]
