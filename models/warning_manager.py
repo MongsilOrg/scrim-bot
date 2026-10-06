@@ -51,8 +51,10 @@ class WarningManager:
         self._connect_lock = asyncio.Lock()
         self._last_connect_attempt: float = 0.0
         self._connect_failure_notified = False
+        self._lookup_failure_notified_at: Optional[float] = None
 
     RECONNECT_COOLDOWN_SECONDS = 60
+    LOOKUP_FAILURE_NOTIFY_SECONDS = 1800
 
     async def ensure_connected(self) -> bool:
         """시트 연결이 없으면 재시도, 실패는 로그 채널에 연속 실패당 한 번 알림."""
@@ -513,7 +515,8 @@ class WarningManager:
                 "시트에 일부만 기록되었을 수 있으니 패널티 시트를 확인해주세요."
             ), None, []
     
-    def _get_warnings_cache(self) -> List[Dict]:
+    def _get_warnings_cache(self) -> Optional[List[Dict]]:
+        """None은 조회 실패에 캐시도 없음."""
         current_time = get_current_kst_time()
 
         if (self._warnings_cache is not None and
@@ -538,7 +541,34 @@ class WarningManager:
             if self._warnings_cache is not None:
                 logger.warning("[경고관리] API 오류 발생 - 캐시된 데이터 사용")
                 return self._warnings_cache
-            return []
+            return None
+
+    def _notify_lookup_failure(self) -> None:
+        """is_restricted는 스레드에서 돌아 로그 채널 전송을 봇 이벤트 루프에 넘김."""
+        now = time.monotonic()
+        if (self._lookup_failure_notified_at is not None
+                and now - self._lookup_failure_notified_at < self.LOOKUP_FAILURE_NOTIFY_SECONDS):
+            return
+        self._lookup_failure_notified_at = now
+        text = (
+            "⚠️ 경고 시트 조회에 실패했고 캐시도 없어 제재 여부를 확인하지 못했습니다. "
+            "조회가 될 때까지 팀 등록은 제재 확인 없이 통과합니다."
+        )
+        try:
+            client = BotManager.get_instance().get_client()
+            loop = client.loop if client else None
+            if loop is None or not loop.is_running():
+                return
+            try:
+                running = asyncio.get_running_loop()
+            except RuntimeError:
+                running = None
+            if running is loop:
+                loop.create_task(self._notify_log_channel(text))
+            else:
+                asyncio.run_coroutine_threadsafe(self._notify_log_channel(text), loop)
+        except Exception as e:
+            logger.warning(f"[경고관리] 시트 조회 실패 알림 예약 실패: {e}")
     
     def _invalidate_cache(self) -> None:
         self._warnings_cache = None
@@ -579,6 +609,10 @@ class WarningManager:
                 check_date = get_current_kst_time()
 
             warnings = self._get_warnings_cache()
+            if warnings is None:
+                # 연결 실패 때와 같이 fail-open, 운영진이 알 수 있게 로그 채널에 남김
+                self._notify_lookup_failure()
+                return False, None
             latest_warning = self._find_max_restriction(warnings, target_id, target_name)
 
             if latest_warning:
