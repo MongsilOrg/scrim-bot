@@ -384,18 +384,14 @@ class TeamDataManager:
             if team.name != team_name:
                 team.name = team_name
 
-            # 파이프라인 검증 뒤 MMR 조회 대기 중 조편성 시작 레이스
-            is_allowed, reason = self.check_team_time_rules(get_current_kst_time())
-            if not is_allowed:
-                return False, reason
-
             async with self._teams_lock:
-                if team_name in self.teams:
-                    existing = self.teams[team_name]
-                    if existing.user_id != str(user.id):
-                        return False, f"'{team_name}' 팀명이 이미 다른 사용자에 의해 등록되었습니다."
-                    # 새 로스터 기준 갱신만으로는 빠진 멤버 키 잔존
-                    self._remove_member_index(team_name, existing)
+                # 파이프라인 검증은 잠금 밖, 동시 신청이 같은 선수를 두 팀에 넣을 수 있음
+                is_allowed, reason = self.check_team_time_rules(get_current_kst_time())
+                if not is_allowed:
+                    return False, reason
+                is_unique, reason = self.check_duplicate_with_bot_teams(team_name, team.all_members)
+                if not is_unique:
+                    return False, reason
 
                 team.user_id = str(user.id)
                 self.teams[team_name] = team
@@ -463,13 +459,31 @@ class TeamDataManager:
                 team.mmr_updated_at = get_current_kst_time()
 
 
-    async def replace_team(self, old_team_name: str, new_team: TeamData, new_mmr: float) -> Tuple[bool, str]:
-        """반환: 성공 여부, 실패 사유."""
+    async def replace_team(
+        self,
+        old_team_name: str,
+        new_team: TeamData,
+        new_mmr: float,
+        *,
+        enforce_rules: bool = True,
+    ) -> Tuple[bool, str]:
+        """반환: 성공 여부, 실패 사유. 조편성 뒤 관리자 로스터 변경은 enforce_rules=False."""
         async with self._teams_lock:
             if old_team_name not in self.teams:
                 # 검증과 저장 사이에 취소된 팀, 여기서 추가하면 부활
                 logger.warning(f"[팀데이터] 교체 대상 팀 없음 - 교체 중단: {old_team_name}")
                 return False, f"'{old_team_name}' 팀이 등록되어 있지 않습니다. 이미 취소되었을 수 있습니다."
+
+            if enforce_rules:
+                is_allowed, reason = self.check_team_time_rules(get_current_kst_time(), is_edit=True)
+                if not is_allowed:
+                    return False, reason
+                is_unique, reason = self.check_duplicate_with_bot_teams(
+                    new_team.name, new_team.all_members, exclude_team=old_team_name
+                )
+                if not is_unique:
+                    logger.info(f"[팀데이터] 교체 거부 - 중복: {new_team.name}")
+                    return False, reason
 
             new_key = normalize_team_name(new_team.name)
             if any(

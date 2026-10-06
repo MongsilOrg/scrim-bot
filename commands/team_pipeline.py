@@ -312,7 +312,9 @@ async def process_team_edit(
         # 관리자가 수정해도 신청자 user_id 유지
         new_team_data.user_id = original_team_data.user_id or str(interaction.user.id)
         new_team_data.created_at = interaction.created_at
-        replaced, replace_reason = await team_data_manager.replace_team(original_team_name, new_team_data, new_team_mmr)
+        replaced, replace_reason = await team_data_manager.replace_team(
+            original_team_name, new_team_data, new_team_mmr, enforce_rules=not is_roster_change
+        )
         if not replaced:
             # 모달이 열린 사이 팀이 취소되거나 개명된 경우
             await update_temp_message(temp_message, replace_reason, discord.Color.red())
