@@ -676,9 +676,11 @@ async def _apply_roster_warnings(
 
 async def _update_mmr_message_for_individual_team(team_data_manager: "TeamDataManager") -> None:
     try:
-        if team_data_manager.mmr_message and team_data_manager.mmr_message.channel:
-            await team_data_manager.update_mmr_message(team_data_manager.mmr_message.channel)
+        # 재시작 직후에는 mmr_message가 비어 있어 스크림 채널로 찾음
+        channel = team_data_manager.resolve_mmr_channel()
+        if channel:
+            await team_data_manager.update_mmr_message(channel)
         else:
-            logger.warning("[팀수정] MMR 메시지 또는 채널 정보가 없어 업데이트 건너뜀")
+            logger.warning("[팀수정] MMR 채널을 찾지 못해 업데이트 건너뜀")
     except Exception as e:
         logger.error(f"[팀수정] 개별 팀 수정 후 MMR 메시지 업데이트 실패: {e}", exc_info=True)
