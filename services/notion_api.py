@@ -6,7 +6,7 @@ import requests
 from datetime import date, datetime, timedelta
 from typing import List, Optional, Set
 
-from config.logging_config import get_logger
+from config.logging_config import get_logger, log_once
 from utils.helpers import effective_scrim_date, get_current_kst_time
 
 logger = get_logger('notion_api')
@@ -174,8 +174,12 @@ def get_masters_dates(range_start: date, range_end: date) -> Set[date]:
 
 
 _SERVER_INFO_TTL_SECONDS = 300
+# 실패 직후 호출마다 다시 조회하지 않는 간격
+_SERVER_INFO_RETRY_SECONDS = 60
 _server_info_cache: Optional[dict] = None
 _server_info_cached_at: float = 0.0
+_server_info_cached_for: Optional[tuple] = None
+_server_info_failed_at: Optional[float] = None
 
 
 def _build_server_info(is_tournament: bool, broadcast: bool) -> dict:
@@ -196,30 +200,46 @@ def _build_server_info(is_tournament: bool, broadcast: bool) -> dict:
     }
 
 
+def _server_info_day(now_kst: datetime) -> tuple:
+    # check_notion_for_tags가 보는 두 날짜와 같아야 날짜가 바뀐 뒤 이전 판정을 쓰지 않음
+    return effective_scrim_date(now_kst), now_kst.date()
+
+
+def _log_server_info_failure(e: Exception, fallback: str) -> None:
+    status = e.response.status_code if isinstance(e, requests.HTTPError) and e.response is not None else None
+    transient = isinstance(e, (requests.ConnectionError, requests.Timeout)) or bool(status and (status >= 500 or status == 429))
+    if not log_once(f"notion-server-info:{status or type(e).__name__}", 600):
+        return
+    # 노션 쪽 일시 장애는 경고만. 인증이나 요청 오류는 손봐야 하므로 ERROR
+    if transient:
+        logger.warning(f"[노션] 서버 정보 조회 실패, {fallback} 사용: {e}")
+    else:
+        logger.error(f"[노션] 서버 정보 조회 실패, {fallback} 사용 - 상태: {status}: {e}", exc_info=True)
+
+
 def get_server_info() -> dict:
-    """예외 없음, 조회 실패 시 만료 캐시나 Live 기본값 반환."""
-    global _server_info_cache, _server_info_cached_at
+    """예외 없음, 조회 실패 시 같은 날 캐시나 Live 기본값 반환."""
+    global _server_info_cache, _server_info_cached_at, _server_info_cached_for, _server_info_failed_at
 
     now = time.monotonic()
-    if _server_info_cache is not None and (now - _server_info_cached_at) < _SERVER_INFO_TTL_SECONDS:
-        return _server_info_cache
+    day = _server_info_day(get_current_kst_time())
+    same_day_cache = _server_info_cache if _server_info_cached_for == day else None
+
+    if same_day_cache is not None and (now - _server_info_cached_at) < _SERVER_INFO_TTL_SECONDS:
+        return same_day_cache
+    if _server_info_failed_at is not None and (now - _server_info_failed_at) < _SERVER_INFO_RETRY_SECONDS:
+        return same_day_cache if same_day_cache is not None else _build_server_info(False, True)
 
     try:
         [is_tournament, broadcast] = check_notion_for_tags()
     except Exception as e:
-        if _server_info_cache is not None:
-            logger.warning(f"[노션] 서버 정보 조회 실패, 만료된 캐시 사용: {e}")
-            return _server_info_cache
-        status = e.response.status_code if isinstance(e, requests.HTTPError) and e.response is not None else None
-        # 노션 쪽 일시 장애는 경고만. 인증이나 요청 오류는 손봐야 하므로 ERROR
-        if isinstance(e, (requests.ConnectionError, requests.Timeout)) or (status and (status >= 500 or status == 429)):
-            logger.warning(f"[노션] 서버 정보 조회 실패, Live 기본값 사용: {e}")
-        else:
-            logger.error(f"[노션] 서버 정보 조회 실패, Live 기본값 사용: {e}", exc_info=True)
-        return _build_server_info(False, True)
+        _server_info_failed_at = now
+        _log_server_info_failure(e, "같은 날 캐시" if same_day_cache is not None else "Live 기본값")
+        return same_day_cache if same_day_cache is not None else _build_server_info(False, True)
 
     info = _build_server_info(is_tournament, broadcast)
     _server_info_cache = info
     _server_info_cached_at = now
+    _server_info_cached_for = day
+    _server_info_failed_at = None
     return info
-
