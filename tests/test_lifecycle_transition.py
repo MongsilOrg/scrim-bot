@@ -86,6 +86,7 @@ class SetupScrimDashboardTest(unittest.IsolatedAsyncioTestCase):
         from commands import scrim
         self.scrim = scrim
         self.addCleanup(setattr, scrim, '_daily_reset_task', None)
+        self.addCleanup(scrim.set_dashboard_refresh_hook, None)
 
     async def _setup(self, client, refresh_error=None):
         loop_coro = AsyncMock()

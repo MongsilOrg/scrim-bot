@@ -14,6 +14,9 @@ from utils.layout_helpers import (
     send_error_message,
 )
 from commands.team_pipeline import recall_failed_input, schedule_mmr_refresh
+from models.team_data_manager import (
+    NEXT_OPEN_NOTICE, PHASE_ASSIGNED, PHASE_CANCELLED, PHASE_CLOSED, PHASE_OPEN,
+)
 from models.user_team_cache import UserTeamCache
 from utils.helpers import get_current_kst_time, get_team_members, is_admin
 
@@ -32,6 +35,19 @@ TEAM_ALREADY_GONE_MSG = "이미 취소된 팀입니다."
 MODAL_SERVER_ERROR_MSG = "Discord 서버 오류로 입력 창을 열지 못했습니다. 잠시 후 다시 시도해주세요."
 
 
+def dashboard_status_line(phase: str, team_count: int) -> str:
+    if phase == PHASE_ASSIGNED:
+        return f"조편성을 마쳤습니다. {NEXT_OPEN_NOTICE}"
+    if phase == PHASE_CANCELLED:
+        return f"오늘 스크림은 팀 부족으로 취소되었습니다. {NEXT_OPEN_NOTICE}"
+    if phase == PHASE_CLOSED:
+        return (
+            f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시에 신청이 마감되었습니다. "
+            f"{settings.NEXT_SCRIM_OPEN_HOUR}시에 다음 스크림 신청이 열립니다."
+        )
+    return f"현재 {team_count}팀 신청, {settings.TEAMS_PER_GROUP}팀 미만이면 취소됩니다."
+
+
 def applicant_only_cancel_msg(applicant_id: Optional[str]) -> str:
     target = f"신청자 <@{applicant_id}>" if applicant_id else "신청자"
     return f"팀 취소는 신청자만 할 수 있습니다. {target}에게 요청해주세요."
@@ -39,7 +55,16 @@ def applicant_only_cancel_msg(applicant_id: Optional[str]) -> str:
 
 class TeamInputView(LayoutView):
 
-    def __init__(self, *, scrim_day: int, scrim_month: int, scrim_weekday: str, is_rest_day: bool = False):
+    def __init__(
+        self,
+        *,
+        scrim_day: int,
+        scrim_month: int,
+        scrim_weekday: str,
+        is_rest_day: bool = False,
+        phase: str = PHASE_OPEN,
+        team_count: int = 0,
+    ):
         super().__init__(timeout=None)
 
         scrim_label = "자율 스크림" if is_rest_day else "스크림"
@@ -64,7 +89,7 @@ class TeamInputView(LayoutView):
             )
 
         children = [
-            TextDisplay(content=f"## {title}"),
+            TextDisplay(content=f"## {title}\n{dashboard_status_line(phase, team_count)}"),
             TextDisplay(content=schedule),
         ]
 
@@ -81,11 +106,19 @@ class TeamInputView(LayoutView):
 
         self.add_item(Container(*children, accent_colour=Color.green()))
 
-        self.add_team_button = Button(label="신청 및 수정", style=ButtonStyle.primary)
+        # 고정 custom_id가 아니면 갱신마다 라우팅 키가 바뀌어 편집 직전 클릭이 실패
+        registration_open = phase == PHASE_OPEN
+        self.add_team_button = Button(
+            label="신청 및 수정", style=ButtonStyle.primary,
+            custom_id="scrim_dashboard_apply", disabled=not registration_open,
+        )
         self.add_team_button.callback = self.add_team_callback
-        self.cancel_team_button = Button(label="취소", style=ButtonStyle.secondary)
+        self.cancel_team_button = Button(
+            label="취소", style=ButtonStyle.secondary,
+            custom_id="scrim_dashboard_cancel", disabled=not registration_open,
+        )
         self.cancel_team_button.callback = self.cancel_team_callback
-        self.manage_button = Button(label="관리", style=ButtonStyle.secondary)
+        self.manage_button = Button(label="관리", style=ButtonStyle.secondary, custom_id="scrim_dashboard_manage")
         self.manage_button.callback = self.manage_callback
         self.add_item(ActionRow(self.add_team_button, self.cancel_team_button, self.manage_button))
 

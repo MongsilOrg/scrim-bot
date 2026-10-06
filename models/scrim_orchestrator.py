@@ -139,12 +139,16 @@ class ScrimOrchestrator:
             logger.info("[조편성] 오늘 조편성 처리 완료 상태 - 건너뜀")
             return
 
+        # 17시 마감을 대시보드 버튼에 반영
+        team_data_manager.request_dashboard_refresh()
+
         if team_data_manager.is_team_assignment_started and team_data_manager.groups is not None:
             if self._today_progress() is None:
                 # 단계 기록 도입 전 백업은 조 저장 뒤 Discord 처리까지 끝난 상태
                 logger.warning("[조편성] 단계 기록이 없는 조편성 상태 - 완료로 처리")
                 team_data_manager.last_auto_assignment = current_time
                 team_data_manager.save_backup()
+                team_data_manager.request_dashboard_refresh()
                 return
             logger.info("[조편성] 중단된 조편성 이어서 진행")
             await self._run_discord_stages()
@@ -176,6 +180,7 @@ class ScrimOrchestrator:
         # 재시작 때 취소 공지 재전송 방지
         team_data_manager.last_auto_assignment = current_time
         team_data_manager.save_backup()
+        team_data_manager.request_dashboard_refresh()
         if team_count:
             await self._send_cancellation_notice(team_data_manager, team_count)
 
@@ -349,6 +354,7 @@ class ScrimOrchestrator:
 
         mgr.last_auto_assignment = get_current_kst_time()
         mgr.save_backup()
+        mgr.request_dashboard_refresh()
         logger.info("[조편성] 공지와 역할 처리 완료")
 
     async def _send_group_notices(self, guild, service, groups) -> List[str]:

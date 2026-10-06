@@ -13,6 +13,7 @@ from models.scrim_orchestrator import (
     is_scrim_expired,
     transition_to_next_scrim,
 )
+from models.team_data_manager import set_dashboard_refresh_hook
 from services.holidays_api import get_rest_day_info
 from utils.helpers import get_next_scrim_date
 from utils.layout_helpers import upsert_persistent_message
@@ -23,8 +24,47 @@ SCRIM_CHANNEL_ID = settings.SCRIM_CHANNEL_ID
 
 _daily_reset_task: asyncio.Task | None = None
 
+# 신청이 몰릴 때 이 간격 안의 변경을 편집 한 번으로 묶음
+DASHBOARD_REFRESH_DELAY_SECONDS = 5
+_dashboard_refresh_task: asyncio.Task | None = None
+_dashboard_lock = asyncio.Lock()
+
+
+def request_dashboard_refresh() -> None:
+    global _dashboard_refresh_task
+    if _dashboard_refresh_task is not None and not _dashboard_refresh_task.done():
+        return
+    _dashboard_refresh_task = asyncio.create_task(_debounced_dashboard_refresh())
+
+
+async def _debounced_dashboard_refresh() -> None:
+    global _dashboard_refresh_task
+    await asyncio.sleep(DASHBOARD_REFRESH_DELAY_SECONDS)
+    # 편집 중에 들어온 요청은 다음 편집으로 넘김
+    _dashboard_refresh_task = None
+
+    bot_manager = BotManager.get_instance()
+    team_data_manager = bot_manager.get_team_data_manager()
+    # 22시 전환 중에는 메시지 ID가 잠시 비어 새 대시보드가 생길 수 있음
+    if not team_data_manager.dashboard_message_id or is_scrim_expired(team_data_manager):
+        return
+    client = bot_manager.get_client()
+    channel = client.get_channel(SCRIM_CHANNEL_ID) if client else None
+    if channel is None:
+        logger.warning(f"[스크림] 대시보드 갱신 건너뜀 - 채널 없음: {SCRIM_CHANNEL_ID}")
+        return
+    try:
+        await _refresh_scrim_dashboard(channel)
+    except Exception as e:
+        logger.error(f"[스크림] 대시보드 갱신 실패: {e}", exc_info=True)
+
 
 async def _refresh_scrim_dashboard(channel: discord.TextChannel) -> None:
+    async with _dashboard_lock:
+        await _edit_scrim_dashboard(channel)
+
+
+async def _edit_scrim_dashboard(channel: discord.TextChannel) -> None:
     team_data_manager = BotManager.get_instance().get_team_data_manager()
     date_info = get_next_scrim_date()
 
@@ -41,6 +81,8 @@ async def _refresh_scrim_dashboard(channel: discord.TextChannel) -> None:
         scrim_month=scrim_month,
         scrim_weekday=date_info['weekday_name'],
         is_rest_day=scrim_is_rest_day,
+        phase=team_data_manager.registration_phase(),
+        team_count=len(team_data_manager.teams),
     )
 
     new_id = await upsert_persistent_message(channel, team_data_manager.dashboard_message_id, view)
@@ -80,6 +122,7 @@ async def _sync_scrim_dashboard(client: ScrimBot) -> None:
 async def setup_scrim_dashboard(client: ScrimBot) -> None:
     global _daily_reset_task
 
+    set_dashboard_refresh_hook(request_dashboard_refresh)
     try:
         await _sync_scrim_dashboard(client)
     finally:

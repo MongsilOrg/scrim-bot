@@ -1,7 +1,7 @@
 import asyncio
 import os
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import discord
 
@@ -26,6 +26,19 @@ DEADLINE_PASSED_MSG = (
     f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시에 신청과 수정이 마감되었습니다. {NEXT_OPEN_NOTICE}"
 )
 ASSIGNMENT_CLOSED_MSG = f"조편성이 끝나 신청과 수정이 마감되었습니다. {NEXT_OPEN_NOTICE}"
+
+PHASE_OPEN = 'open'
+PHASE_CLOSED = 'closed'
+PHASE_ASSIGNED = 'assigned'
+PHASE_CANCELLED = 'cancelled'
+
+# 스크림 대시보드 갱신 요청, 등록은 commands.scrim 몫
+_dashboard_refresh_hook: Optional[Callable[[], None]] = None
+
+
+def set_dashboard_refresh_hook(hook: Optional[Callable[[], None]]) -> None:
+    global _dashboard_refresh_hook
+    _dashboard_refresh_hook = hook
 
 
 WEEKDAY_NAMES = ('월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일')
@@ -75,6 +88,26 @@ class TeamDataManager:
 
     def save_backup(self) -> None:
         self._backup.save()
+
+    def request_dashboard_refresh(self) -> None:
+        hook = _dashboard_refresh_hook
+        if hook is None:
+            return
+        try:
+            hook()
+        except Exception as e:
+            logger.warning(f"[팀데이터] 대시보드 갱신 요청 실패: {e}")
+
+    def registration_phase(self, current_time: Optional[datetime] = None) -> str:
+        """조편성 완료와 팀 부족 취소는 둘 다 last_auto_assignment를 남기고 조 저장 여부만 다름."""
+        if current_time is None:
+            current_time = get_current_kst_time()
+        last = self.last_auto_assignment
+        if (self.is_scrim_date_today(current_time)
+                and last and last.date() == current_time.date()):
+            return PHASE_ASSIGNED if self.groups is not None else PHASE_CANCELLED
+        is_open, _ = self.check_team_time_rules(current_time)
+        return PHASE_OPEN if is_open else PHASE_CLOSED
 
     def load_backup(self) -> bool:
         return self._backup.load()
@@ -415,6 +448,7 @@ class TeamDataManager:
                 self._mmr_dirty = True
 
             self.save_backup()
+            self.request_dashboard_refresh()
             return True, ""
 
         except Exception as e:
@@ -437,6 +471,7 @@ class TeamDataManager:
 
             self.clear_unverified(team_name)
             self.save_backup()
+            self.request_dashboard_refresh()
             return True, ""
 
         except Exception as e:
@@ -517,6 +552,8 @@ class TeamDataManager:
             self._add_member_index(new_team.name, new_team)
             self._mmr_dirty = True
         self.save_backup()
+        if enforce_rules:
+            self.request_dashboard_refresh()
         return True, ""
 
     def check_duplicate_with_bot_teams(self, team_name: str, team_members: List[str], exclude_team: str = None) -> Tuple[bool, str]:
