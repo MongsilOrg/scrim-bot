@@ -5,6 +5,7 @@ import discord
 
 from bot.manager import BotManager
 from commands.ui.warning_modals import REASON_TYPE, send_sanction_dm
+from utils.scrim_history import record_assignment
 from config.logging_config import get_logger
 from config.settings import settings
 from models.team_data import TeamData
@@ -377,6 +378,14 @@ async def process_team_edit(
 
         if is_roster_change and group_letter:
             await _update_changed_team(group_letter, team_data_manager, original_team_name, new_team_name, new_team_mmr)
+            # 대타가 시즌 통계에 들어가도록 바뀐 조 구성을 한 줄 더 남김
+            client = BotManager.get_instance().get_client()
+            team_data_manager.spawn_task(record_assignment(
+                team_data_manager.groups, None, registered=None,
+                guild=client.get_guild(settings.GUILD_ID) if client else None,
+                is_test=team_processor.is_test_account,
+                source='roster_change', changed_team=new_team_name,
+            ))
 
         roster_warnings: List[str] = []
         if is_roster_change:
