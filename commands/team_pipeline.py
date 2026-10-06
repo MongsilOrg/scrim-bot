@@ -380,9 +380,7 @@ async def process_team_edit(
 
         roster_warnings: List[str] = []
         if is_roster_change:
-            roster_warnings = await _collect_roster_warnings(
-                team_data_manager, team_processor, new_team_data, original_team_name
-            )
+            roster_warnings = await _collect_roster_warnings(team_data_manager, team_processor, new_team_data)
             if roster_warnings:
                 logger.info(f"[로스터변경경고] {new_team_name} | {' / '.join(roster_warnings)}")
 
@@ -541,9 +539,8 @@ async def _collect_roster_warnings(
     team_data_manager: "TeamDataManager",
     team_processor: "TeamProcessor",
     new_team_data: TeamData,
-    original_team_name: str,
 ) -> List[str]:
-    """조편성 뒤 관리자 로스터 변경은 막지 않고 결과 카드에 경고만 붙임."""
+    """조편성 뒤 관리자 로스터 변경은 막지 않고 결과 카드에 경고만 붙임. 교체 저장 뒤 호출."""
     warnings: List[str] = []
     members = new_team_data.all_members
     try:
@@ -553,7 +550,7 @@ async def _collect_roster_warnings(
     except Exception as e:
         logger.warning(f"[로스터변경] 제한 확인 실패: {e}")
 
-    conflicts = team_data_manager.find_member_conflicts(members, exclude_team=original_team_name)
+    conflicts = team_data_manager.find_member_conflicts(members, exclude_team=new_team_data.name)
     if conflicts:
         warnings.append("다른 팀과 중복: " + ", ".join(f"**{m}** {team}" for m, team in conflicts))
 

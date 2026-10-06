@@ -15,8 +15,9 @@ class RosterWarningsTest(unittest.IsolatedAsyncioTestCase):
     async def test_collects_restricted_duplicate_and_missing(self):
         from commands import team_pipeline
 
+        new_team = TeamData(name='새알파팀', players=['a1', 'b1', '제한됨'], staff=['없는사람'])
         mgr = make_manager({
-            '알파팀': TeamData(name='알파팀', players=['a1', 'a2', 'a3']),
+            '새알파팀': new_team,
             '베타팀': TeamData(name='베타팀', players=['b1', 'b2', 'b3']),
         }, started=True)
         mgr.client = None
@@ -36,8 +37,7 @@ class RosterWarningsTest(unittest.IsolatedAsyncioTestCase):
         processor = mock.Mock()
         processor.is_test_account.return_value = False
 
-        new_team = TeamData(name='알파팀', players=['a1', 'b1', '제한됨'], staff=['없는사람'])
-        warnings = await team_pipeline._collect_roster_warnings(mgr, processor, new_team, '알파팀')
+        warnings = await team_pipeline._collect_roster_warnings(mgr, processor, new_team)
 
         joined = '\n'.join(warnings)
         self.assertIn('**제한됨** 10월 8일 목요일까지', joined)
