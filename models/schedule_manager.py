@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from config.logging_config import get_logger
 from config.settings import settings
 from utils.helpers import KST, get_current_kst_time, save_json_atomic
+from utils.layout_helpers import format_kr_date
 
 logger = get_logger('schedule_manager')
 
@@ -21,6 +22,10 @@ BACKUP_PATH = os.path.join(
     'data',
     'schedule_backup.json',
 )
+
+
+def _week_label(monday: datetime) -> str:
+    return f"{format_kr_date(monday)}부터 {format_kr_date(monday + timedelta(days=5))}까지"
 
 
 class ScheduleManager:
@@ -48,13 +53,8 @@ class ScheduleManager:
         next_monday = (now + timedelta(days=days_until_monday)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
-        next_saturday = next_monday + timedelta(days=5)
-
         self.week_start = next_monday
-        self.week_label = (
-            f"{next_monday.month}/{next_monday.day} ~ "
-            f"{next_saturday.month}/{next_saturday.day}"
-        )
+        self.week_label = _week_label(next_monday)
         # 상태 메시지 참조는 새 주차 현황 갱신에 재사용
         self.availability.clear()
         self.absence_reasons.clear()
@@ -94,10 +94,10 @@ class ScheduleManager:
         total = len(all_admin_ids)
         resp_count = len(responded)
 
-        lines = [f"## 📅 주간 일정 ({self.week_label})"]
+        lines = [f"## 📅 주간 일정\n{self.week_label}"]
 
         lines.append('')
-        lines.append(f'**📋 응답 현황** ({resp_count}/{total}명)')
+        lines.append(f'**응답 현황** {total}명 중 {resp_count}명 응답')
         if not responded:
             lines.append('> 아직 응답한 관리자가 없습니다.')
         else:
@@ -107,29 +107,29 @@ class ScheduleManager:
                 reasons = self.absence_reasons.get(uid, {})
 
                 if -1 in reasons:
-                    lines.append(f'> ❌ {name} - 불참 ({reasons[-1]})')
+                    lines.append(f'> {name}: 불참, 사유 {reasons[-1]}')
                 elif avail:
                     day_labels = ', '.join(WEEKDAYS[d] for d in sorted(avail))
-                    lines.append(f'> ✅ {name} - {day_labels}')
+                    lines.append(f'> {name}: {day_labels}')
                 else:
-                    lines.append(f'> ❌ {name} - 가용일 없음')
+                    lines.append(f'> {name}: 가능한 요일 없음')
 
         not_responded = [
             (uid, name) for uid, name in all_admin_ids if uid not in responded
         ]
         if not_responded:
             lines.append('')
-            lines.append(f'**⏳ 미응답** ({len(not_responded)}명)')
+            lines.append(f'**미응답** {len(not_responded)}명')
             names = ', '.join(name for _, name in not_responded)
             lines.append(f'> {names}')
         elif total > 0:
             lines.append('')
-            lines.append('> ✅ 모든 관리자가 응답 완료')
+            lines.append('> 모든 관리자가 응답했습니다.')
 
         if self.assignments:
             total_assigned = sum(len(v) for v in self.assignments.values())
             lines.append('')
-            lines.append(f'**📊 주간 편성** (총 {total_assigned}건)')
+            lines.append(f'**주간 편성** {total_assigned}건')
             for day_idx in ACTIVE_DAYS:
                 members = self.assignments.get(day_idx, [])
                 deployed = self.actual_deployments.get(day_idx, [])
@@ -139,23 +139,23 @@ class ScheduleManager:
 
                 name_parts = []
                 for uid in all_uids:
-                    name = self.admin_names.get(uid, '?')
+                    name = self.admin_names.get(uid, '알 수 없음')
                     if uid in deployed:
-                        name_parts.append(f'**{name}** ✅')
+                        name_parts.append(f'**{name}** 투입')
                     else:
                         name_parts.append(name)
                 for uid in extra_deployed:
-                    name = self.admin_names.get(uid, '?')
-                    name_parts.append(f'**{name}** ✅')
+                    name = self.admin_names.get(uid, '알 수 없음')
+                    name_parts.append(f'**{name}** 투입')
 
                 total_for_day = len(all_uids) + len(extra_deployed)
                 if name_parts:
                     lines.append(
-                        f'> **{WEEKDAYS[day_idx]}** ({total_for_day}명) - '
+                        f'> **{WEEKDAYS[day_idx]}** {total_for_day}명: '
                         f'{", ".join(name_parts)}'
                     )
                 else:
-                    lines.append(f'> **{WEEKDAYS[day_idx]}** (0명) - (배정 없음)')
+                    lines.append(f'> **{WEEKDAYS[day_idx]}** 배정 없음')
 
         return '\n'.join(lines)
 
@@ -344,6 +344,8 @@ class ScheduleManager:
                 )
             else:
                 self.week_start = None
+            if self.week_start:
+                self.week_label = _week_label(self.week_start)
 
             self.availability = {
                 uid: set(days)

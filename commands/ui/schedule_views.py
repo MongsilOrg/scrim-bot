@@ -25,6 +25,8 @@ from .views import ConfirmView
 
 logger = get_logger('schedule_views')
 
+NO_AVAILABILITY_TEXT = "참가를 등록한 관리자가 없습니다. 참가 버튼으로 먼저 등록해주세요."
+
 
 class AvailabilityModal(Modal):
 
@@ -55,12 +57,12 @@ class AvailabilityModal(Modal):
             day_str = ', '.join(WEEKDAYS[d] for d in sorted(selected_days))
             await send_response(
                 interaction,
-                success_view(f"{day_str} ({len(selected_days)}일) 참가 등록되었습니다.", title="✅ 참가 등록"),
+                success_view(f"참가 요일: {day_str}\n{len(selected_days)}일 참가로 등록했습니다.", title="✅ 참가 등록"),
             )
             await _refresh_schedule_status(interaction)
         except Exception as e:
             logger.error(f"[모달] 참가 등록 실패: {e}", exc_info=True)
-            await send_response(interaction, error_view("참가 등록 중 오류가 발생했습니다."))
+            await send_response(interaction, error_view("참가 등록을 저장하지 못했습니다. 참가 버튼을 다시 눌러주세요."))
 
 
 class AbsenceReasonModal(Modal):
@@ -86,12 +88,12 @@ class AbsenceReasonModal(Modal):
             )
             await send_response(
                 interaction,
-                success_view(f"전체 불참으로 등록되었습니다.\n사유: {reason}", title="🚫 불참 등록"),
+                success_view(f"이번 주 전체 불참으로 등록했습니다.\n사유: {reason}", title="🚫 불참 등록"),
             )
             await _refresh_schedule_status(interaction)
         except Exception as e:
             logger.error(f"[모달] 불참 등록 실패: {e}", exc_info=True)
-            await send_response(interaction, error_view("불참 등록 중 오류가 발생했습니다."))
+            await send_response(interaction, error_view("불참 등록을 저장하지 못했습니다. 불참 버튼을 다시 눌러주세요."))
 
 
 async def _ensure_schedule_ready(interaction: discord.Interaction, *, need_assignments: bool = False):
@@ -105,10 +107,10 @@ async def _ensure_schedule_ready(interaction: discord.Interaction, *, need_assig
     schedule_mgr = BotManager.get_instance().get_schedule_manager()
     if need_assignments:
         if not schedule_mgr.assignments:
-            await send_response(interaction, error_view("주간 일정이 편성되지 않았습니다.\n먼저 편성을 실행해주세요."))
+            await send_response(interaction, error_view("아직 편성하지 않았습니다. 편성 버튼을 먼저 눌러주세요."))
             return None
     elif not schedule_mgr.week_label:
-        await send_response(interaction, error_view("주간 일정이 초기화되지 않았습니다."))
+        await send_response(interaction, error_view("이번 주 일정이 아직 열리지 않았습니다. 봇 관리자에게 알려주세요."))
         return None
     return schedule_mgr
 
@@ -149,7 +151,7 @@ class ScheduleView(LayoutView):
         if schedule_mgr is None:
             return
         if schedule_mgr.assignments:
-            await send_response(interaction, error_view("편성이 완료된 상태에서는 일정을 수정할 수 없습니다.\n편성 취소 후 다시 시도해주세요."))
+            await send_response(interaction, error_view("편성을 마친 뒤에는 참가 요일을 바꿀 수 없습니다. 편성 버튼에서 편성을 취소한 뒤 다시 등록해주세요."))
             return
 
         user_id = str(interaction.user.id)
@@ -162,7 +164,7 @@ class ScheduleView(LayoutView):
         if schedule_mgr is None:
             return
         if schedule_mgr.assignments:
-            await send_response(interaction, error_view("편성이 완료된 상태에서는 불참을 수정할 수 없습니다.\n편성 취소 후 다시 시도해주세요."))
+            await send_response(interaction, error_view("편성을 마친 뒤에는 불참을 등록할 수 없습니다. 편성 버튼에서 편성을 취소한 뒤 다시 등록해주세요."))
             return
 
         user_id = str(interaction.user.id)
@@ -178,7 +180,7 @@ class ScheduleView(LayoutView):
 
         if not schedule_mgr.assignments:
             if not schedule_mgr.availability:
-                await send_response(interaction, error_view("참가 등록된 관리자가 없습니다."))
+                await send_response(interaction, error_view(NO_AVAILABILITY_TEXT))
                 return
 
             assignments = schedule_mgr.generate_assignments()
@@ -186,8 +188,8 @@ class ScheduleView(LayoutView):
             await send_response(
                 interaction,
                 success_view(
-                    f"**{schedule_mgr.week_label}** 편성 완료\n"
-                    f"{assigned_days}일 배정되었습니다.",
+                    f"{schedule_mgr.week_label}\n"
+                    f"{assigned_days}일에 관리자를 배정했습니다.",
                     title="📋 편성 완료",
                 ),
             )
@@ -201,20 +203,19 @@ class ScheduleView(LayoutView):
         async def do_reassign(btn_interaction: discord.Interaction):
             if schedule_mgr.actual_deployments:
                 await send_response(btn_interaction, error_view(
-                    "투입 기록이 존재하여 재편성할 수 없습니다.\n"
-                    "편성 취소 후 다시 진행해주세요."
+                    "투입 기록이 있어 재편성할 수 없습니다. 편성을 취소한 뒤 다시 편성해주세요."
                 ))
                 return
             if not schedule_mgr.availability:
-                await send_response(btn_interaction, error_view("참가 등록된 관리자가 없습니다."))
+                await send_response(btn_interaction, error_view(NO_AVAILABILITY_TEXT))
                 return
             assignments = schedule_mgr.generate_assignments()
             assigned_days = sum(1 for v in assignments.values() if v)
             await send_response(
                 btn_interaction,
                 success_view(
-                    f"**{schedule_mgr.week_label}** 재편성 완료\n"
-                    f"{assigned_days}일 배정되었습니다.",
+                    f"{schedule_mgr.week_label}\n"
+                    f"{assigned_days}일에 관리자를 다시 배정했습니다.",
                     title="🔄 재편성 완료",
                 ),
             )
@@ -230,7 +231,7 @@ class ScheduleView(LayoutView):
             logger.info(f"[일정] 편성 취소 - 관리자: {confirm_interaction.user}")
             await send_response(
                 confirm_interaction,
-                success_view("주간 일정 편성과 투입 기록이 초기화되었습니다.", title="↩️ 편성 취소"),
+                success_view("편성과 투입 기록을 지웠습니다.", title="↩️ 편성 취소"),
             )
             await _refresh_schedule_status(confirm_interaction)
 
@@ -245,7 +246,7 @@ class ScheduleView(LayoutView):
                 confirm_label="편성 취소하기",
                 confirm_emoji="⚠️",
                 accent_colour=Color.orange(),
-                error_text="편성 취소 중 오류가 발생했습니다.",
+                error_text="편성을 취소하지 못했습니다. 편성 버튼을 다시 눌러주세요.",
                 on_confirm=execute_cancel,
             )
             confirm_view.message = await send_response(btn_interaction, confirm_view)
@@ -345,9 +346,9 @@ class DeployView(TimeoutEditView):
 
         if assigned_days:
             assigned_str = ', '.join(WEEKDAYS[d] for d in sorted(assigned_days))
-            info_line = f"내 배정: **{assigned_str}** / 내 투입: **{my_status}**"
+            info_line = f"내 배정: **{assigned_str}**\n내 투입: **{my_status}**"
         else:
-            info_line = f"배정된 요일이 없습니다. / 내 투입: **{my_status}**"
+            info_line = f"내 배정: **없음**\n내 투입: **{my_status}**"
 
         self.add_item(Container(
             TextDisplay(

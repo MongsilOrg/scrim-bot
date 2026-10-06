@@ -114,11 +114,11 @@ class RoomCodeView(LayoutView):
         children: list = [
             TextDisplay(content=header),
             TextDisplay(content=f"# `{cleaned_room_code}`"),
-            TextDisplay(content=f"🌤️ {weather_value} / ⏱️ `{round_start_str}`"),
+            TextDisplay(content=f"날씨: {weather_value}\n시작: `{round_start_str}`"),
         ]
 
         if ban_display:
-            children.append(TextDisplay(content=f"🚫 밴: {ban_display}"))
+            children.append(TextDisplay(content=f"{BAN_PREFIX}{ban_display}"))
 
         children.append(Separator())
         children.append(TextDisplay(content=FOOTER_TEXT))
@@ -133,15 +133,18 @@ class RoomCodeView(LayoutView):
             self.add_item(ActionRow(*buttons))
 
 
-BAN_PREFIX = "🚫 밴: "
+BAN_PREFIX = "밴: "
+# 배포 전에 올라온 공지의 밴 줄
+LEGACY_BAN_PREFIX = "🚫 밴: "
 
 
 def _find_ban_display(message: discord.Message | None) -> str | None:
     for component in getattr(message, 'components', None) or []:
         for child in getattr(component, 'children', None) or []:
             content = getattr(child, 'content', '') or ''
-            if content.startswith(BAN_PREFIX):
-                return content[len(BAN_PREFIX):]
+            for prefix in (LEGACY_BAN_PREFIX, BAN_PREFIX):
+                if content.startswith(prefix):
+                    return content[len(prefix):]
     return None
 
 
@@ -189,7 +192,7 @@ class WeatherButton(
         new_view = RoomCodeView(
             round_number=self.round_number,
             cleaned_room_code=self.room_code,
-            weather_value=f"`{main_weather}` / `{weather_name}`",
+            weather_value=f"`{main_weather}`, `{weather_name}`",
             round_start_str=self.round_start_str,
             ban_display=_find_ban_display(interaction.message),
             role_mention=role_mention,
@@ -297,18 +300,18 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
 
         if not validate_room_code(room_code):
             try:
-                await send_response(interaction, error_view("방코드는 6자리 숫자여야 합니다.\n\n💡 예시: `123456`"))
+                await send_response(interaction, error_view("방 코드는 6자리 숫자로 입력해주세요. 예: `123456`"))
             except discord.NotFound:
                 logger.warning("[명령어] Interaction 만료됨")
             return
 
         group_letter = get_group_letter(interaction.channel.id)
         if not group_letter:
-            await send_response(interaction, error_view("방코드는 조별 채널에서만 공지할 수 있습니다."))
+            await send_response(interaction, error_view("방 코드는 조별 채널에서만 올릴 수 있습니다."))
             return
         if not _can_post_room_code(interaction.user, group_letter):
             logger.info(f"[명령어] 방코드 권한 없음 - 사용자: {interaction.user}, 조: {group_letter}조")
-            await send_response(interaction, permission_error_view(f"관리자 또는 {group_letter}조 참가자만 방코드를 공지할 수 있습니다."))
+            await send_response(interaction, permission_error_view(f"관리자와 {group_letter}조 참가자만 방 코드를 올릴 수 있습니다."))
             return
 
         # 채널 기록 스캔과 CSV 집계가 3초 응답 제한을 넘김
@@ -339,17 +342,16 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
         expected_selected = round_number - 1
         if len(selected) < expected_selected:
             missed = expected_selected - len(selected)
-            weather_warning = f"이전 라운드의 서브 날씨가 {missed}개 미선택 상태입니다."
+            weather_warning = f"이전 라운드 공지 {missed}개에서 서브 날씨를 고르지 않았습니다. 이전 공지의 날씨 버튼으로 골라주세요."
 
         if len(available) == 1:
             sub_weather = available[0]
             team_data_manager.add_selected_weather(group_letter, sub_weather)
-            weather_value = f"`{main_weather}` / `{sub_weather}`"
+            weather_value = f"`{main_weather}`, `{sub_weather}`"
         elif len(available) == 0:
             weather_value = f"`{main_weather}`"
         else:
-            sub_list = ", ".join(f"`{w}`" for w in available)
-            weather_value = f"`{main_weather}` / {sub_list}"
+            weather_value = f"`{main_weather}`, 서브 날씨는 아래 버튼으로 고릅니다"
             weather_options = available
 
         ban_display = None

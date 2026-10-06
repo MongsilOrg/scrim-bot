@@ -1,4 +1,5 @@
 import time
+from datetime import date, datetime
 
 import discord
 from discord.ui import (
@@ -15,6 +16,22 @@ from config.settings import settings
 logger = get_logger('layout_helpers')
 
 FOOTER_TEXT = f"-# {settings.EMBED_FOOTER_TEXT}"
+
+_WEEKDAY_NAMES = ['월', '화', '수', '목', '금', '토', '일']
+
+
+def format_kr_date(value) -> str:
+    """10월 6일 화요일 형식. 문자열은 앞 10자를 YYYY-MM-DD로 읽고 못 읽으면 그대로 돌려줌."""
+    if isinstance(value, datetime):
+        value = value.date()
+    if isinstance(value, str):
+        try:
+            value = datetime.strptime(value.strip()[:10], '%Y-%m-%d').date()
+        except ValueError:
+            return value
+    if not isinstance(value, date):
+        return str(value)
+    return f"{value.month}월 {value.day}일 {_WEEKDAY_NAMES[value.weekday()]}요일"
 
 
 def _build_view(title: str, description: str, accent_color: discord.Color) -> LayoutView:
@@ -118,6 +135,9 @@ def image_response_view(
     return view
 
 
+RESPONSE_FAILED_TEXT = "화면을 표시하지 못했습니다. 다시 시도해주세요."
+
+
 def is_interaction_expired(exc: BaseException) -> bool:
     return isinstance(exc, discord.NotFound) and exc.code == 10062
 
@@ -150,11 +170,11 @@ async def send_response(
         try:
             if not interaction.response.is_done():
                 await interaction.response.send_message(
-                    "오류가 발생했습니다.", ephemeral=True
+                    RESPONSE_FAILED_TEXT, ephemeral=True
                 )
             else:
                 await interaction.followup.send(
-                    "오류가 발생했습니다.", ephemeral=True
+                    RESPONSE_FAILED_TEXT, ephemeral=True
                 )
         except Exception as e:
             logger.warning(f"[레이아웃] 오류 안내 전송 실패: {e}")

@@ -81,7 +81,7 @@ class GroupRosterView(LayoutView):
             await self._recreate_view_on_message(interaction)
         except Exception as e:
             logger.error(f"[뷰] 로스터 변경 콜백 처리 실패: {e}", exc_info=True)
-            await send_error_message(interaction, "로스터 변경 중 오류가 발생했습니다.")
+            await send_error_message(interaction, "로스터 변경 메뉴를 열지 못했습니다. 버튼을 다시 눌러주세요.")
 
     async def _recreate_view_on_message(self, interaction: discord.Interaction) -> None:
         try:
@@ -99,8 +99,8 @@ def build_rest_day_guide_view(team_name: str, user_id: Optional[str] = None) -> 
     mention = f"<@{user_id}>\n" if user_id else ""
     notice = (
         f"{mention}"
-        "📢 **공휴일/주말 스크림 자율 진행 안내**\n"
-        "공휴일 및 주말 스크림의 경우 레이팅컷에 따른 조 편성만 제공합니다.\n"
+        "📢 **공휴일, 주말 스크림 자율 진행 안내**\n"
+        "공휴일과 주말 스크림은 레이팅컷 기준 조편성까지만 진행합니다.\n"
         "아래 링크를 확인한 뒤 참여해주세요.\n\n"
         f"`{team_name}` 팀은 사설방 개설 후 양식에 맞춰 업로드해주세요.\n"
         f"{settings.CUSTOM_GAME_GUIDE_LINK}\n\n"
@@ -135,9 +135,9 @@ class TeamSelectionView(TimeoutEditView):
         else:
             options = [
                 SelectOption(
-                    label=f"{i+1}. {team_name} (MMR: {mmr:.2f})",
+                    label=f"{i+1}. {team_name}, MMR {mmr:.2f}",
                     value=team_name,
-                    description=f"팀원: {', '.join(team_data.players[:3]) or '정보 없음'}"
+                    description=f"선수: {', '.join(team_data.players[:3]) or '정보 없음'}"
                 )
                 for i, (team_name, team_data, mmr) in enumerate(parent_view.group_teams)
             ]
@@ -161,7 +161,7 @@ class TeamSelectionView(TimeoutEditView):
                     break
 
             if not selected_team_data:
-                await send_response(interaction, error_view("선택된 팀 정보를 찾을 수 없습니다."))
+                await send_response(interaction, error_view("선택한 팀을 찾지 못했습니다. 로스터 변경 버튼을 다시 눌러주세요."))
                 return
 
             if interaction.response.is_done():
@@ -178,6 +178,6 @@ class TeamSelectionView(TimeoutEditView):
         except Exception as e:
             logger.error(f"[뷰] 팀 선택 콜백 처리 실패: {e}", exc_info=True)
             try:
-                await send_response(interaction, error_view("팀 선택 중 오류가 발생했습니다."))
+                await send_response(interaction, error_view("팀 수정 창을 열지 못했습니다. 팀을 다시 선택해주세요."))
             except Exception as e2:
                 logger.error(f"[뷰] 에러 메시지 전송 실패: {e2}", exc_info=True)
