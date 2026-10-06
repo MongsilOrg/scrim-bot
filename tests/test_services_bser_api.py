@@ -135,6 +135,16 @@ class UidLookupTest(BSERTestCase):
         self.assertIsNone(await client.get_user_uid('없는닉2'))
         self.assertEqual(await client.lookup_user_uid('있는닉'), (UID_FOUND, 'uid-1'))
 
+    async def test_rank_403_drops_cached_uid(self):
+        client = make_client([
+            FakeResponse(200, {'code': 200, 'user': {'userId': 'old-uid'}}),
+            FakeResponse(403, {'code': 403, 'message': 'User Mismatch'}),
+            FakeResponse(200, {'code': 200, 'user': {'userId': 'new-uid'}}),
+        ])
+        self.assertEqual(await client.get_user_uid('개명닉'), 'old-uid')
+        self.assertIsNone(await client.get_user_mmr('old-uid'))
+        self.assertEqual(await client.get_user_uid('개명닉'), 'new-uid')
+
     async def test_mmr_uses_fixed_season(self):
         client = make_client([FakeResponse(200, {'code': 200, 'userRank': {'mmr': 7000}})])
         self.assertEqual(await client.get_user_mmr('uid-s'), 7000)

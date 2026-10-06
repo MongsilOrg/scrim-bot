@@ -174,6 +174,11 @@ class BSERAPIClient:
     def clear_mmr_cache(cls) -> None:
         cls._mmr_cache.clear()
 
+    @classmethod
+    def _forget_uid(cls, uid: str) -> None:
+        for key in [k for k, v in cls._nickname_cache.items() if v.get('data') == uid]:
+            del cls._nickname_cache[key]
+
     async def check_server_maintenance(self) -> bool:
         # 패치 점검 중에는 닉네임 검색과 rank/uid가 멈춤. 랭킹 1위 닉네임 검색으로 판정하고 판정할 수 없으면 점검으로 봄
         try:
@@ -229,20 +234,26 @@ class BSERAPIClient:
         if not data:
             return None
 
-        if data.get("code") == 200:
+        code = data.get("code")
+        if code == 200:
             user_rank = data.get("userRank")
             if user_rank:
                 return {"userRank": user_rank}
             logger.warning(f"[API] userRank 데이터 없음 - UID: {uid}")
             return {"userRank": {"mmr": 0}}
 
-        if data.get('code') == 404:
+        if code == 403:
+            # User Mismatch는 닉네임이 다른 계정으로 넘어간 경우라 캐시된 UID를 버려야 다음 조회에서 새 UID를 받음
+            self._forget_uid(uid)
+            if log_once(f"rank403:{uid}"):
+                logger.warning(f"[API] 사용자 MMR 조회 거부 403 - UID: {uid}, 메시지: {data.get('message')}, 닉네임 캐시 삭제")
+        elif code == 404:
             if log_once(f"rank404:{uid}"):
-                logger.warning(f"[API] 사용자 MMR 조회 실패 (404) - UID: {uid}, 존재하지 않는 사용자 또는 랭크 데이터 없음")
+                logger.warning(f"[API] 사용자 MMR 조회 실패 404 - UID: {uid}, 사용자나 랭크 데이터 없음")
         else:
-            logger.warning(f"[API] 사용자 MMR 조회 API 응답 코드 오류 - UID: {uid}, 코드: {data.get('code')}, 메시지: {data.get('message')}")
+            logger.warning(f"[API] 사용자 MMR 조회 API 응답 코드 오류 - UID: {uid}, 코드: {code}, 메시지: {data.get('message')}")
         return None
-    
+
     async def get_user_mmr(self, uid: str) -> Optional[float]:
         """0.0은 랭크 데이터 없음, None은 조회 실패."""
         cache_key = f"mmr:{uid}"
