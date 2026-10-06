@@ -144,7 +144,7 @@ def patch_manager(teams):
     return mgr
 
 
-class CancelResultCardTest(unittest.IsolatedAsyncioTestCase):
+class ApplicantOnlyCancelTest(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         mock.patch.stopall()
 
@@ -152,6 +152,27 @@ class CancelResultCardTest(unittest.IsolatedAsyncioTestCase):
         from commands.ui.views import TeamInputView
 
         return TeamInputView(scrim_day=6, scrim_month=10, scrim_weekday="화요일")
+
+    async def test_member_who_is_not_applicant_gets_notice(self):
+        teams = {"알파팀": TeamData(name="알파팀", players=["a", "b", "c"], user_id="1")}
+        patch_manager(teams)
+        mock.patch("commands.ui.views.check_cooldown", mock.AsyncMock(return_value=False)).start()
+        inter = FakeInteraction(user_id=2)
+
+        await self._view().cancel_team_callback(inter)
+
+        self.assertIn("신청자만", texts(inter.response.sent[0]))
+        self.assertIn("알파팀", teams)
+
+    async def test_confirm_rechecks_applicant(self):
+        teams = {"알파팀": TeamData(name="알파팀", players=["a", "b", "c"], user_id="1")}
+        mgr = patch_manager(teams)
+        mock.patch("commands.ui.views.schedule_mmr_refresh").start()
+
+        result = await self._view()._process_team_cancellation(FakeInteraction(user_id=2), "알파팀")
+
+        self.assertIn("신청자만", texts(result))
+        mgr.remove_team.assert_not_called()
 
     async def test_applicant_cancel_returns_result_card(self):
         teams = {"알파팀": TeamData(name="알파팀", players=["a", "b", "c"], user_id="1")}

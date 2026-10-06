@@ -36,6 +36,11 @@ TEAM_ALREADY_GONE_MSG = "이미 취소된 팀입니다."
 MODAL_SERVER_ERROR_MSG = "Discord 서버 오류로 입력 창을 열지 못했습니다. 잠시 후 다시 시도해주세요."
 
 
+def applicant_only_cancel_msg(applicant_id: Optional[str]) -> str:
+    target = f"신청자 <@{applicant_id}>" if applicant_id else "신청자"
+    return f"팀 취소는 신청자만 할 수 있습니다. {target}에게 요청해주세요."
+
+
 class TeamInputView(LayoutView):
 
     def __init__(self, *, scrim_day: int, scrim_month: int, scrim_weekday: str, is_rest_day: bool = False):
@@ -169,6 +174,10 @@ class TeamInputView(LayoutView):
             logger.info(f"[팀취소시도] {user_team} | 요청자: {interaction.user}")
 
             team_data = team_data_manager.get_team_data(user_team)
+            if team_data and team_data.user_id != str(interaction.user.id):
+                logger.info(f"[팀취소거부] {user_team} | 사유: 신청자 아님 | 요청자: {interaction.user}")
+                await send_error_message(interaction, applicant_only_cancel_msg(team_data.user_id))
+                return
             team_mmr = team_data_manager.get_team_mmr(user_team) or 0.0
 
             players = []
@@ -245,6 +254,10 @@ class TeamInputView(LayoutView):
             if team_info is None:
                 logger.info(f"[팀취소거부] {team_name} | 사유: 팀 없음")
                 return error_view(TEAM_ALREADY_GONE_MSG)
+            # 확인 카드가 떠 있는 사이 팀이 바뀔 수 있음
+            if team_info.user_id != str(interaction.user.id):
+                logger.info(f"[팀취소거부] {team_name} | 사유: 신청자 아님 | 요청자: {interaction.user}")
+                return error_view(applicant_only_cancel_msg(team_info.user_id))
             players, staff = get_team_members(team_info)
 
             success, failure_reason = await team_data_manager.remove_team(team_name)
