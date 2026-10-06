@@ -11,6 +11,7 @@ from utils.layout_helpers import (
     permission_error_view,
     send_response, FOOTER_TEXT,
     send_error_message,
+    TimeoutEditView,
 )
 from utils.helpers import is_admin
 
@@ -72,7 +73,7 @@ class GroupRosterView(LayoutView):
                 return
 
             team_selection_view = TeamSelectionView(self)
-            await send_response(interaction, team_selection_view)
+            team_selection_view.message = await send_response(interaction, team_selection_view)
 
         except discord.InteractionResponded:
             pass
@@ -115,7 +116,7 @@ def build_rest_day_guide_view(team_name: str, user_id: Optional[str] = None) -> 
     return view
 
 
-class TeamSelectionView(LayoutView):
+class TeamSelectionView(TimeoutEditView):
 
     def __init__(self, parent_view: 'GroupRosterView'):
         super().__init__(timeout=300)

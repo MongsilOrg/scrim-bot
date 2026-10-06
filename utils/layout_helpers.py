@@ -49,8 +49,23 @@ def processing_view(description: str = "잠시 기다려주세요.") -> LayoutVi
     return _build_view("⏳ 처리 중", description, discord.Color.blue())
 
 
-def timeout_view(description: str = "시간이 초과되었습니다. 다시 시도해주세요.") -> LayoutView:
-    return _build_view("⏳ 시간 초과", description, discord.Color.greyple())
+def timeout_view(description: str = "시간이 지나 닫혔습니다. 버튼을 다시 눌러주세요.") -> LayoutView:
+    return _build_view("⏳ 닫힘", description, discord.Color.greyple())
+
+
+class TimeoutEditView(LayoutView):
+    """시간이 지나면 message를 닫힘 안내로 바꿈. commands.ui.views를 import하면 순환."""
+
+    def __init__(self, *, timeout: float = 180):
+        super().__init__(timeout=timeout)
+        self.message: discord.Message | None = None
+
+    async def on_timeout(self) -> None:
+        if self.message:
+            try:
+                await self.message.edit(view=timeout_view(), embed=None, content=None)
+            except Exception as e:
+                logger.debug(f"[레이아웃] 닫힘 안내 편집 실패: {e}")
 
 
 def permission_error_view(description: str = "관리자 권한이 없습니다.") -> LayoutView:

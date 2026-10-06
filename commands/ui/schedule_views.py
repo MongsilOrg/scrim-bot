@@ -15,6 +15,8 @@ from utils.layout_helpers import (
     error_view, success_view,
     permission_error_view,
     send_response, FOOTER_TEXT,
+    timeout_view,
+    TimeoutEditView,
     upsert_persistent_message,
 )
 from utils.helpers import is_admin
@@ -261,7 +263,7 @@ class ScheduleView(LayoutView):
         if deploy_count:
             desc += f"\n편성 취소 시 투입 기록 {deploy_count}건도 함께 삭제됩니다."
 
-        menu_view = LayoutView()
+        menu_view = TimeoutEditView()
         menu_view.add_item(Container(
             TextDisplay(content=f"## 📋 편성 관리\n{desc}"),
             Separator(),
@@ -269,90 +271,108 @@ class ScheduleView(LayoutView):
             accent_colour=Color.blue(),
         ))
         menu_view.add_item(ActionRow(reassign_btn, cancel_btn, back_btn))
-        await send_response(interaction, menu_view)
+        menu_view.message = await send_response(interaction, menu_view)
 
     async def deploy_callback(self, interaction: discord.Interaction) -> None:
         schedule_mgr = await _ensure_schedule_ready(interaction, need_assignments=True)
         if schedule_mgr is None:
             return
 
-        deploy_view = _build_deploy_view(schedule_mgr, str(interaction.user.id))
-        await send_response(interaction, deploy_view)
+        deploy_view = DeployView(schedule_mgr, str(interaction.user.id))
+        deploy_view.message = await send_response(interaction, deploy_view)
 
 
+class DeployView(TimeoutEditView):
 
-def _build_deploy_view(schedule_mgr, user_id: str) -> LayoutView:
-    assigned_days = {
-        d for d in ACTIVE_DAYS
-        if user_id in schedule_mgr.assignments.get(d, [])
-    }
+    def __init__(self, schedule_mgr, user_id: str):
+        super().__init__()
+        self.schedule_mgr = schedule_mgr
+        self.user_id = user_id
+        self._last_interaction: discord.Interaction | None = None
+        self._render()
 
-    def _make_day_callback(day_index: int):
+    def _render(self) -> None:
+        self.clear_items()
+        schedule_mgr = self.schedule_mgr
+        user_id = self.user_id
+        assigned_days = {
+            d for d in ACTIVE_DAYS
+            if user_id in schedule_mgr.assignments.get(d, [])
+        }
+
+        assigned_buttons = []
+        extra_buttons = []
+
+        for d in ACTIVE_DAYS:
+            deployed = schedule_mgr.actual_deployments.get(d, [])
+            is_self_deployed = user_id in deployed
+            is_assigned = d in assigned_days
+
+            if is_self_deployed:
+                style = ButtonStyle.success
+                label = f"{WEEKDAYS[d]} ✓"
+            elif is_assigned:
+                style = ButtonStyle.primary
+                label = WEEKDAYS[d]
+            else:
+                style = ButtonStyle.secondary
+                label = WEEKDAYS[d]
+
+            btn = Button(label=label, style=style)
+            btn.callback = self._make_day_callback(d)
+
+            if is_assigned:
+                assigned_buttons.append(btn)
+            else:
+                extra_buttons.append(btn)
+
+        my_days = [
+            WEEKDAYS[d] for d in ACTIVE_DAYS
+            if user_id in schedule_mgr.actual_deployments.get(d, [])
+        ]
+        my_status = ', '.join(my_days) if my_days else "없음"
+
+        if assigned_days:
+            assigned_str = ', '.join(WEEKDAYS[d] for d in sorted(assigned_days))
+            info_line = f"내 배정: **{assigned_str}** / 내 투입: **{my_status}**"
+        else:
+            info_line = f"배정된 요일이 없습니다. / 내 투입: **{my_status}**"
+
+        self.add_item(Container(
+            TextDisplay(
+                content=f"## ✅ 투입 기록\n"
+                f"{info_line}\n\n"
+                f"투입한 요일을 선택해주세요. 다시 누르면 해제됩니다."
+            ),
+            Separator(),
+            TextDisplay(content=FOOTER_TEXT),
+            accent_colour=Color.blue(),
+        ))
+
+        # ActionRow당 버튼 최대 5개
+        all_buttons = assigned_buttons + extra_buttons
+        self.add_item(ActionRow(*all_buttons[:5]))
+        if len(all_buttons) > 5:
+            self.add_item(ActionRow(*all_buttons[5:]))
+
+    def _make_day_callback(self, day_index: int):
         async def _day_btn_callback(day_interaction: discord.Interaction):
-            uid = str(day_interaction.user.id)
-            schedule_mgr.toggle_self_deployment(day_index, uid)
-            updated_view = _build_deploy_view(schedule_mgr, uid)
-            await day_interaction.response.edit_message(view=updated_view)
+            self.schedule_mgr.toggle_self_deployment(day_index, self.user_id)
+            self._render()
+            await day_interaction.response.edit_message(view=self)
+            self._last_interaction = day_interaction
             await _refresh_schedule_status(day_interaction)
         return _day_btn_callback
 
-    assigned_buttons = []
-    extra_buttons = []
-
-    for d in ACTIVE_DAYS:
-        deployed = schedule_mgr.actual_deployments.get(d, [])
-        is_self_deployed = user_id in deployed
-        is_assigned = d in assigned_days
-
-        if is_self_deployed:
-            style = ButtonStyle.success
-            label = f"{WEEKDAYS[d]} ✓"
-        elif is_assigned:
-            style = ButtonStyle.primary
-            label = WEEKDAYS[d]
-        else:
-            style = ButtonStyle.secondary
-            label = WEEKDAYS[d]
-
-        btn = Button(label=label, style=style)
-        btn.callback = _make_day_callback(d)
-
-        if is_assigned:
-            assigned_buttons.append(btn)
-        else:
-            extra_buttons.append(btn)
-
-    my_days = [
-        WEEKDAYS[d] for d in ACTIVE_DAYS
-        if user_id in schedule_mgr.actual_deployments.get(d, [])
-    ]
-    my_status = ', '.join(my_days) if my_days else "없음"
-
-    if assigned_days:
-        assigned_str = ', '.join(WEEKDAYS[d] for d in sorted(assigned_days))
-        info_line = f"내 배정: **{assigned_str}** / 내 투입: **{my_status}**"
-    else:
-        info_line = f"배정된 요일이 없습니다. / 내 투입: **{my_status}**"
-
-    deploy_view = LayoutView()
-    deploy_view.add_item(Container(
-        TextDisplay(
-            content=f"## ✅ 투입 기록\n"
-            f"{info_line}\n\n"
-            f"투입한 요일을 선택해주세요. 다시 누르면 해제됩니다."
-        ),
-        Separator(),
-        TextDisplay(content=FOOTER_TEXT),
-        accent_colour=Color.blue(),
-    ))
-
-    # ActionRow당 버튼 최대 5개
-    all_buttons = assigned_buttons + extra_buttons
-    deploy_view.add_item(ActionRow(*all_buttons[:5]))
-    if len(all_buttons) > 5:
-        deploy_view.add_item(ActionRow(*all_buttons[5:]))
-
-    return deploy_view
+    async def on_timeout(self) -> None:
+        # 처음 메시지의 토큰은 15분 뒤 만료되어 마지막 클릭의 토큰으로 편집
+        if self._last_interaction is None:
+            await super().on_timeout()
+            return
+        try:
+            await self._last_interaction.edit_original_response(view=timeout_view())
+        except Exception as e:
+            logger.debug(f"[뷰] 투입 기록 닫힘 안내 편집 실패: {e}")
 
 
 async def refresh_dashboard(
