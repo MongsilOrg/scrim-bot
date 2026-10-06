@@ -188,7 +188,7 @@ async def validate_members_api(
             is_maintenance = True
         if is_maintenance:
             return True, [], True
-        # 빈 목록은 API 불통 신호, compose_nickname_error가 fallback으로 처리
+        # 빈 목록은 API 불통 신호, compose_member_check_error가 응답 없음으로 처리
         return False, [], False
 
 
@@ -213,9 +213,10 @@ def build_test_account_notice(nicknames: List[str]) -> str:
     )
 
 
-GUILD_NICKNAME_ERROR = "디스코드 서버에서 확인되지 않는 닉네임: **{names}**\n💡 디스코드 서버 닉네임과 동일하게 입력해주세요."
-GAME_NICKNAME_ERROR = "게임 내에서 확인되지 않는 닉네임: **{names}**\n💡 게임 내 닉네임을 정확히 입력해주세요."
-API_UNAVAILABLE_NOTICE = "게임 서버 응답이 없어 닉네임을 확인할 수 없습니다.\n💡 잠시 후 다시 시도해주세요."
+MEMBER_NAME_RULE = "입력한 닉네임은 서버 별명과 게임 닉네임에 모두 맞아야 합니다."
+GUILD_NICKNAME_ERROR = "서버 별명과 다른 닉네임: **{names}**"
+GAME_NICKNAME_ERROR = "게임에서 찾지 못한 닉네임: **{names}**"
+API_UNAVAILABLE_NOTICE = "게임 서버가 응답하지 않아 게임 닉네임을 확인하지 못했습니다. 잠시 후 다시 시도해주세요."
 
 
 def build_team_mmr_line(team_mmr: float, players: List[str], is_test_account) -> str:
@@ -229,11 +230,25 @@ def build_team_mmr_line(team_mmr: float, players: List[str], is_test_account) ->
     return "📊 팀 평균 MMR: 확인 중\n💡 잠시 후 자동으로 갱신됩니다."
 
 
-def compose_nickname_error(nicknames: List[str], template: str, fallback: str = "") -> str:
-    normal, test_like = split_test_nicknames(nicknames)
+def compose_member_check_error(
+    guild_missing: List[str],
+    game_missing: List[str],
+    *,
+    game_unavailable: bool = False,
+) -> str:
+    guild_normal, guild_test = split_test_nicknames(guild_missing)
+    game_normal, game_test = split_test_nicknames(game_missing)
+    lines = []
+    if guild_normal:
+        lines.append(GUILD_NICKNAME_ERROR.format(names=', '.join(guild_normal)))
+    if game_normal:
+        lines.append(GAME_NICKNAME_ERROR.format(names=', '.join(game_normal)))
     parts = []
-    if normal:
-        parts.append(template.format(names=', '.join(normal)))
-    if test_like:
-        parts.append(build_test_account_notice(test_like))
-    return '\n\n'.join(parts) or fallback
+    if lines:
+        parts.append('\n'.join(lines) + f"\n{MEMBER_NAME_RULE}")
+    if game_unavailable:
+        parts.append(API_UNAVAILABLE_NOTICE)
+    test_names = list(dict.fromkeys(guild_test + game_test))
+    if test_names:
+        parts.append(build_test_account_notice(test_names))
+    return '\n\n'.join(parts)

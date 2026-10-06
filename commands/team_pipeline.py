@@ -1,4 +1,5 @@
-from typing import TYPE_CHECKING, List, Optional, Set, Tuple
+import time
+from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
 
 import discord
 
@@ -11,13 +12,10 @@ from models.user_team_cache import UserTeamCache
 from utils.helpers import build_member_lookup, get_current_kst_time
 from utils.layout_helpers import send_error_message, update_temp_message
 from utils.validators import (
-    API_UNAVAILABLE_NOTICE,
-    GAME_NICKNAME_ERROR,
-    GUILD_NICKNAME_ERROR,
     build_team_mmr_line,
     build_test_account_notice,
     check_duplicate_members,
-    compose_nickname_error,
+    compose_member_check_error,
     normalize_nickname_for_comparison,
     split_test_nicknames,
     validate_discord_user_in_team,
@@ -116,32 +114,36 @@ async def _validate_team_rules(
         if not is_bot_valid:
             local_error = bot_error
 
-    if local_error is None and real_members:
-        client = BotManager.get_instance().get_client()
-        guild = client.get_guild(settings.GUILD_ID) if client else None
-        if guild:
-            is_guild_valid, not_found = validate_members_in_guild(guild, real_members)
-            if not is_guild_valid:
-                if is_edit:
-                    logger.info(f"[{fail_tag}] {team_name} | 단계: 디스코드검증 | 대상: [{', '.join(not_found)}]")
-                local_error = compose_nickname_error(not_found, GUILD_NICKNAME_ERROR)
-
     if local_error is not None:
-        if not is_edit:
-            logger.info(f"[{fail_tag}] {team_name} | 단계: 로컬검증 | 사유: {local_error}")
+        logger.info(f"[{fail_tag}] {team_name} | 단계: 로컬검증 | 사유: {local_error}")
         await update_temp_message(temp_message, local_error, discord.Color.red())
         return False, False
 
-    is_maintenance = False
-    if real_members:
-        is_valid, api_invalid, is_maintenance = await validate_members_api(
-            real_members, maintenance_hint=team_data_manager.is_maintenance
+    if not real_members:
+        return True, False
+
+    # 서버 확인과 게임 확인을 함께 돌려 한 번에 모든 실패를 보여줌
+    guild_missing: List[str] = []
+    client = BotManager.get_instance().get_client()
+    guild = client.get_guild(settings.GUILD_ID) if client else None
+    if guild:
+        _, guild_missing = validate_members_in_guild(guild, real_members)
+
+    is_game_valid, game_missing, is_maintenance = await validate_members_api(
+        real_members, maintenance_hint=team_data_manager.is_maintenance
+    )
+    game_unavailable = not is_game_valid and not is_maintenance and not game_missing
+    if is_game_valid or is_maintenance:
+        game_missing = []
+
+    if guild_missing or game_missing or game_unavailable:
+        logger.info(
+            f"[{fail_tag}] {team_name} | 단계: 닉네임확인 | 서버: [{', '.join(guild_missing)}] | "
+            f"게임: [{', '.join(game_missing) or ('(응답 없음)' if game_unavailable else '')}]"
         )
-        if not is_valid and not is_maintenance:
-            logger.info(f"[{fail_tag}] {team_name} | 단계: API검증 | 대상: [{', '.join(api_invalid) or '(응답 없음)'}]")
-            msg = compose_nickname_error(api_invalid, GAME_NICKNAME_ERROR, API_UNAVAILABLE_NOTICE)
-            await update_temp_message(temp_message, msg, discord.Color.red())
-            return False, False
+        msg = compose_member_check_error(guild_missing, game_missing, game_unavailable=game_unavailable)
+        await update_temp_message(temp_message, msg, discord.Color.red())
+        return False, False
 
     return True, is_maintenance
 
@@ -165,6 +167,36 @@ def _save_user_cache(user_id: str, team_data: TeamData) -> None:
         })
     except Exception as e:
         logger.warning(f"[팀파이프라인] 캐시 저장 실패: {e}")
+
+
+FAILED_INPUT_TTL_SECONDS = 30 * 60
+_failed_inputs: Dict[str, Tuple[float, Optional[str], dict]] = {}
+
+
+def remember_failed_input(user_id: str, team_data: TeamData, *, original_team_name: Optional[str] = None) -> None:
+    """original_team_name이 없으면 신청 입력, 있으면 그 팀의 수정 입력."""
+    _failed_inputs[user_id] = (
+        time.monotonic(),
+        original_team_name,
+        {"team_name": team_data.name, "players": list(team_data.players), "staff": list(team_data.staff)},
+    )
+
+
+def recall_failed_input(user_id: str, *, original_team_name: Optional[str] = None) -> Optional[dict]:
+    entry = _failed_inputs.get(user_id)
+    if entry is None:
+        return None
+    saved_at, saved_for, draft = entry
+    if time.monotonic() - saved_at > FAILED_INPUT_TTL_SECONDS:
+        _failed_inputs.pop(user_id, None)
+        return None
+    if saved_for != original_team_name:
+        return None
+    return draft
+
+
+def forget_failed_input(user_id: str) -> None:
+    _failed_inputs.pop(user_id, None)
 
 
 def schedule_mmr_refresh(team_data_manager: "TeamDataManager", channel) -> None:
@@ -191,6 +223,8 @@ async def process_team_registration(
     submitter: discord.Member,
 ) -> None:
     team_name = team_data.name
+    user_id = str(interaction.user.id)
+    registered = False
     try:
         team_data_manager = BotManager.get_instance().get_team_data_manager()
         team_processor = BotManager.get_instance().get_team_processor()
@@ -235,7 +269,8 @@ async def process_team_registration(
             await update_temp_message(temp_message, error_message, discord.Color.red())
             return
 
-        _save_user_cache(str(interaction.user.id), team_data)
+        registered = True
+        _save_user_cache(user_id, team_data)
 
         players_str = ', '.join(team_data.players) if team_data.players else '없음'
         staff_str = ', '.join(team_data.staff) if team_data.staff else '없음'
@@ -271,6 +306,11 @@ async def process_team_registration(
             generic_message="팀 등록 중 오류가 발생했습니다.\n\n💡 다시 시도해도 문제가 지속되면 관리자에게 문의해주세요.",
             generic_log="팀 등록 실패",
         )
+    finally:
+        if registered:
+            forget_failed_input(user_id)
+        else:
+            remember_failed_input(user_id, team_data)
 
 
 async def process_team_edit(
@@ -286,6 +326,8 @@ async def process_team_edit(
     warning_reason: str = "대타",
 ) -> None:
     new_team_name = new_team_data.name
+    user_id = str(interaction.user.id)
+    replaced = False
     try:
         team_data_manager = BotManager.get_instance().get_team_data_manager()
         team_processor = BotManager.get_instance().get_team_processor()
@@ -320,7 +362,7 @@ async def process_team_edit(
             await update_temp_message(temp_message, replace_reason, discord.Color.red())
             return
 
-        _save_user_cache(str(interaction.user.id), new_team_data)
+        _save_user_cache(user_id, new_team_data)
 
         _apply_unverified_transition(
             team_data_manager,
@@ -360,6 +402,13 @@ async def process_team_edit(
             generic_message="팀 정보 수정 중 오류가 발생했습니다.",
             generic_log="팀 정보 수정 실패",
         )
+    finally:
+        # 관리자 로스터 변경은 팀 정보에서 다시 채우므로 보관하지 않음
+        if not is_roster_change:
+            if replaced:
+                forget_failed_input(user_id)
+            else:
+                remember_failed_input(user_id, new_team_data, original_team_name=original_team_name)
 
 
 def _apply_unverified_transition(

@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Tuple, Union
+from typing import TYPE_CHECKING, Optional, Tuple, Union
 
 import discord
 from discord.components import CheckboxGroupOption
@@ -16,8 +16,22 @@ if TYPE_CHECKING:
 logger = get_logger('modals')
 
 
+MEMBER_INPUT_DESCRIPTION = "서버 별명과 게임 닉네임이 둘 다 이 이름과 같아야 합니다."
+MEMBER_INPUT_PLACEHOLDER = "한 줄에 한 명씩 입력해주세요"
+
+
 def _parse_member_lines(text: str) -> list:
     return [line.strip() for line in text.strip().split('\n') if line.strip()]
+
+
+def _member_input(*, required: bool, default: str) -> TextInput:
+    return TextInput(
+        placeholder=MEMBER_INPUT_PLACEHOLDER,
+        max_length=200,
+        required=required,
+        style=discord.TextStyle.paragraph,
+        default=default or None,
+    )
 
 
 class TeamModal(Modal):
@@ -35,25 +49,11 @@ class TeamModal(Modal):
         )
         self.add_item(self.team_name_input)
 
-        self.players_input = TextInput(
-            label="플레이어 3~4명",
-            placeholder="한 줄에 하나씩 입력",
-            max_length=200,
-            required=True,
-            style=discord.TextStyle.paragraph,
-            default=default_players or None,
-        )
-        self.add_item(self.players_input)
+        self.players_input = _member_input(required=True, default=default_players)
+        self.add_item(Label(text="선수 3~4명", description=MEMBER_INPUT_DESCRIPTION, component=self.players_input))
 
-        self.staff_input = TextInput(
-            label="스태프",
-            placeholder="한 줄에 하나씩 입력",
-            max_length=200,
-            required=False,
-            style=discord.TextStyle.paragraph,
-            default=default_staff or None,
-        )
-        self.add_item(self.staff_input)
+        self.staff_input = _member_input(required=False, default=default_staff)
+        self.add_item(Label(text="스태프 0~3명", description=MEMBER_INPUT_DESCRIPTION, component=self.staff_input))
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         try:
@@ -85,11 +85,20 @@ class TeamEditModal(Modal):
         team_data: Tuple[str, TeamData, float],
         *,
         is_roster_change: bool,
+        draft: Optional[dict] = None,
     ):
+        """draft는 같은 팀의 실패한 수정 입력, 있으면 기본값으로 채움."""
         super().__init__(title="팀 정보 수정")
         self.view = view
         self.is_roster_change = is_roster_change
         self.original_team_name, self.original_team_data, self.original_mmr = team_data
+
+        original_players = self.original_team_data.players
+        source = draft or {
+            "team_name": self.original_team_name,
+            "players": original_players,
+            "staff": self.original_team_data.staff,
+        }
 
         self.team_name_input = TextInput(
             label="팀명 3~12글자",
@@ -97,34 +106,15 @@ class TeamEditModal(Modal):
             min_length=3,
             max_length=12,
             required=True,
-            default=self.original_team_name
+            default=source["team_name"]
         )
         self.add_item(self.team_name_input)
 
-        original_players = self.original_team_data.players
-        players_text = '\n'.join(original_players)
+        self.players_input = _member_input(required=True, default='\n'.join(source["players"]))
+        self.add_item(Label(text="선수 3~4명", description=MEMBER_INPUT_DESCRIPTION, component=self.players_input))
 
-        self.players_input = TextInput(
-            label="플레이어 3~4명",
-            placeholder="한 줄에 하나씩 입력",
-            max_length=200,
-            required=True,
-            style=discord.TextStyle.paragraph,
-            default=players_text
-        )
-        self.add_item(self.players_input)
-
-        staff_text = '\n'.join(self.original_team_data.staff)
-
-        self.staff_input = TextInput(
-            label="스태프",
-            placeholder="한 줄에 하나씩 입력",
-            max_length=200,
-            required=False,
-            style=discord.TextStyle.paragraph,
-            default=staff_text
-        )
-        self.add_item(self.staff_input)
+        self.staff_input = _member_input(required=False, default='\n'.join(source["staff"]))
+        self.add_item(Label(text="스태프 0~3명", description=MEMBER_INPUT_DESCRIPTION, component=self.staff_input))
 
         self.warning_checkbox = None
         self.warning_reason_input = None

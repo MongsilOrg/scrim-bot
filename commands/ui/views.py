@@ -13,7 +13,7 @@ from utils.layout_helpers import (
     send_response, FOOTER_TEXT,
     send_error_message,
 )
-from commands.team_pipeline import schedule_mmr_refresh
+from commands.team_pipeline import recall_failed_input, schedule_mmr_refresh
 from models.user_team_cache import UserTeamCache
 from utils.helpers import get_current_kst_time, get_team_members, is_admin
 
@@ -127,15 +127,17 @@ class TeamInputView(LayoutView):
                 default_players = ""
                 default_staff = ""
 
-                try:
-                    cache = UserTeamCache()
-                    cached = cache.get(str(interaction.user.id))
-                    if cached:
-                        default_team_name = cached.get("team_name", "")
-                        default_players = "\n".join(cached.get("players", []))
-                        default_staff = "\n".join(cached.get("staff", []))
-                except Exception as e:
-                    logger.warning(f"[뷰] 캐시 조회 실패: {e}")
+                # 방금 실패한 입력이 지난 신청 기록보다 우선
+                prefill = recall_failed_input(str(interaction.user.id))
+                if prefill is None:
+                    try:
+                        prefill = UserTeamCache().get(str(interaction.user.id))
+                    except Exception as e:
+                        logger.warning(f"[뷰] 캐시 조회 실패: {e}")
+                if prefill:
+                    default_team_name = prefill.get("team_name", "")
+                    default_players = "\n".join(prefill.get("players", []))
+                    default_staff = "\n".join(prefill.get("staff", []))
 
                 modal = TeamModal(
                     interaction.user,
@@ -232,7 +234,10 @@ class TeamInputView(LayoutView):
             if interaction.response.is_done():
                 logger.warning("[뷰] 이미 응답된 interaction - 팀 수정 모달 표시 불가")
                 return
-            await interaction.response.send_modal(TeamEditModal(self, team_info, is_roster_change=False))
+            draft = recall_failed_input(str(interaction.user.id), original_team_name=team_name)
+            await interaction.response.send_modal(
+                TeamEditModal(self, team_info, is_roster_change=False, draft=draft)
+            )
 
         except discord.NotFound:
             logger.warning("[뷰] 팀 수정 모달 interaction 만료")
