@@ -62,9 +62,7 @@ async def bootstrap_on_ready(client: "ScrimBot") -> None:
                 await team_data_manager.restore_group_roster_views(client)
                 logger.info("[시작] 조편성 후 복구 완료")
         else:
-            logger.warning("[시작] 백업 복구 실패")
-    else:
-        team_data_manager.clear_backup()
+            logger.error("[시작] 백업 복구 실패")
 
     # 시트 연결 재시도는 정리 루프와 사용 시점 몫
     bot_manager.get_warning_manager().start_cleanup_task()

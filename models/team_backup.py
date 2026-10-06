@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from config.logging_config import get_logger
-from utils.helpers import save_json_atomic
+from utils.helpers import get_current_kst_time, save_json_atomic
 from .team_data import TeamData
 
 if TYPE_CHECKING:
@@ -121,12 +121,13 @@ class TeamBackup:
                     mgr.groups.append(restored_group)
 
             logger.info(
-                f"[팀데이터] 백업에서 {len(teams_data)}개 팀 복구 완료 "
-                f"(스크림 날짜: {mgr.scrim_month}/{mgr.scrim_day})"
+                f"[팀데이터] 백업에서 {len(teams_data)}개 팀 복구 완료, "
+                f"스크림 날짜: {mgr.scrim_month}/{mgr.scrim_day}"
             )
             return True
         except Exception as e:
             logger.error(f"[팀데이터] 백업 복구 실패: {e}", exc_info=True)
+            self._quarantine()
             return False
 
     def should_restore(self) -> bool:
@@ -138,11 +139,25 @@ class TeamBackup:
                 data = json.load(f)
             meta = data.get('_meta')
             if not meta:
+                logger.error("[팀데이터] 백업에 _meta가 없음")
+                self._quarantine()
                 return False
             return True
         except Exception as e:
             logger.error(f"[팀데이터] 백업 유효성 검사 실패: {e}", exc_info=True)
+            self._quarantine()
             return False
+
+    def _quarantine(self) -> None:
+        if not os.path.exists(self.backup_file):
+            return
+        stamp = get_current_kst_time().strftime('%Y%m%d-%H%M%S')
+        target = f"{self.backup_file}.corrupt-{stamp}"
+        try:
+            os.replace(self.backup_file, target)
+            logger.error(f"[팀데이터] 읽을 수 없는 백업을 보관 - {target}")
+        except OSError as e:
+            logger.error(f"[팀데이터] 읽을 수 없는 백업 보관 실패: {e}", exc_info=True)
 
     def clear(self) -> None:
         try:
