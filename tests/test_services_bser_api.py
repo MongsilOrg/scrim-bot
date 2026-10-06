@@ -91,5 +91,31 @@ class RequestStatusTest(BSERTestCase):
         self.assertFalse([r for r in logs.records if r.levelname == 'WARNING'])
 
 
+class MaintenanceCheckTest(BSERTestCase):
+    async def test_uses_fixed_season(self):
+        client = make_client([
+            FakeResponse(200, {'code': 200, 'topRanks': [{'nickname': '백수'}]}),
+            FakeResponse(200, {'code': 200, 'user': {'userId': 'u1'}}),
+        ])
+        self.assertFalse(await client.check_server_maintenance())
+        self.assertIn(f'/rank/top/{BSERAPIClient.RANK_SEASON_ID}/', client.session.urls[0])
+        self.assertFalse(any('Season' in url for url in client.session.urls))
+
+    async def test_empty_ranking_is_maintenance(self):
+        client = make_client([FakeResponse(200, {'code': 200, 'topRanks': []})])
+        self.assertTrue(await client.check_server_maintenance())
+
+    async def test_ranking_failure_is_maintenance(self):
+        client = make_client([FakeResponse(404, {'code': 404, 'message': 'Not Found'})])
+        self.assertTrue(await client.check_server_maintenance())
+
+    async def test_top_nickname_404_is_maintenance(self):
+        client = make_client([
+            FakeResponse(200, {'code': 200, 'topRanks': [{'nickname': '백수'}]}),
+            FakeResponse(200, {'code': 404, 'message': 'Not Found'}),
+        ])
+        self.assertTrue(await client.check_server_maintenance())
+
+
 if __name__ == '__main__':
     unittest.main()

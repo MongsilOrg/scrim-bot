@@ -13,6 +13,9 @@ logger = get_logger('bser_api')
 
 
 class BSERAPIClient:
+    # 시즌 API의 isCurrent가 실제 랭크 시즌과 어긋날 때가 있어 직접 지정
+    RANK_SEASON_ID = 41
+
     MAX_RETRIES = 4
     INITIAL_WAIT = 1
     MAX_WAIT = 30
@@ -168,25 +171,20 @@ class BSERAPIClient:
         cls._mmr_cache.clear()
 
     async def check_server_maintenance(self) -> bool:
-        # 패치 점검 중에도 시즌 API는 정상이고 닉네임 검색만 멈춤. 랭킹 1위 닉네임 검색으로 판정
+        # 패치 점검 중에는 닉네임 검색과 rank/uid가 멈춤. 랭킹 1위 닉네임 검색으로 판정하고 판정할 수 없으면 점검으로 봄
         try:
-            data = await self._request("GET", "https://open-api.bser.io/v2/data/Season")
-            if not data or data.get("code") != 200:
-                return True
-            current = next((x for x in data.get("data", []) if x.get("isCurrent") == 1), None)
-            if not current:
-                return False
-            top = await self._request("GET", f"{self.base_url}/rank/top/{current['seasonID']}/3/10")
+            top = await self._request("GET", f"{self.base_url}/rank/top/{self.RANK_SEASON_ID}/3/10")
             ranks = (top or {}).get("topRanks") or []
             if not ranks:
-                return False
+                if log_once("maintenance-rank-empty", 600):
+                    logger.info(f"[API] 랭킹 조회 실패, 점검으로 간주 - 시즌: {self.RANK_SEASON_ID}")
+                return True
             probe = await self._request("GET", f"{self.base_url}/user/nickname",
                                         params={"query": ranks[0]["nickname"]})
             return not probe or probe.get("code") != 200
         except Exception as e:
             logger.warning(f"[API] 점검 여부 확인 실패, 점검으로 간주 - 오류: {e}")
             return True
-
 
     async def get_user_uid(self, user_nickname: str) -> Optional[str]:
         # 닉네임 조회 API는 대소문자 구분
@@ -217,8 +215,7 @@ class BSERAPIClient:
     
     
     async def get_user_rank(self, uid: str) -> Optional[Dict]:
-        # 시즌 API의 isCurrent가 실제 랭크 시즌과 어긋날 때가 있어 직접 지정
-        url = f"{self.base_url}/rank/uid/{uid}/41/3"
+        url = f"{self.base_url}/rank/uid/{uid}/{self.RANK_SEASON_ID}/3"
         data = await self._request("GET", url)
         if not data:
             return None
