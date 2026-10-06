@@ -32,9 +32,9 @@ if TYPE_CHECKING:
 logger = get_logger('team_pipeline')
 
 MAINTENANCE_SKIP_NOTICE = (
-    "🔧 서버 점검으로 닉네임 확인을 건너뛰었습니다.\n"
-    "점검 종료 후 자동으로 확인되며, 결과는 DM으로 알려드립니다.\n"
-    "💡 닉네임 오타가 없는지 다시 한번 확인해주세요."
+    "게임 서버 점검 중이라 게임 닉네임 확인을 건너뛰었습니다.\n"
+    "점검이 끝나면 자동으로 확인하고 결과를 DM으로 보냅니다.\n"
+    "닉네임에 오타가 없는지 한 번 더 확인해주세요."
 )
 
 
@@ -52,7 +52,7 @@ async def _handle_pipeline_exception(
         logger.warning(f"[{tag}] interaction 만료 - 팀명: {team_name}")
     elif isinstance(exc, discord.HTTPException):
         logger.error(f"[{tag}] Discord API 오류: {exc.status} {exc.text}", exc_info=exc)
-        await send_error_message(interaction, f"{action} 중 Discord 오류가 발생했습니다.\n\n💡 잠시 후 다시 시도해주세요.")
+        await send_error_message(interaction, f"{action} 중 Discord 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
     else:
         logger.error(f"[{tag}] {generic_log}: {exc}", exc_info=exc)
         await send_error_message(interaction, generic_message)
@@ -238,11 +238,11 @@ async def process_team_registration(
         if not has_test_account:
             submitter_name = submitter.display_name
             if not validate_discord_user_in_team(team_data, submitter):
-                error_msg = (f"본인의 디스코드 닉네임이 팀원 목록에 포함되어 있지 않습니다.\n\n"
-                             f"📌 **참가팀의 팀원만 신청할 수 있습니다.**\n\n"
-                             f"**현재 디스코드 닉네임**: {submitter_name}\n"
-                             f"**입력된 팀원**: {', '.join(all_members) if all_members else '정보 없음'}\n\n"
-                             f"💡 플레이어 또는 스태프 목록에 본인의 디스코드 닉네임을 포함해주세요.")
+                error_msg = (f"신청하는 사람의 서버 별명이 선수나 스태프 칸에 없습니다.\n"
+                             f"본인이 속한 팀만 신청할 수 있습니다.\n\n"
+                             f"**지금 서버 별명**: {submitter_name}\n"
+                             f"**입력한 닉네임**: {', '.join(all_members) if all_members else '없음'}\n\n"
+                             f"본인의 서버 별명을 선수나 스태프 칸에 넣어주세요.")
                 notice = build_test_account_notice(split_test_nicknames(all_members)[1])
                 if notice:
                     error_msg = f"{error_msg}\n\n{notice}"
@@ -279,16 +279,16 @@ async def process_team_registration(
         if is_maintenance:
             team_data_manager.mark_unverified(team_name)
             success_msg = (
-                f"**{team_name}** 팀이 등록되었습니다.\n\n"
-                f"🎮 선수: {players_str}\n"
-                f"🛠️ 스태프: {staff_str}\n\n"
+                f"**{team_name}** 팀을 신청했습니다.\n\n"
+                f"선수: {players_str}\n"
+                f"스태프: {staff_str}\n\n"
                 f"{MAINTENANCE_SKIP_NOTICE}"
             )
         else:
             success_msg = (
-                f"**{team_name}** 팀이 등록되었습니다.\n\n"
-                f"🎮 선수: {players_str}\n"
-                f"🛠️ 스태프: {staff_str}\n"
+                f"**{team_name}** 팀을 신청했습니다.\n\n"
+                f"선수: {players_str}\n"
+                f"스태프: {staff_str}\n"
                 f"{build_team_mmr_line(team_mmr, team_data.players, team_processor.is_test_account)}"
             )
         await update_temp_message(temp_message, success_msg, discord.Color.green())
@@ -298,8 +298,8 @@ async def process_team_registration(
     except Exception as e:
         await _handle_pipeline_exception(
             interaction, e,
-            tag="팀등록", action="팀 등록", team_name=team_name,
-            generic_message="팀 등록 중 오류가 발생했습니다.\n\n💡 다시 시도해도 문제가 지속되면 관리자에게 문의해주세요.",
+            tag="팀등록", action="팀 신청", team_name=team_name,
+            generic_message="팀 신청 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
             generic_log="팀 등록 실패",
         )
     finally:
@@ -411,7 +411,7 @@ async def process_team_edit(
         await _handle_pipeline_exception(
             interaction, e,
             tag="팀수정", action="팀 수정", team_name=new_team_name,
-            generic_message="팀 정보 수정 중 오류가 발생했습니다.",
+            generic_message="팀 수정 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
             generic_log="팀 정보 수정 실패",
         )
     finally:
@@ -526,7 +526,7 @@ async def _send_edit_result(
         diff_parts.append(f"제외: {', '.join(sorted(removed))}")
     if added:
         diff_parts.append(f"추가: {', '.join(sorted(added))}")
-    diff_summary = '\n'.join(diff_parts) if diff_parts else "변경 없음"
+    diff_summary = '\n'.join(diff_parts) if diff_parts else "바뀐 내용이 없습니다."
     mmr_line = build_team_mmr_line(new_team_mmr, new_team_data.players, team_processor.is_test_account)
     body = f"**{new_team_name}** 팀이 수정되었습니다.\n\n{diff_summary}\n{mmr_line}"
     if sanction_line:
@@ -555,7 +555,7 @@ async def _collect_roster_warnings(
 
     conflicts = team_data_manager.find_member_conflicts(members, exclude_team=original_team_name)
     if conflicts:
-        warnings.append("다른 팀과 중복: " + ", ".join(f"**{m}** {team} 팀" for m, team in conflicts))
+        warnings.append("다른 팀과 중복: " + ", ".join(f"**{m}** {team}" for m, team in conflicts))
 
     real_members = [m for m in members if not team_processor.is_test_account(m)]
     client = BotManager.get_instance().get_client()

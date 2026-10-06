@@ -24,13 +24,10 @@ if TYPE_CHECKING:
 
 logger = get_logger('views')
 
-ASSIGNMENT_CLOSED_CANCEL_MSG = (
-    f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시 조편성이 완료되어 팀 취소가 불가능합니다. "
-    "관리자에게 문의해주세요."
-)
-ASSIGNMENT_CLOSED_FORCE_CANCEL_MSG = (
-    f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시 조편성이 완료되어 강제취소가 불가능합니다."
-)
+ASSIGNMENT_CLOSED_CANCEL_MSG = "조편성이 끝나 팀을 취소할 수 없습니다."
+ASSIGNMENT_CLOSED_FORCE_CANCEL_MSG = "조편성이 끝나 강제 취소할 수 없습니다."
+NO_TEAMS_MSG = "신청된 팀이 없습니다."
+OPEN_INPUT_ERROR_MSG = "입력 창을 여는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
 TEAM_ALREADY_GONE_MSG = "이미 취소된 팀입니다."
 MODAL_SERVER_ERROR_MSG = "Discord 서버 오류로 입력 창을 열지 못했습니다. 잠시 후 다시 시도해주세요."
 
@@ -46,21 +43,21 @@ class TeamInputView(LayoutView):
         super().__init__(timeout=None)
 
         scrim_label = "자율 스크림" if is_rest_day else "스크림"
-        title = f"🏆 {scrim_month}/{scrim_day} ({scrim_weekday}) {scrim_label}"
-        deadline_line = f"`{settings.TEAM_REGISTRATION_DEADLINE_HOUR}:00` 팀 등록 마감, 조편성\n"
+        title = f"🏆 {scrim_month}월 {scrim_day}일 {scrim_weekday} {scrim_label}"
+        deadline_line = f"`{settings.TEAM_REGISTRATION_DEADLINE_HOUR}:00` 신청 마감, 조편성\n"
         start_line = f"`{settings.SCRIM_START_HOUR}:00` 스크림 시작, {settings.TOTAL_ROUNDS}라운드\n"
-        open_line = f"`{settings.NEXT_SCRIM_OPEN_HOUR}:00` 다음날 스크림 오픈"
+        open_line = f"`{settings.NEXT_SCRIM_OPEN_HOUR}:00` 다음 스크림 신청 시작"
         if is_rest_day:
             schedule = (
-                "📋 **일정**\n"
+                "**일정**\n"
                 + deadline_line
-                + "`19:55` 지정된 팀 방설정 완료\n"
+                + "`19:55` 지정된 팀 방 설정 완료\n"
                 + start_line
                 + open_line
             )
         else:
             schedule = (
-                "📋 **일정**\n"
+                "**일정**\n"
                 + deadline_line
                 + start_line
                 + open_line
@@ -77,30 +74,18 @@ class TeamInputView(LayoutView):
         if is_rest_day:
             announcement_lines.append(settings.CUSTOM_GAME_GUIDE_LINK)
         if announcement_lines:
-            children.append(TextDisplay(content="📢 **공지사항**\n" + "\n".join(announcement_lines)))
+            children.append(TextDisplay(content="**공지사항**\n" + "\n".join(announcement_lines)))
 
         children.append(Separator())
         children.append(TextDisplay(content=FOOTER_TEXT))
 
         self.add_item(Container(*children, accent_colour=Color.green()))
 
-        self.add_team_button = Button(
-            label="신청/수정",
-            style=ButtonStyle.primary,
-            emoji="✏️"
-        )
+        self.add_team_button = Button(label="신청 및 수정", style=ButtonStyle.primary)
         self.add_team_button.callback = self.add_team_callback
-        self.cancel_team_button = Button(
-            label="취소",
-            style=ButtonStyle.secondary,
-            emoji="🚫"
-        )
+        self.cancel_team_button = Button(label="취소", style=ButtonStyle.secondary)
         self.cancel_team_button.callback = self.cancel_team_callback
-        self.manage_button = Button(
-            label="관리",
-            style=ButtonStyle.secondary,
-            emoji="🛠️"
-        )
+        self.manage_button = Button(label="관리", style=ButtonStyle.secondary)
         self.manage_button.callback = self.manage_callback
         self.add_item(ActionRow(self.add_team_button, self.cancel_team_button, self.manage_button))
 
@@ -148,7 +133,7 @@ class TeamInputView(LayoutView):
                 if not interaction.response.is_done():
                     await interaction.response.send_modal(modal)
                 else:
-                    await interaction.followup.send("모달을 표시할 수 없습니다. 다시 시도해주세요.", ephemeral=True)
+                    await send_error_message(interaction, OPEN_INPUT_ERROR_MSG)
 
         except discord.NotFound:
             logger.warning("[뷰] 팀 추가 interaction 만료")
@@ -157,7 +142,7 @@ class TeamInputView(LayoutView):
             await send_error_message(interaction, MODAL_SERVER_ERROR_MSG)
         except Exception as e:
             logger.error(f"[뷰] 팀 추가 콜백 처리 실패: {e}", exc_info=True)
-            await send_error_message(interaction, "팀 추가 중 오류가 발생했습니다.")
+            await send_error_message(interaction, OPEN_INPUT_ERROR_MSG)
     
     async def cancel_team_callback(self, interaction: discord.Interaction) -> None:
         if await check_cooldown(interaction, cooldown_seconds=1):
@@ -171,7 +156,7 @@ class TeamInputView(LayoutView):
             
             if not user_team:
                 logger.info(f"[팀취소시도] 팀 없음 | 요청자: {interaction.user}")
-                await send_error_message(interaction, "등록된 팀이 없습니다.")
+                await send_error_message(interaction, NO_TEAMS_MSG)
                 return
 
             logger.info(f"[팀취소시도] {user_team} | 요청자: {interaction.user}")
@@ -190,18 +175,17 @@ class TeamInputView(LayoutView):
 
             members_str = ', '.join(players) if players else '없음'
             staff_str = ', '.join(staff) if staff else '없음'
-            cancel_text = f"**{user_team}** 팀의 등록을 취소하시겠습니까?"
+            cancel_text = f"**{user_team}** 팀 신청을 취소하시겠습니까?"
             fields = [("선수", members_str)]
             if staff:
                 fields.append(("스태프", staff_str))
             fields.append(("MMR", f"{team_mmr:.2f}"))
 
             confirm_view = ConfirmView(
-                title="🚫 팀 등록 취소 확인",
+                title="🚫 팀 취소 확인",
                 body=cancel_text,
                 fields=fields,
-                confirm_label="등록 취소하기",
-                confirm_emoji="⚠️",
+                confirm_label="신청 취소하기",
                 accent_colour=Color.orange(),
                 error_text="팀 취소 중 오류가 발생했습니다.",
                 on_confirm=lambda i: self._process_team_cancellation(i, user_team),
@@ -246,7 +230,7 @@ class TeamInputView(LayoutView):
             await send_error_message(interaction, MODAL_SERVER_ERROR_MSG)
         except Exception as e:
             logger.error(f"[뷰] 팀 수정 모달 표시 실패: {e}", exc_info=True)
-            await send_error_message(interaction, "팀 수정 모달 표시 중 오류가 발생했습니다.")
+            await send_error_message(interaction, OPEN_INPUT_ERROR_MSG)
     
     async def _process_team_cancellation(self, interaction: discord.Interaction, team_name: str) -> LayoutView:
         try:
@@ -280,7 +264,7 @@ class TeamInputView(LayoutView):
             logger.info(f"[팀취소] {team_name} | 선수: [{players_str}] | 스태프: [{staff_str}]")
 
             schedule_mmr_refresh(team_data_manager, interaction.channel)
-            return success_view(f"**{team_name}** 팀이 취소되었습니다.")
+            return success_view(f"**{team_name}** 팀 신청을 취소했습니다.")
 
         except Exception as e:
             logger.error(f"[뷰] 팀 취소 실패: {e}", exc_info=True)
@@ -301,7 +285,7 @@ class TeamInputView(LayoutView):
 
             teams = team_data_manager.get_all_teams()
             if not teams:
-                await send_response(interaction, info_view("등록된 팀이 없습니다."))
+                await send_response(interaction, info_view(NO_TEAMS_MSG))
                 return
 
             view = ForceCancelSelectView(self, teams)
@@ -374,8 +358,8 @@ class ConfirmView(_TimeoutEditView):
         body: str = "",
         fields: list[tuple[str, str]] | None = None,
         confirm_label: str,
-        confirm_emoji: str,
         accent_colour: Color,
+        confirm_emoji: Optional[str] = None,
         error_text: str,
         on_confirm,
     ):
@@ -394,7 +378,7 @@ class ConfirmView(_TimeoutEditView):
 
         self.confirm_button = Button(label=confirm_label, style=ButtonStyle.danger, emoji=confirm_emoji)
         self.confirm_button.callback = self.confirm_callback
-        self.back_button = Button(label="돌아가기", style=ButtonStyle.secondary, emoji="↩️")
+        self.back_button = Button(label="돌아가기", style=ButtonStyle.secondary)
         self.back_button.callback = self.back_callback
         self.add_item(ActionRow(self.confirm_button, self.back_button))
 
@@ -441,7 +425,7 @@ class ForceCancelSelectView(_TimeoutEditView):
         self.parent_view = parent_view
 
         self.add_item(Container(
-            TextDisplay(content="## 🛠️ 팀 강제취소\n취소할 팀을 선택해주세요."),
+            TextDisplay(content="## 🛠️ 팀 강제 취소\n취소할 팀을 선택해주세요."),
             Separator(),
             TextDisplay(content=FOOTER_TEXT),
             accent_colour=Color.orange(),
@@ -453,9 +437,9 @@ class ForceCancelSelectView(_TimeoutEditView):
             chunk = sorted_names[start:start + _SELECT_OPTION_LIMIT]
             options = [
                 SelectOption(
-                    label=f"{name} (MMR: {getattr(teams[name], 'mmr', 0.0):.2f})"[:100],
+                    label=f"{name} MMR {getattr(teams[name], 'mmr', 0.0):.2f}"[:100],
                     value=name,
-                    description=(', '.join(getattr(teams[name], 'players', [])[:3]) or '정보 없음')[:100],
+                    description=(', '.join(getattr(teams[name], 'players', [])[:3]) or '선수 없음')[:100],
                 )
                 for name in chunk
             ]
@@ -481,12 +465,11 @@ class ForceCancelSelectView(_TimeoutEditView):
                 return await parent_view._execute_force_cancel(inter, team_name)
 
             confirm_view = ConfirmView(
-                title="🔨 강제취소 확인",
-                body=f"**{selected}** 팀을 강제취소하시겠습니까?",
+                title="🔨 강제 취소 확인",
+                body=f"**{selected}** 팀을 강제 취소하시겠습니까?",
                 confirm_label="강제 취소하기",
-                confirm_emoji="🔨",
                 accent_colour=Color.red(),
-                error_text="강제취소 중 오류가 발생했습니다.",
+                error_text="강제 취소 중 오류가 발생했습니다.",
                 on_confirm=_confirm_force_cancel,
             )
             self.stop()  # 멈추지 않으면 on_timeout이 확인 뷰를 덮어씀

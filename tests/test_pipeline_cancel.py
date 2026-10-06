@@ -62,7 +62,6 @@ def make_confirm(on_confirm):
         title="확인",
         body="본문",
         confirm_label="취소하기",
-        confirm_emoji="⚠️",
         accent_colour=Color.orange(),
         error_text="오류가 발생했습니다.",
         on_confirm=on_confirm,
@@ -183,7 +182,7 @@ class ApplicantOnlyCancelTest(unittest.IsolatedAsyncioTestCase):
         result = await self._view()._process_team_cancellation(FakeInteraction(user_id=1), "알파팀")
 
         self.assertIsInstance(result, LayoutView)
-        self.assertIn("취소되었습니다", texts(result))
+        self.assertIn("팀 신청을 취소했습니다", texts(result))
         self.assertNotIn("알파팀", teams)
 
     async def test_force_cancel_returns_result_card(self):

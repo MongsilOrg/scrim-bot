@@ -41,7 +41,7 @@ class RosterWarningsTest(unittest.IsolatedAsyncioTestCase):
 
         joined = '\n'.join(warnings)
         self.assertIn('**제한됨** 10월 8일 목요일까지', joined)
-        self.assertIn('**b1** 베타팀 팀', joined)
+        self.assertIn('**b1** 베타팀', joined)
         self.assertNotIn('a1', joined)
         self.assertIn('**없는사람**', joined)
 
@@ -55,7 +55,7 @@ class RosterWarningsTest(unittest.IsolatedAsyncioTestCase):
 
         await team_pipeline._send_edit_result(
             mock.Mock(), processor, '알파팀', team, 100.0, {'b1'}, {'a3'}, False,
-            roster_warnings=['다른 팀과 중복: **b1** 베타팀 팀'], sanction_line='주의 3명을 부여했습니다.',
+            roster_warnings=['다른 팀과 중복: **b1** 베타팀'], sanction_line='주의 3명을 부여했습니다.',
         )
 
         body, color = update.call_args.args[1], update.call_args.args[2]
@@ -72,8 +72,8 @@ class DuplicateMessageTest(unittest.TestCase):
         })
         ok, msg = mgr.check_duplicate_with_bot_teams('감마팀', ['A1', 'b2', 'c'])
         self.assertFalse(ok)
-        self.assertIn('**A1**: 알파팀 팀', msg)
-        self.assertIn('**b2**: 베타팀 팀', msg)
+        self.assertIn('**A1**: 알파팀', msg)
+        self.assertIn('**b2**: 베타팀', msg)
 
 
 if __name__ == '__main__':

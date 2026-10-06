@@ -22,13 +22,13 @@ def validate_team_name(team_name: str) -> Tuple[bool, str]:
     team_name = team_name.strip()
 
     if len(team_name) < 3:
-        return False, "팀명은 3~12글자여야 합니다.\n\n💡 현재 입력: {0}글자".format(len(team_name))
+        return False, f"팀명은 3~12글자로 입력해주세요. 지금 {len(team_name)}글자입니다."
 
     if len(team_name) > 12:
-        return False, "팀명은 3~12글자여야 합니다.\n\n💡 현재 입력: {0}글자".format(len(team_name))
+        return False, f"팀명은 3~12글자로 입력해주세요. 지금 {len(team_name)}글자입니다."
 
     if not re.match(r'^[가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z\s]+$', team_name):
-        return False, "팀명에는 한글과 영어만 사용할 수 있습니다.\n\n💡 숫자, 특수문자는 사용할 수 없습니다."
+        return False, "팀명에는 한글과 영어만 쓸 수 있습니다. 숫자와 특수문자를 빼주세요."
 
     return True, ""
 
@@ -37,28 +37,25 @@ def validate_team_data(team_data) -> Tuple[bool, str]:
     try:
         players, staff = team_data.players, team_data.staff
 
-        if len(players) < 3:
-            return False, f"플레이어는 최소 3명이 필요합니다.\n\n💡 현재 입력된 플레이어 수: {len(players)}명"
-        
-        if len(players) > 4:
-            return False, f"플레이어는 최대 4명까지만 등록할 수 있습니다.\n\n💡 현재 입력된 플레이어 수: {len(players)}명"
+        if not 3 <= len(players) <= 4:
+            return False, f"선수는 3~4명이어야 합니다. 지금 {len(players)}명입니다."
 
         if len(staff) > 3:
-            return False, f"스태프는 최대 3명까지만 등록할 수 있습니다.\n\n💡 현재 입력된 스태프 수: {len(staff)}명"
+            return False, f"스태프는 3명까지 넣을 수 있습니다. 지금 {len(staff)}명입니다."
 
         for player in players:
             if not player or not player.strip():
-                return False, "플레이어 닉네임을 입력해주세요.\n\n💡 빈 줄이나 공백만 입력할 수 없습니다."
+                return False, "선수 닉네임을 입력해주세요."
 
         for staff_member in staff:
             if not staff_member or not staff_member.strip():
-                return False, "스태프 닉네임을 입력해주세요.\n\n💡 빈 줄이나 공백만 입력할 수 없습니다."
+                return False, "스태프 닉네임을 입력해주세요."
         
         return True, ""
         
     except Exception as e:
         logger.error(f"[유효성검사] 팀 데이터 유효성 검사 실패: {e}", exc_info=True)
-        return False, "팀 정보 확인 중 문제가 발생했습니다.\n💡 잠시 후 다시 시도해주세요."
+        return False, "팀 정보를 확인하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
 
 
 def validate_discord_user_in_team(team_data, member: 'discord.Member') -> bool:
@@ -111,13 +108,13 @@ def check_duplicate_members(players: List[str], staff: List[str]) -> Tuple[bool,
 
         if duplicates:
             duplicate_list = ', '.join(dict.fromkeys(duplicates))
-            return False, f"중복된 팀원이 있습니다.\n\n**중복된 닉네임**: {duplicate_list}\n\n💡 같은 닉네임을 여러 번 입력할 수 없습니다."
+            return False, f"같은 닉네임이 여러 번 들어 있습니다: **{duplicate_list}**\n한 번씩만 입력해주세요."
         
         return True, ""
         
     except Exception as e:
         logger.error(f"[유효성검사] 팀원 중복 검사 실패: {e}", exc_info=True)
-        return False, "팀원 중복 확인 중 문제가 발생했습니다.\n💡 잠시 후 다시 시도해주세요."
+        return False, "닉네임 중복을 확인하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
 
 
 def validate_members_in_guild(
@@ -208,8 +205,8 @@ def build_test_account_notice(nicknames: List[str]) -> str:
     if not nicknames:
         return ""
     return (
-        f"테스트 계정은 확인이 필요합니다: **{', '.join(nicknames)}**\n"
-        f"💡 <@{settings.TEST_ACCOUNT_CONTACT_ID}>에게 문의해주세요."
+        f"테스트 계정은 따로 확인해야 합니다: **{', '.join(nicknames)}**\n"
+        f"<@{settings.TEST_ACCOUNT_CONTACT_ID}>에게 문의해주세요."
     )
 
 
@@ -221,13 +218,13 @@ API_UNAVAILABLE_NOTICE = "게임 서버가 응답하지 않아 게임 닉네임�
 
 def build_team_mmr_line(team_mmr: float, players: List[str], is_test_account) -> str:
     if team_mmr > 0:
-        return f"📊 팀 평균 MMR: **{team_mmr:.2f}**"
+        return f"팀 평균 MMR: **{team_mmr:.2f}**"
     if players and all(is_test_account(player) for player in players):
         return (
-            "📊 팀 평균 MMR: 미등록\n"
-            f"💡 테스트 계정 MMR이 등록되지 않았습니다. <@{settings.TEST_ACCOUNT_CONTACT_ID}>에게 문의해주세요."
+            "팀 평균 MMR: 미등록\n"
+            f"테스트 계정 MMR이 등록되지 않았습니다. <@{settings.TEST_ACCOUNT_CONTACT_ID}>에게 문의해주세요."
         )
-    return "📊 팀 평균 MMR: 확인 중\n💡 잠시 후 자동으로 갱신됩니다."
+    return "팀 평균 MMR: 확인 중\n잠시 후 자동으로 갱신됩니다."
 
 
 def compose_member_check_error(

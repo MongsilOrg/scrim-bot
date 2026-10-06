@@ -54,7 +54,7 @@ class ManageButtonTest(unittest.TestCase):
         view = TeamInputView(scrim_day=22, scrim_month=5, scrim_weekday="목")
         labels = _collect_labels(view)
         self.assertIn("관리", labels)
-        self.assertIn("신청/수정", labels)
+        self.assertIn("신청 및 수정", labels)
         self.assertIn("취소", labels)
 
 

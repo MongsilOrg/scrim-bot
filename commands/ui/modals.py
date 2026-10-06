@@ -60,7 +60,7 @@ class TeamModal(Modal):
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=True)
 
-            temp_message = await interaction.followup.send(view=processing_view("팀 정보를 확인하고 등록하고 있습니다."), ephemeral=True, wait=True)
+            temp_message = await interaction.followup.send(view=processing_view("팀 정보를 확인하고 있습니다."), ephemeral=True, wait=True)
 
             team_data = TeamData(
                 name=self.team_name_input.value.strip(),
@@ -74,7 +74,7 @@ class TeamModal(Modal):
             logger.warning("[모달] 팀 등록 interaction 만료")
         except Exception as e:
             logger.error(f"[모달] 팀 모달 제출 처리 실패: {e}", exc_info=True)
-            await send_error_message(interaction, "팀 등록 중 오류가 발생했습니다.")
+            await send_error_message(interaction, "팀 신청 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
 
 
 class TeamEditModal(Modal):
@@ -144,7 +144,7 @@ class TeamEditModal(Modal):
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=True)
 
-            temp_message = await interaction.followup.send(view=processing_view("변경된 팀 정보를 확인하고 업데이트하고 있습니다."), ephemeral=True, wait=True)
+            temp_message = await interaction.followup.send(view=processing_view("팀 정보를 확인하고 있습니다."), ephemeral=True, wait=True)
 
             is_roster_change = self.is_roster_change
 
@@ -177,4 +177,4 @@ class TeamEditModal(Modal):
             logger.warning("[모달] 팀 수정 interaction 만료")
         except Exception as e:
             logger.error(f"[모달] 팀 정보 수정 모달 제출 처리 실패: {e}", exc_info=True)
-            await send_error_message(interaction, "팀 정보 수정 중 오류가 발생했습니다.")
+            await send_error_message(interaction, "팀 수정 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")

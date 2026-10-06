@@ -420,14 +420,14 @@ class TeamDataManager:
 
         except Exception as e:
             logger.error(f"[팀데이터] 팀 추가 실패: {e}", exc_info=True)
-            return False, "팀 등록 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+            return False, "팀 신청 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
 
     async def remove_team(self, team_name: str) -> Tuple[bool, str]:
         """반환: 성공 여부, 실패 사유 또는 빈 문자열."""
         try:
             async with self._teams_lock:
                 if team_name not in self.teams:
-                    return False, "등록되지 않은 팀명입니다."
+                    return False, "이미 취소된 팀입니다."
 
                 team = self.teams[team_name]
 
@@ -488,7 +488,7 @@ class TeamDataManager:
             if old_team_name not in self.teams:
                 # 검증과 저장 사이에 취소된 팀, 여기서 추가하면 부활
                 logger.warning(f"[팀데이터] 교체 대상 팀 없음 - 교체 중단: {old_team_name}")
-                return False, f"'{old_team_name}' 팀이 등록되어 있지 않습니다. 이미 취소되었을 수 있습니다."
+                return False, f"**{old_team_name}** 팀을 찾지 못했습니다. 이미 취소되었을 수 있습니다."
 
             if enforce_rules:
                 is_allowed, reason = self.check_team_time_rules(get_current_kst_time(), is_edit=True)
@@ -507,7 +507,7 @@ class TeamDataManager:
                 for name in self.teams
             ):
                 logger.info(f"[팀데이터] 교체 거부 - 이미 있는 팀명: {new_team.name}")
-                return False, f"이미 등록된 팀명입니다: {new_team.name}"
+                return False, f"이미 신청된 팀명입니다: **{new_team.name}**"
 
             old_team = self.teams[old_team_name]
             self._remove_member_index(old_team_name, old_team)
@@ -529,12 +529,12 @@ class TeamDataManager:
                 if exclude_team and existing_key == normalized_exclude:
                     continue
                 if existing_key == normalized_new_team_name:
-                    return False, f"이미 등록된 팀명입니다: {team_name}"
+                    return False, f"이미 신청된 팀명입니다: **{team_name}**"
 
             conflicts = self.find_member_conflicts(team_members, exclude_team=exclude_team)
             if conflicts:
-                detail_str = "\n".join(f"**{member}**: {other} 팀" for member, other in conflicts)
-                return False, f"다른 팀에 이미 등록된 닉네임이 있습니다.\n{detail_str}"
+                detail_str = "\n".join(f"**{member}**: {other}" for member, other in conflicts)
+                return False, f"다른 팀에 이미 신청된 닉네임이 있습니다.\n{detail_str}"
 
             return True, ""
 
