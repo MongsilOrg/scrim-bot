@@ -162,7 +162,12 @@ class ScrimOrchestrator:
 
             team_data_manager.groups = groups
             team_data_manager.save_backup()
-            record_assignment(groups, unmatched_teams)
+            # 공지와 역할 처리를 늦추지 않게 따로 돌림
+            team_data_manager.spawn_task(record_assignment(
+                groups, unmatched_teams, registered=len(team_data_manager.teams),
+                guild=client.get_guild(settings.GUILD_ID) if client else None,
+                is_test=team_processor.is_test_account,
+            ))
 
             logger.info(f"[조편성] 조편성 실행 완료 - 조 수: {len(groups)}개, 매칭되지 않은 팀: {len(unmatched_teams)}개")
 
