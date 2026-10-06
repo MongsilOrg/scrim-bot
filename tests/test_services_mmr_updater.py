@@ -120,5 +120,33 @@ class VerifyUnverifiedTeamsTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('다음 갱신 때 반영', text)
 
 
+class QuietCycleTest(unittest.IsolatedAsyncioTestCase):
+    async def test_loop_passes_maintenance_state_as_quiet(self):
+        mgr = SimpleNamespace(teams={}, save_backup=mock.MagicMock())
+        captured = {}
+
+        class CapturingClient:
+            def __init__(self, *, quiet=False):
+                captured['quiet'] = quiet
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+        team = TeamData(name='팀', players=['가'])
+        mgr.teams = {'팀': team}
+        mgr.set_team_mmr = mock.AsyncMock()
+        tp = mock.MagicMock()
+        tp.ensure_test_accounts_loaded = mock.AsyncMock()
+        tp.fetch_team_mmr = mock.AsyncMock(return_value=('팀', team, 0.0))
+        with mock.patch.object(mmr_updater, 'BSERAPIClient', CapturingClient), \
+             mock.patch.object(mmr_updater, 'BotManager') as bm:
+            bm.get_instance.return_value.get_team_processor.return_value = tp
+            await MmrUpdater(mgr).update_all_team_mmr(quiet=True)
+        self.assertTrue(captured['quiet'])
+
+
 if __name__ == '__main__':
     unittest.main()

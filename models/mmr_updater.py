@@ -164,7 +164,8 @@ class MmrUpdater:
                     )
 
                     if team_data_manager.teams:
-                        success, fail = await self.update_all_team_mmr()
+                        # 직전 주기가 점검이면 선수별 실패 경고를 DEBUG로, 점검 내내 같은 경고 반복 방지
+                        success, fail = await self.update_all_team_mmr(quiet=team_data_manager.is_maintenance)
 
                         was_maintenance = team_data_manager.is_maintenance
                         if fail > 0 and success == 0:
@@ -228,8 +229,8 @@ class MmrUpdater:
     TEAM_MMR_TTL_SECONDS = 600
     TEAM_FETCH_CONCURRENCY = 3
 
-    async def update_all_team_mmr(self, force: bool = False) -> Tuple[int, int]:
-        """반환: 성공 팀 수, 실패 팀 수. TTL 스킵도 성공으로 집계."""
+    async def update_all_team_mmr(self, force: bool = False, quiet: bool = False) -> Tuple[int, int]:
+        """반환: 성공 팀 수, 실패 팀 수. TTL 스킵도 성공으로 집계. quiet는 선수별 실패 로그를 DEBUG로."""
         mgr = self._manager
         success_count = 0
         fail_count = 0
@@ -267,7 +268,7 @@ class MmrUpdater:
                         logger.error(f"[MMR갱신] 팀 MMR 갱신 실패 - 팀명: {team_name}: {e}", exc_info=True)
                     return False
 
-                async with BSERAPIClient() as api_client:
+                async with BSERAPIClient(quiet=quiet) as api_client:
                     results = await asyncio.gather(
                         *(_refresh(name, data, api_client) for name, data in targets)
                     )

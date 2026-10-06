@@ -289,6 +289,13 @@ class TeamProcessor:
                 async with contextlib.AsyncExitStack() as stack:
                     if api_client is None:
                         api_client = await stack.enter_async_context(BSERAPIClient())
+                    quiet = getattr(api_client, 'quiet', False)
+
+                    def _warn(key: str, message: str) -> None:
+                        if quiet:
+                            logger.debug(message)
+                        elif log_once(key):
+                            logger.warning(message)
 
                     async def _fetch_player_mmr(player: str) -> Optional[float]:
                         try:
@@ -299,15 +306,14 @@ class TeamProcessor:
                                 return mmr
                             uid = await api_client.get_user_uid(player)
                             if not uid:
-                                if log_once(f"uid-fail:{player}"):
-                                    logger.warning(f"[MMR조회] 플레이어 UID 조회 실패 - 플레이어: {player}")
+                                _warn(f"uid-fail:{player}", f"[MMR조회] 플레이어 UID 조회 실패 - 플레이어: {player}")
                                 return None
                             mmr = await api_client.get_user_mmr(uid)
-                            if mmr is None and log_once(f"mmr-fail:{uid}"):
-                                logger.warning(f"[MMR조회] 플레이어 MMR 조회 실패 - 플레이어: {player}, UID: {uid}")
+                            if mmr is None:
+                                _warn(f"mmr-fail:{uid}", f"[MMR조회] 플레이어 MMR 조회 실패 - 플레이어: {player}, UID: {uid}")
                             return mmr
                         except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError) as e:
-                            logger.warning(f"[MMR조회] 플레이어 MMR 조회 실패 - 플레이어: {player}: {e}")
+                            _warn(f"mmr-exc:{player}", f"[MMR조회] 플레이어 MMR 조회 실패 - 플레이어: {player}: {e}")
                             return None
                         except Exception:
                             logger.exception(f"[MMR조회] 플레이어 MMR 조회 실패 - 플레이어: {player}")
@@ -319,8 +325,8 @@ class TeamProcessor:
                     avg_mmr = self._average_top_three(mmr_list, len(players))
                     if avg_mmr == 0.0:
                         missing = [p for p, m in zip(players, results) if m is None]
-                        if log_once(f"team-mmr:{team_name}:{missing}"):
-                            logger.warning(f"[MMR조회] 일부 플레이어 MMR 조회 실패로 팀 MMR 미확정 - 팀명: {team_name}, 대상: {missing}")
+                        _warn(f"team-mmr:{team_name}:{missing}",
+                              f"[MMR조회] 일부 플레이어 MMR 조회 실패로 팀 MMR 미확정 - 팀명: {team_name}, 대상: {missing}")
 
                     return team_name, team_data, avg_mmr
             except Exception as e:

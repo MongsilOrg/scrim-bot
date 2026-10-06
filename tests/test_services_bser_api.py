@@ -40,8 +40,8 @@ class FakeSession:
         self.closed = True
 
 
-def make_client(responses):
-    client = BSERAPIClient()
+def make_client(responses, *, quiet=False):
+    client = BSERAPIClient(quiet=quiet)
     client.session = FakeSession(responses)
     return client
 
@@ -149,6 +149,12 @@ class UidLookupTest(BSERTestCase):
         client = make_client([FakeResponse(200, {'code': 200, 'userRank': {'mmr': 7000}})])
         self.assertEqual(await client.get_user_mmr('uid-s'), 7000)
         self.assertIn(f'/rank/uid/uid-s/{BSERAPIClient.RANK_SEASON_ID}/3', client.session.urls[0])
+
+    async def test_quiet_client_logs_404_at_debug(self):
+        client = make_client([FakeResponse(200, {'code': 404})], quiet=True)
+        with self.assertLogs('scrim-bot.bser_api', level='DEBUG') as logs:
+            await client.get_user_uid('점검중닉')
+        self.assertEqual({r.levelname for r in logs.records}, {'DEBUG'})
 
 
 

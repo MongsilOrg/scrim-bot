@@ -32,7 +32,9 @@ class BSERAPIClient:
     _nickname_cache: Dict[str, Dict[str, Any]] = {}
     _mmr_cache: Dict[str, Dict[str, Any]] = {}
 
-    def __init__(self):
+    def __init__(self, *, quiet: bool = False):
+        # quiet는 점검으로 본 주기에 선수별 실패 로그를 DEBUG로 내림
+        self.quiet = quiet
         self.api_key = settings.BSER_API_KEY
         self.base_url = "https://open-api.bser.io/v1"
         self.session: Optional[aiohttp.ClientSession] = None
@@ -174,6 +176,12 @@ class BSERAPIClient:
     def clear_mmr_cache(cls) -> None:
         cls._mmr_cache.clear()
 
+    def _warn_player(self, key: str, message: str) -> None:
+        if self.quiet:
+            logger.debug(message)
+        elif log_once(key):
+            logger.warning(message)
+
     @classmethod
     def _forget_uid(cls, uid: str) -> None:
         for key in [k for k, v in cls._nickname_cache.items() if v.get('data') == uid]:
@@ -218,10 +226,11 @@ class BSERAPIClient:
             logger.warning(f"[API] UID 필드를 찾을 수 없음 - 닉네임: '{user_nickname}'")
             return UID_ERROR, None
         if code == 404:
-            if log_once(f"nickname404:{user_nickname}"):
-                logger.warning(f"[API] 닉네임 조회 결과 없음 404 - 닉네임: '{user_nickname}'")
+            self._warn_player(f"nickname404:{user_nickname}",
+                              f"[API] 닉네임 조회 결과 없음 404 - 닉네임: '{user_nickname}'")
             return UID_NOT_FOUND, None
-        logger.warning(f"[API] 닉네임 조회 API 응답 코드 오류 - 닉네임: '{user_nickname}', 코드: {code}, 메시지: {data.get('message')}")
+        self._warn_player(f"nickname-code:{user_nickname}:{code}",
+                          f"[API] 닉네임 조회 API 응답 코드 오류 - 닉네임: '{user_nickname}', 코드: {code}, 메시지: {data.get('message')}")
         return UID_ERROR, None
 
     async def get_user_uid(self, user_nickname: str) -> Optional[str]:
@@ -248,10 +257,11 @@ class BSERAPIClient:
             if log_once(f"rank403:{uid}"):
                 logger.warning(f"[API] 사용자 MMR 조회 거부 403 - UID: {uid}, 메시지: {data.get('message')}, 닉네임 캐시 삭제")
         elif code == 404:
-            if log_once(f"rank404:{uid}"):
-                logger.warning(f"[API] 사용자 MMR 조회 실패 404 - UID: {uid}, 사용자나 랭크 데이터 없음")
+            self._warn_player(f"rank404:{uid}",
+                              f"[API] 사용자 MMR 조회 실패 404 - UID: {uid}, 사용자나 랭크 데이터 없음")
         else:
-            logger.warning(f"[API] 사용자 MMR 조회 API 응답 코드 오류 - UID: {uid}, 코드: {code}, 메시지: {data.get('message')}")
+            self._warn_player(f"rank-code:{uid}:{code}",
+                              f"[API] 사용자 MMR 조회 API 응답 코드 오류 - UID: {uid}, 코드: {code}, 메시지: {data.get('message')}")
         return None
 
     async def get_user_mmr(self, uid: str) -> Optional[float]:
