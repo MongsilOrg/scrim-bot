@@ -207,8 +207,8 @@ class ScheduleManager:
         logger.info("[일정] 편성 완료")
         return assignments
 
-    def toggle_self_deployment(self, day_index: int, user_id: str) -> bool:
-        """반환 True면 등록, False면 해제."""
+    def toggle_self_deployment(self, day_index: int, user_id: str) -> Tuple[bool, List[Tuple[int, List[str], List[str]]]]:
+        """반환은 등록 여부와 재배정으로 바뀐 요일별 추가, 제외 목록."""
         if day_index not in self.actual_deployments:
             self.actual_deployments[day_index] = []
 
@@ -221,23 +221,39 @@ class ScheduleManager:
             deployed.append(user_id)
             self.admin_names.setdefault(user_id, user_id)
 
-        self._readjust_remaining()
+        changes = self._readjust_remaining()
         self.save_backup()
-        return user_id in self.actual_deployments.get(day_index, [])
+        return user_id in self.actual_deployments.get(day_index, []), changes
 
-    def _readjust_remaining(self) -> None:
+    def _locked_days(self) -> Set[int]:
+        # 지난 요일과 시작 시각이 지난 오늘은 이미 진행되어 다시 배정하지 않음
+        if self.week_start is None:
+            return set()
+        now = get_current_kst_time()
+        today = now.date()
+        locked = set()
+        for day in ACTIVE_DAYS:
+            day_date = (self.week_start + timedelta(days=day)).date()
+            if day_date < today or (day_date == today and now.hour >= settings.SCRIM_START_HOUR):
+                locked.add(day)
+        return locked
+
+    def _readjust_remaining(self) -> List[Tuple[int, List[str], List[str]]]:
         deploy_count: Dict[str, int] = defaultdict(int)
         for day_idx, deployed in self.actual_deployments.items():
             for uid in deployed:
                 deploy_count[uid] += 1
 
+        locked = self._locked_days()
         remaining_days = sorted(
             d for d in self.assignments
-            if not self.actual_deployments.get(d)
+            if not self.actual_deployments.get(d) and d not in locked
         )
 
         if not remaining_days:
-            return
+            return []
+
+        before = {d: list(self.assignments.get(d, [])) for d in remaining_days}
 
         day_candidates: Dict[int, List[str]] = defaultdict(list)
         for uid, days in self.availability.items():
@@ -276,6 +292,15 @@ class ScheduleManager:
 
             for uid in selected:
                 assign_count[uid] += 1
+
+        changes = []
+        for day in remaining_days:
+            after = self.assignments.get(day, [])
+            added = [uid for uid in after if uid not in before[day]]
+            removed = [uid for uid in before[day] if uid not in after]
+            if added or removed:
+                changes.append((day, added, removed))
+        return changes
 
     def save_backup(self) -> None:
         try:

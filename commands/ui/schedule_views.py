@@ -282,6 +282,17 @@ class ScheduleView(LayoutView):
         deploy_view.message = await send_response(interaction, deploy_view)
 
 
+def _readjust_notice(schedule_mgr, changes) -> str:
+    parts = []
+    for day, added, removed in changes:
+        names = [f"{schedule_mgr.admin_names.get(uid, uid)} 추가" for uid in added]
+        names += [f"{schedule_mgr.admin_names.get(uid, uid)} 빠짐" for uid in removed]
+        parts.append(f"{WEEKDAYS[day]}요일 {', '.join(names)}")
+    if not parts:
+        return ""
+    return f"남은 요일 편성이 바뀌었습니다. {'. '.join(parts)}."
+
+
 class DeployView(TimeoutEditView):
 
     def __init__(self, schedule_mgr, user_id: str):
@@ -291,7 +302,7 @@ class DeployView(TimeoutEditView):
         self._last_interaction: discord.Interaction | None = None
         self._render()
 
-    def _render(self) -> None:
+    def _render(self, notice: str = "") -> None:
         self.clear_items()
         schedule_mgr = self.schedule_mgr
         user_id = self.user_id
@@ -343,6 +354,7 @@ class DeployView(TimeoutEditView):
                 content=f"## ✅ 투입 기록\n"
                 f"{info_line}\n\n"
                 f"투입한 요일을 선택해주세요. 다시 누르면 해제됩니다."
+                + (f"\n\n{notice}" if notice else "")
             ),
             Separator(),
             TextDisplay(content=FOOTER_TEXT),
@@ -357,8 +369,10 @@ class DeployView(TimeoutEditView):
 
     def _make_day_callback(self, day_index: int):
         async def _day_btn_callback(day_interaction: discord.Interaction):
-            self.schedule_mgr.toggle_self_deployment(day_index, self.user_id)
-            self._render()
+            _, changes = self.schedule_mgr.toggle_self_deployment(day_index, self.user_id)
+            if changes:
+                logger.info(f"[일정] 투입 기록으로 재배정 - 사용자: {day_interaction.user}, 변경: {changes}")
+            self._render(_readjust_notice(self.schedule_mgr, changes))
             await day_interaction.response.edit_message(view=self)
             self._last_interaction = day_interaction
             await _refresh_schedule_status(day_interaction)
