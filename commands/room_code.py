@@ -231,6 +231,61 @@ async def _sub_weather_denial(member: discord.Member, group_letter: str) -> str 
     return f"서브 날씨는 관리자와 {group_letter}조 참가자만 고를 수 있습니다."
 
 
+NOTICE_MAX_ATTEMPTS = 3
+NOTICE_RETRYABLE_ERRORS = (aiohttp.ClientError, ConnectionResetError, asyncio.TimeoutError, discord.DiscordServerError)
+
+
+async def _notice_already_posted(channel, room_code: str, bot_user, since: datetime) -> bool:
+    code_text = f"`{room_code}`"
+    try:
+        async for message in channel.history(after=since, limit=20):
+            if bot_user is not None and getattr(message.author, 'id', None) != bot_user.id:
+                continue
+            if not _is_scrim_notice_message(message):
+                continue
+            for component in getattr(message, 'components', None) or []:
+                for child in getattr(component, 'children', None) or []:
+                    if code_text in (getattr(child, 'content', '') or ''):
+                        return True
+    except Exception as e:
+        logger.warning(f"[명령어] 공지 중복 확인 실패: {e}")
+    return False
+
+
+async def _send_notice_to_channel(channel, send_kwargs: dict) -> bool:
+    try:
+        await channel.send(**send_kwargs)
+        return True
+    except Exception as e:
+        logger.error(f"[명령어] 채널에 방코드 공지 전송 실패: {e}", exc_info=True)
+        return False
+
+
+async def _post_notice(interaction: discord.Interaction, send_kwargs: dict, room_code: str) -> bool:
+    # 응답 유실로 보이는 오류도 서버에는 반영됐을 수 있어 재전송 전에 채널을 확인
+    channel = interaction.channel
+    bot_user = interaction.client.user
+    for attempt in range(1, NOTICE_MAX_ATTEMPTS + 1):
+        try:
+            await interaction.followup.send(**send_kwargs)
+            return True
+        except discord.NotFound:
+            logger.warning("[명령어] Interaction 만료 - 채널로 직접 전송")
+            return await _send_notice_to_channel(channel, send_kwargs)
+        except NOTICE_RETRYABLE_ERRORS as e:
+            logger.warning(f"[명령어] 방코드 공지 전송 오류 - 시도 {attempt}/{NOTICE_MAX_ATTEMPTS}: {e}")
+            if await _notice_already_posted(channel, room_code, bot_user, interaction.created_at):
+                logger.info("[명령어] 오류 응답이었지만 공지는 이미 올라감 - 재전송 생략")
+                return True
+            if attempt < NOTICE_MAX_ATTEMPTS:
+                await asyncio.sleep(attempt)
+        except Exception as e:
+            logger.error(f"[명령어] 방코드 공지 전송 실패: {e}", exc_info=True)
+            return False
+    logger.error("[명령어] 방코드 공지 재시도 소진 - 채널로 직접 전송")
+    return await _send_notice_to_channel(channel, send_kwargs)
+
+
 async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
     try:
         if not isinstance(interaction.channel, discord.TextChannel):
@@ -321,44 +376,17 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
         if role_mention:
             send_kwargs["allowed_mentions"] = discord.AllowedMentions(roles=True)
 
-        max_retries = 3
+        posted = await _post_notice(interaction, send_kwargs, cleaned_room_code)
+        if not posted:
+            await send_response(interaction, error_view("방 코드 공지를 올리지 못했습니다. 잠시 뒤 다시 입력해주세요."))
+            return
 
-        for attempt in range(max_retries):
+        logger.debug(f"[명령어] Round {round_number} 방코드 공지 완료: {cleaned_room_code}")
+        if weather_warning:
             try:
-                await interaction.followup.send(**send_kwargs)
-
-                logger.debug(f"[명령어] Round {round_number} 방코드 공지 완료: {cleaned_room_code}")
-                if weather_warning:
-                    try:
-                        await interaction.followup.send(
-                            view=warning_view(weather_warning), ephemeral=True
-                        )
-                    except discord.HTTPException as e:
-                        logger.warning(f"[명령어] 날씨 경고 전송 실패: {e}")
-                    except Exception:
-                        logger.exception("[명령어] 날씨 경고 전송 실패")
-                break
-
-            except discord.NotFound:
-                logger.warning("[명령어] Interaction 만료되어 응답 전송 불가")
-                try:
-                    await interaction.channel.send(**send_kwargs)
-                except Exception as e:
-                    logger.error(f"[명령어] 채널에 메시지 전송 실패: {e}", exc_info=True)
-                break
-
+                await interaction.followup.send(view=warning_view(weather_warning), ephemeral=True)
             except Exception as e:
-                is_network = isinstance(e, (aiohttp.ClientOSError, ConnectionResetError))
-                if attempt < max_retries - 1:
-                    logger.warning(f"[명령어] {'네트워크' if is_network else '응답 전송'} 오류 - 시도 {attempt + 1}/{max_retries}: {e}")
-                    await asyncio.sleep(1.0 * (attempt + 1))
-                    continue
-                logger.error(f"[명령어] {'네트워크 연결' if is_network else '메시지 전송'} 최종 실패: {e}", exc_info=True)
-                try:
-                    await interaction.channel.send(**send_kwargs)
-                except Exception as send_error:
-                    logger.error(f"[명령어] 메시지 전송 최종 실패: {send_error}", exc_info=True)
-                break
+                logger.warning(f"[명령어] 날씨 경고 전송 실패: {e}")
 
     except Exception as e:
         logger.error(f"[명령어] 방코드 처리 중 예상치 못한 오류: {e}", exc_info=True)

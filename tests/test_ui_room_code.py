@@ -86,5 +86,75 @@ class RoundOverflowTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn(room_code.ROUND_OVERFLOW_TEXT, _view_text(sent.await_args.args[1]))
 
 
+class _HistoryChannel:
+    def __init__(self, messages):
+        self.messages = messages
+        self.send = AsyncMock()
+
+    def history(self, *args, **kwargs):
+        messages = list(self.messages)
+
+        async def gen():
+            for m in messages:
+                yield m
+
+        return gen()
+
+
+def _bot_notice(code, author_id=99):
+    child = SimpleNamespace(content=f"# `{code}`")
+    title = SimpleNamespace(content="## 📢 스크림 공지 - 1라운드")
+    return SimpleNamespace(
+        author=SimpleNamespace(id=author_id),
+        components=[SimpleNamespace(children=[title, child])],
+        embeds=[],
+    )
+
+
+def _post_interaction(channel, side_effect):
+    interaction = MagicMock()
+    interaction.channel = channel
+    interaction.client.user = SimpleNamespace(id=99)
+    interaction.followup.send = AsyncMock(side_effect=side_effect)
+    return interaction
+
+
+class PostNoticeRetryTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.sleep = patch.object(room_code.asyncio, "sleep", new=AsyncMock())
+        self.sleep.start()
+
+    async def asyncTearDown(self):
+        self.sleep.stop()
+
+    async def test_lost_response_is_not_reposted(self):
+        channel = _HistoryChannel([_bot_notice("123456")])
+        interaction = _post_interaction(channel, ConnectionResetError())
+        self.assertTrue(await room_code._post_notice(interaction, {}, "123456"))
+        self.assertEqual(interaction.followup.send.await_count, 1)
+        channel.send.assert_not_called()
+
+    async def test_retry_when_notice_missing(self):
+        channel = _HistoryChannel([_bot_notice("654321"), _bot_notice("123456", author_id=1)])
+        interaction = _post_interaction(channel, [ConnectionResetError(), None])
+        self.assertTrue(await room_code._post_notice(interaction, {}, "123456"))
+        self.assertEqual(interaction.followup.send.await_count, 2)
+
+    async def test_client_error_is_not_retried(self):
+        channel = _HistoryChannel([])
+        response = SimpleNamespace(status=400, reason="Bad Request")
+        interaction = _post_interaction(channel, discord.HTTPException(response, "bad"))
+        self.assertFalse(await room_code._post_notice(interaction, {}, "123456"))
+        self.assertEqual(interaction.followup.send.await_count, 1)
+        channel.send.assert_not_called()
+
+    async def test_exhausted_retries_fall_back_to_channel(self):
+        channel = _HistoryChannel([])
+        interaction = _post_interaction(channel, ConnectionResetError())
+        self.assertTrue(await room_code._post_notice(interaction, {}, "123456"))
+        self.assertEqual(interaction.followup.send.await_count, room_code.NOTICE_MAX_ATTEMPTS)
+        channel.send.assert_awaited_once()
+
+
 if __name__ == "__main__":
     unittest.main()
