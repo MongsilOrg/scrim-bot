@@ -371,6 +371,7 @@ async def process_team_edit(
             new_members=new_team_data.all_members,
             old_name=original_team_name,
             new_name=new_team_name,
+            validated=not is_roster_change,
         )
 
         added, removed = _log_edit_diff(
@@ -419,16 +420,25 @@ def _apply_unverified_transition(
     new_members: List[str],
     old_name: str,
     new_name: str,
+    validated: bool = True,
 ) -> None:
-    if is_maintenance:
+    """validated=False는 닉네임 확인을 건너뛴 관리자 로스터 변경, 표시만 옮김."""
+    was_unverified = old_name in team_data_manager.unverified_teams
+    if not validated:
+        keep_unverified = was_unverified
+    elif is_maintenance:
         old_norm = {normalize_nickname_for_comparison(p) for p in old_members}
         new_norm = {normalize_nickname_for_comparison(p) for p in new_members}
-        if old_norm != new_norm:
-            team_data_manager.mark_unverified(new_name)
+        keep_unverified = was_unverified or old_norm != new_norm
     else:
-        team_data_manager.clear_unverified(new_name)
+        keep_unverified = False
+
     if new_name != old_name:
         team_data_manager.clear_unverified(old_name)
+    if keep_unverified:
+        team_data_manager.mark_unverified(new_name)
+    else:
+        team_data_manager.clear_unverified(new_name)
 
 
 def _log_edit_diff(
