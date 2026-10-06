@@ -17,6 +17,8 @@ from utils.validators import member_name_keys, normalize_nickname_for_comparison
 logger = get_logger('scrim_history')
 
 HISTORY_FILE = os.getenv('SCRIM_HISTORY_PATH', 'data/scrim_history.jsonl')
+# 스태프는 캐시에 없어 API를 새로 부름. BSER 클라이언트에 동시 요청 제한이 없어 여기서 묶음
+_lookups = asyncio.Semaphore(4)
 
 
 def _iso(value):
@@ -30,10 +32,11 @@ async def _person(api, members: dict, name: str, is_test, with_mmr: bool) -> dic
         return info
     try:
         # 직전 MMR 갱신이 채운 캐시라 대부분 API를 다시 부르지 않음
-        uid = await api.get_user_uid(name)
-        info['uid'] = uid
-        if uid and with_mmr:
-            info['mmr'] = await api.get_user_mmr(uid)
+        async with _lookups:
+            uid = await api.get_user_uid(name)
+            info['uid'] = uid
+            if uid and with_mmr:
+                info['mmr'] = await api.get_user_mmr(uid)
     except Exception as e:
         logger.warning(f"[조편성기록] 계정 조회 실패 - {name}: {e}")
     return info

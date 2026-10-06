@@ -30,7 +30,7 @@ names = {}
 def tally(role):
     c = Counter()
     for t in teams:
-        for key, name in {person(p) for p in t[role]}:
+        for key, name in {person(p) for p in t[role] if not (isinstance(p, dict) and p.get('test'))}:
             c[key] += 1
             names[key] = name
     return c
