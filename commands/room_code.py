@@ -7,7 +7,6 @@ import discord
 from discord import ButtonStyle
 from discord.ui import ActionRow, Button, Container, DynamicItem, LayoutView, Separator, TextDisplay
 
-from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
 from services.holidays_api import get_rest_day_info
@@ -69,14 +68,34 @@ def _is_scrim_notice_message(message: discord.Message) -> bool:
     return False
 
 
+def _chosen_sub_weather(message: discord.Message) -> str | None:
+    """공지에 표시된 서브 날씨, 아직 고르지 않았으면 None"""
+    for component in getattr(message, 'components', None) or []:
+        for child in getattr(component, 'children', None) or []:
+            content = getattr(child, 'content', '') or ''
+            for name in re.findall(r'`([^`]+)`', content):
+                if name in SUB_WEATHERS:
+                    return name
+    return None
+
+
+async def _today_notices(channel: discord.TextChannel) -> list:
+    start_utc = get_start_of_day_utc()
+    return [m async for m in channel.history(after=start_utc, limit=None) if _is_scrim_notice_message(m)]
+
+
+async def get_used_sub_weathers(channel: discord.TextChannel) -> list[str]:
+    """오늘 남아 있는 공지에서 고른 서브 날씨. 공지를 지우면 그 날씨도 다시 고를 수 있음"""
+    try:
+        return [w for w in map(_chosen_sub_weather, await _today_notices(channel)) if w]
+    except Exception as e:
+        logger.warning(f"[명령어] 고른 서브 날씨 확인 실패: {e}")
+        return []
+
+
 async def get_round_number(channel: discord.TextChannel) -> int:
     try:
-        start_utc = get_start_of_day_utc()
-        round_count = 0
-        async for message in channel.history(after=start_utc, limit=None):
-            if _is_scrim_notice_message(message):
-                round_count += 1
-        return round_count + 1
+        return len(await _today_notices(channel)) + 1
     except discord.Forbidden:
         logger.warning("[명령어] 채널 히스토리 읽기 권한 없음")
         return 1
@@ -183,8 +202,6 @@ class WeatherButton(
             return
 
         weather_name = SUB_WEATHERS[self.weather_index]
-        team_data_manager = BotManager.get_instance().get_team_data_manager()
-        team_data_manager.add_selected_weather(self.group_letter, weather_name)
 
         main_weather = MAIN_WEATHERS.get(self.round_number, "알 수 없음")
         role_mention = get_group_role_mention(interaction.guild, self.group_letter) if interaction.guild else ""
@@ -335,8 +352,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
         weather_options = None
         weather_warning = None
 
-        team_data_manager = BotManager.get_instance().get_team_data_manager()
-        selected = team_data_manager.get_selected_weathers(group_letter)
+        selected = await get_used_sub_weathers(interaction.channel)
         available = [w for w in SUB_WEATHERS if w not in selected]
 
         expected_selected = round_number - 1
@@ -346,7 +362,6 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
 
         if len(available) == 1:
             sub_weather = available[0]
-            team_data_manager.add_selected_weather(group_letter, sub_weather)
             weather_value = f"`{main_weather}`, `{sub_weather}`"
         elif len(available) == 0:
             weather_value = f"`{main_weather}`"

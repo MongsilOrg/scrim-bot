@@ -78,10 +78,10 @@ class RoundOverflowTest(unittest.IsolatedAsyncioTestCase):
                 patch.object(room_code, "_can_post_room_code", return_value=True), \
                 patch.object(room_code, "get_round_number", new=AsyncMock(return_value=room_code.settings.TOTAL_ROUNDS + 1)), \
                 patch.object(room_code, "send_response", new=sent), \
-                patch.object(room_code.BotManager, "get_instance") as get_instance:
+                patch.object(room_code, "get_used_sub_weathers", new=AsyncMock(return_value=[])) as used:
             await room_code.방코드(interaction, "123456")
 
-        get_instance.assert_not_called()
+        used.assert_not_awaited()
         interaction.followup.send.assert_not_called()
         self.assertIn(room_code.ROUND_OVERFLOW_TEXT, _view_text(sent.await_args.args[1]))
 

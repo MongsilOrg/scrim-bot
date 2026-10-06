@@ -122,13 +122,6 @@ class TeamDataManager:
             return self.client.get_channel(self.scrim_channel_id)
         return None
 
-    def add_selected_weather(self, group_letter: str, weather: str) -> None:
-        self._selected_weathers.setdefault(group_letter, []).append(weather)
-        self.save_backup()
-
-    def get_selected_weathers(self, group_letter: str) -> List[str]:
-        return self._selected_weathers.get(group_letter, [])
-
     def mark_unverified(self, team_name: str) -> None:
         if team_name in self.unverified_teams:
             return
