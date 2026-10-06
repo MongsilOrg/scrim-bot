@@ -1,11 +1,45 @@
+import io
 import unittest
 from types import SimpleNamespace
 from unittest import mock
+
+import discord
 
 from models import mmr_updater
 from models.mmr_updater import MmrUpdater
 from models.team_data import TeamData
 from services.bser_api import UID_ERROR, UID_FOUND, UID_NOT_FOUND
+
+SERVER_INFO = {'operate': 'Live 서버', 'is_tournament': False}
+
+
+class MmrMessageResendTest(unittest.IsolatedAsyncioTestCase):
+    async def test_resend_after_failed_edit_keeps_image(self):
+        async def failing_edit(**kwargs):
+            kwargs['attachments'][0].fp.read()
+            raise discord.HTTPException(mock.MagicMock(status=500, reason='err'), 'edit failed')
+
+        old_message = mock.MagicMock()
+        old_message.edit = mock.AsyncMock(side_effect=failing_edit)
+        old_message.delete = mock.AsyncMock()
+        mgr = SimpleNamespace(
+            is_team_assignment_started=False, teams={}, unverified_teams=set(),
+            _last_success_time='12:00', is_maintenance=False,
+            mmr_message=old_message, mmr_message_id=1, _mmr_dirty=True,
+            save_backup=mock.MagicMock(),
+        )
+        channel = mock.MagicMock()
+        channel.send = mock.AsyncMock(return_value=SimpleNamespace(id=2))
+
+        with mock.patch.object(mmr_updater, 'get_server_info', return_value=SERVER_INFO), \
+             mock.patch.object(mmr_updater, 'BotManager'), \
+             mock.patch.object(mmr_updater.ImageGenerator, 'generate_mmr_image_async',
+                               mock.AsyncMock(return_value=io.BytesIO(b'png-bytes'))):
+            await MmrUpdater(mgr)._render_mmr_message(channel, 0)
+
+        sent_file = channel.send.await_args.kwargs['file']
+        self.assertEqual(sent_file.fp.read(), b'png-bytes')
+        self.assertEqual(mgr.mmr_message_id, 2)
 
 
 class FakeAPI:

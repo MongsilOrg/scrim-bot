@@ -119,6 +119,8 @@ class MmrUpdater:
                     mgr.mmr_message = None
                     mgr.mmr_message_id = None
 
+            # 편집 시도가 버퍼를 끝까지 읽었으면 새 메시지 첨부가 빈 파일이 됨
+            img_io.seek(0)
             new_message = await channel.send(
                 view=mmr_view,
                 file=discord.File(img_io, filename='mmr_table.png')
