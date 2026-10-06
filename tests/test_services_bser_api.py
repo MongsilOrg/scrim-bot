@@ -3,7 +3,7 @@ import unittest
 from unittest import mock
 
 from services import bser_api
-from services.bser_api import BSERAPIClient
+from services.bser_api import UID_ERROR, UID_FOUND, UID_NOT_FOUND, BSERAPIClient
 
 
 class FakeResponse:
@@ -115,6 +115,31 @@ class MaintenanceCheckTest(BSERTestCase):
             FakeResponse(200, {'code': 404, 'message': 'Not Found'}),
         ])
         self.assertTrue(await client.check_server_maintenance())
+
+
+class UidLookupTest(BSERTestCase):
+    async def test_not_found_and_error_are_distinct(self):
+        client = make_client([FakeResponse(200, {'code': 404, 'message': 'Not Found'})])
+        self.assertEqual(await client.lookup_user_uid('없는닉'), (UID_NOT_FOUND, None))
+
+        responses = [FakeResponse(429, raw='') for _ in range(BSERAPIClient.MAX_RETRIES + 1)]
+        client = make_client(responses)
+        self.assertEqual(await client.lookup_user_uid('혼잡'), (UID_ERROR, None))
+
+    async def test_get_user_uid_keeps_old_contract(self):
+        client = make_client([
+            FakeResponse(200, {'code': 200, 'user': {'userId': 'uid-1'}}),
+            FakeResponse(200, {'code': 404}),
+        ])
+        self.assertEqual(await client.get_user_uid('있는닉'), 'uid-1')
+        self.assertIsNone(await client.get_user_uid('없는닉2'))
+        self.assertEqual(await client.lookup_user_uid('있는닉'), (UID_FOUND, 'uid-1'))
+
+    async def test_mmr_uses_fixed_season(self):
+        client = make_client([FakeResponse(200, {'code': 200, 'userRank': {'mmr': 7000}})])
+        self.assertEqual(await client.get_user_mmr('uid-s'), 7000)
+        self.assertIn(f'/rank/uid/uid-s/{BSERAPIClient.RANK_SEASON_ID}/3', client.session.urls[0])
+
 
 
 if __name__ == '__main__':

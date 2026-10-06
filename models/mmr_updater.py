@@ -11,7 +11,7 @@ from config.settings import settings
 from utils.helpers import get_current_kst_time
 from utils.layout_helpers import FOOTER_TEXT
 
-from services.bser_api import BSERAPIClient
+from services.bser_api import UID_ERROR, UID_NOT_FOUND, BSERAPIClient
 from services.image_generator import TOURNAMENT_COLOR, ImageGenerator
 from services.notion_api import get_server_info
 
@@ -295,93 +295,129 @@ class MmrUpdater:
         teams_to_check = list(mgr.unverified_teams)
         logger.info(f"[점검해제] 미검증 팀 {len(teams_to_check)}개 재검증 시작")
 
-        for team_name in teams_to_check:
-            if team_name not in mgr.teams:
-                mgr.clear_unverified(team_name)
-                continue
+        deferred = 0
+        maintenance_checked = False
+        async with BSERAPIClient() as api:
+            for index, team_name in enumerate(teams_to_check):
+                if team_name not in mgr.teams:
+                    mgr.clear_unverified(team_name)
+                    continue
 
-            team_data = mgr.teams[team_name]
-            members = team_data.all_members
-            invalid_members = []
-
-            try:
-                async with BSERAPIClient() as api:
-                    for member in members:
+                team_data = mgr.teams[team_name]
+                try:
+                    lookups = {}
+                    for member in team_data.all_members:
                         if team_processor.is_test_account(member):
                             continue
-                        uid = await api.get_user_uid(member)
-                        if not uid:
-                            invalid_members.append(member)
+                        lookups[member], _ = await api.lookup_user_uid(member)
 
-                if not invalid_members:
-                    _, _, team_mmr = await team_processor.fetch_team_mmr(team_name, team_data)
-                    if team_mmr > 0:
-                        await mgr.set_team_mmr(team_name, team_mmr)
+                    if UID_ERROR in lookups.values():
+                        deferred += 1
+                        logger.info(f"[점검해제] 닉네임 조회 실패, 다음 주기에 재검증 - 팀: {team_name}")
+                        continue
 
-                await self._send_verification_dm(team_name, team_data, invalid_members)
+                    invalid_members = [m for m, status in lookups.items() if status == UID_NOT_FOUND]
+                    # 점검 중에는 모든 닉네임이 404라 첫 404에서 점검 여부를 한 번 확인
+                    if invalid_members and not maintenance_checked:
+                        maintenance_checked = True
+                        if await api.check_server_maintenance():
+                            deferred += len(teams_to_check) - index
+                            logger.info("[점검해제] 닉네임 검색이 아직 점검 중, 다음 주기에 재검증")
+                            break
 
-                mgr.clear_unverified(team_name)
+                    team_mmr = 0.0
+                    if not invalid_members:
+                        _, _, team_mmr = await team_processor.fetch_team_mmr(team_name, team_data, api_client=api)
+                        if team_mmr > 0:
+                            await mgr.set_team_mmr(team_name, team_mmr)
 
-            except Exception as e:
-                logger.error(f"[점검해제] 팀 재검증 실패 - {team_name}: {e}", exc_info=True)
+                    dm_sent = await self._send_verification_dm(team_name, team_data, invalid_members, team_mmr)
+                    if invalid_members:
+                        await self._notify_verification_failure(team_name, team_data, invalid_members, dm_sent)
 
-        logger.info(f"[점검해제] 미검증 팀 재검증 완료 - 잔여: {len(mgr.unverified_teams)}개")
+                    mgr.clear_unverified(team_name)
 
-    async def _send_verification_dm(self, team_name: str, team_data, invalid_members: list) -> None:
+                except Exception as e:
+                    logger.error(f"[점검해제] 팀 재검증 실패 - {team_name}: {e}", exc_info=True)
+
+        logger.info(
+            f"[점검해제] 미검증 팀 재검증 완료 - 잔여: {len(mgr.unverified_teams)}개, 다음 주기로 미룸: {deferred}개"
+        )
+
+    async def _notify_verification_failure(self, team_name: str, team_data, invalid_members: list, dm_sent: bool) -> None:
+        client = self._manager.client
+        channel = client.get_channel(settings.LOG_CHANNEL_ID) if client else None
+        if not channel:
+            logger.warning(f"[점검해제] 로그 채널을 찾을 수 없음 - 채널 ID: {settings.LOG_CHANNEL_ID}")
+            return
+        applicant = f"<@{team_data.user_id}>" if team_data.user_id else "없음"
+        content = (
+            f"⚠️ 점검 해제 뒤 닉네임 확인 실패\n"
+            f"팀: **{team_name}**\n"
+            f"확인 안 된 닉네임: {', '.join(invalid_members)}\n"
+            f"신청자: {applicant}, DM {'발송함' if dm_sent else '발송 못 함'}"
+        )
+        try:
+            await channel.send(content, allowed_mentions=discord.AllowedMentions.none())
+        except Exception as e:
+            logger.warning(f"[점검해제] 로그 채널 알림 실패 - {team_name}: {e}")
+
+    async def _send_verification_dm(self, team_name: str, team_data, invalid_members: list, team_mmr: float = 0.0) -> bool:
         mgr = self._manager
         try:
             if not mgr.client:
-                return
+                return False
 
             user_id = team_data.user_id
             if not user_id:
-                return
+                return False
 
             user = mgr.client.get_user(int(user_id))
             if not user:
                 try:
                     user = await mgr.client.fetch_user(int(user_id))
                 except Exception:
-                    return
+                    return False
 
             players_str = ', '.join(team_data.players)
             view = LayoutView()
 
             if not invalid_members:
-                mmr_val = f"{team_data.mmr:.0f}" if team_data.mmr else "0"
+                mmr_line = (
+                    f"MMR: **{team_mmr:.2f}**" if team_mmr > 0
+                    else "MMR은 다음 갱신 때 반영됩니다."
+                )
                 content = (
                     f"## ✅ 닉네임 확인 완료\n"
-                    f"**{team_name}** 팀의 닉네임이 확인되었습니다.\n\n"
-                    f"🎮 선수: {players_str}\n"
-                    f"📊 MMR: **{mmr_val}**\n\n"
-                    f"💡 MMR이 반영되었습니다."
+                    f"**{team_name}** 팀의 닉네임을 확인했습니다.\n\n"
+                    f"선수: {players_str}\n"
+                    f"{mmr_line}"
                 )
-                view.add_item(Container(
-                    TextDisplay(content=content),
-                    Separator(),
-                    TextDisplay(content=FOOTER_TEXT),
-                    accent_colour=discord.Color.green(),
-                ))
+                accent = discord.Color.green()
             else:
-                invalid_str = ', '.join(invalid_members)
                 content = (
                     f"## ⚠️ 닉네임 확인 실패\n"
-                    f"**{team_name}** 팀의 닉네임 확인에 실패했습니다.\n\n"
-                    f"❌ 확인 실패: **{invalid_str}**\n\n"
-                    f"💡 해당 닉네임을 게임 내에서 확인 후\n"
-                    f"대시보드의 수정 버튼으로 수정해주세요."
+                    f"**{team_name}** 팀의 닉네임 중 게임에서 찾을 수 없는 닉네임이 있습니다.\n\n"
+                    f"확인 안 된 닉네임: **{', '.join(invalid_members)}**\n\n"
+                    f"게임 안에서 닉네임을 확인하고 "
+                    f"<#{settings.SCRIM_CHANNEL_ID}> 채널의 **신청/수정** 버튼으로 "
+                    f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시 전에 고쳐주세요."
                 )
-                view.add_item(Container(
-                    TextDisplay(content=content),
-                    Separator(),
-                    TextDisplay(content=FOOTER_TEXT),
-                    accent_colour=discord.Color.red(),
-                ))
+                accent = discord.Color.red()
+
+            view.add_item(Container(
+                TextDisplay(content=content),
+                Separator(),
+                TextDisplay(content=FOOTER_TEXT),
+                accent_colour=accent,
+            ))
 
             await user.send(view=view)
-            logger.info(f"[점검해제] DM 발송 - {team_name} ({'성공' if not invalid_members else '실패'})")
+            logger.info(f"[점검해제] DM 발송 - {team_name}, 결과: {'확인 완료' if not invalid_members else '확인 실패'}")
+            return True
 
         except discord.Forbidden:
-            logger.warning(f"[점검해제] DM 발송 실패 (DM 차단) - {team_name}")
+            logger.warning(f"[점검해제] DM 발송 실패, DM 차단 - {team_name}")
         except Exception as e:
             logger.error(f"[점검해제] DM 발송 실패 - {team_name}: {e}", exc_info=True)
+        return False

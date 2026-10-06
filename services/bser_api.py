@@ -2,7 +2,7 @@ import asyncio
 import random
 import time
 from types import TracebackType
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import aiohttp
 
@@ -10,6 +10,10 @@ from config.logging_config import get_logger, log_once
 from config.settings import settings
 
 logger = get_logger('bser_api')
+
+UID_FOUND = "found"
+UID_NOT_FOUND = "not_found"
+UID_ERROR = "error"
 
 
 class BSERAPIClient:
@@ -186,34 +190,39 @@ class BSERAPIClient:
             logger.warning(f"[API] 점검 여부 확인 실패, 점검으로 간주 - 오류: {e}")
             return True
 
-    async def get_user_uid(self, user_nickname: str) -> Optional[str]:
+    async def lookup_user_uid(self, user_nickname: str) -> Tuple[str, Optional[str]]:
+        """반환: UID_FOUND, UID_NOT_FOUND, UID_ERROR 중 하나와 UID. 점검 중에는 모든 닉네임이 UID_NOT_FOUND."""
         # 닉네임 조회 API는 대소문자 구분
         cache_key = self._get_cache_key("user/nickname", {"query": user_nickname})
         cached_result = self._get_from_nickname_cache(cache_key)
         if cached_result is not None:
-            return cached_result
+            return UID_FOUND, cached_result
 
         url = f"{self.base_url}/user/nickname"
         data = await self._request("GET", url, params={"query": user_nickname})
         if not data:
-            return None
+            return UID_ERROR, None
 
-        if data.get("code") == 200:
+        code = data.get("code")
+        if code == 200:
             user_data = data.get("user", {})
             uid = user_data.get("userId") or user_data.get("uid")
             if uid:
                 self._set_nickname_cache(cache_key, uid)
-                return uid
+                return UID_FOUND, uid
             logger.warning(f"[API] UID 필드를 찾을 수 없음 - 닉네임: '{user_nickname}'")
-        elif data.get("code") == 404:
+            return UID_ERROR, None
+        if code == 404:
             if log_once(f"nickname404:{user_nickname}"):
-                logger.warning(f"[API] 닉네임 조회 실패 (404) - 닉네임: '{user_nickname}'")
-        else:
-            logger.warning(f"[API] 닉네임 조회 API 응답 코드 오류 - 닉네임: '{user_nickname}', 코드: {data.get('code')}, 메시지: {data.get('message')}")
-        
-        return None
-    
-    
+                logger.warning(f"[API] 닉네임 조회 결과 없음 404 - 닉네임: '{user_nickname}'")
+            return UID_NOT_FOUND, None
+        logger.warning(f"[API] 닉네임 조회 API 응답 코드 오류 - 닉네임: '{user_nickname}', 코드: {code}, 메시지: {data.get('message')}")
+        return UID_ERROR, None
+
+    async def get_user_uid(self, user_nickname: str) -> Optional[str]:
+        _, uid = await self.lookup_user_uid(user_nickname)
+        return uid
+
     async def get_user_rank(self, uid: str) -> Optional[Dict]:
         url = f"{self.base_url}/rank/uid/{uid}/{self.RANK_SEASON_ID}/3"
         data = await self._request("GET", url)
