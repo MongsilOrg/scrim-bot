@@ -38,12 +38,15 @@ _TOP_FIELDS = [
     ('mmr_message_id', 'mmr_message_id', None, None, None),
     ('selected_weathers', '_selected_weathers', None, None, dict),
     ('unverified_teams', 'unverified_teams', list, set, set),
+    ('assignment_progress', 'assignment_progress', None, None, dict),
 ]
 
 
 class TeamBackup:
     def __init__(self, manager: "TeamDataManager"):
         self._manager = manager
+        # 조편성 단계 기록, 날짜가 함께 저장돼 초기화 없이도 다음 날 무시됨
+        manager.assignment_progress = {}
 
     @property
     def backup_file(self) -> str:

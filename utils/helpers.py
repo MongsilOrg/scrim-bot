@@ -87,6 +87,12 @@ def effective_scrim_date(current_time: datetime = None) -> date:
     return current_time.date()
 
 
+def is_assignment_window(current_time: datetime = None) -> bool:
+    if current_time is None:
+        current_time = get_current_kst_time()
+    return settings.TEAM_REGISTRATION_DEADLINE_HOUR <= current_time.hour < settings.NEXT_SCRIM_OPEN_HOUR
+
+
 def get_next_scrim_date(current_time: datetime = None) -> dict:
     if current_time is None:
         current_time = get_current_kst_time()

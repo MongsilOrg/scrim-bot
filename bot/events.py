@@ -16,7 +16,7 @@ from services.score_aggregation import (
     collect_today_csv_data,
     is_csv_filename,
 )
-from utils.helpers import get_current_kst_time, get_group_letter, get_start_of_day_utc
+from utils.helpers import get_current_kst_time, get_group_letter, get_start_of_day_utc, is_assignment_window
 
 if TYPE_CHECKING:
     from bot.client import ScrimBot
@@ -49,18 +49,7 @@ async def bootstrap_on_ready(client: "ScrimBot") -> None:
                 f"[시작] 백업 복구 완료 - {len(team_data_manager.teams)}개 팀, "
                 f"스크림 날짜: {team_data_manager.scrim_month}/{team_data_manager.scrim_day}"
             )
-            if not team_data_manager.is_team_assignment_started:
-                current_time = get_current_kst_time()
-                if (team_data_manager.is_scrim_date_today()
-                        and current_time.hour >= settings.TEAM_REGISTRATION_DEADLINE_HOUR):
-                    logger.info(f"[시작] {settings.TEAM_REGISTRATION_DEADLINE_HOUR}시 이후 재시작 - 조편성 미완료, 즉시 실행")
-                    team_data_manager.spawn_task(team_data_manager.start_team_assignment())
-                else:
-                    team_data_manager.start_background_tasks()
-                    logger.info("[시작] 조편성/MMR 태스크 재시작")
-            else:
-                await team_data_manager.restore_group_roster_views(client)
-                logger.info("[시작] 조편성 후 복구 완료")
+            await _resume_after_restore(client, team_data_manager)
         else:
             logger.error("[시작] 백업 복구 실패")
 
@@ -82,6 +71,26 @@ async def bootstrap_on_ready(client: "ScrimBot") -> None:
         logger.info(f"[시작] 명령어 동기화 완료 - {len(synced)}개 명령어 등록됨")
     except Exception as e:
         logger.error(f"[시작] 명령어 동기화 실패: {e}", exc_info=True)
+
+
+async def _resume_after_restore(client: "ScrimBot", team_data_manager) -> None:
+    current_time = get_current_kst_time()
+    started = team_data_manager.is_team_assignment_started
+
+    if started and team_data_manager.groups:
+        await team_data_manager.restore_group_roster_views(client)
+
+    last = team_data_manager.last_auto_assignment
+    done_today = bool(last and last.date() == current_time.date())
+    if (team_data_manager.is_scrim_date_today(current_time)
+            and is_assignment_window(current_time) and not done_today):
+        logger.info("[시작] 조편성 시간 중 재시작 - 남은 조편성 바로 실행")
+        team_data_manager.spawn_task(team_data_manager.start_team_assignment())
+    elif not started:
+        team_data_manager.start_background_tasks()
+        logger.info("[시작] 조편성 대기와 MMR 갱신 태스크 시작")
+    else:
+        logger.info("[시작] 조편성 후 복구 완료")
 
 
 async def on_app_command_error(
