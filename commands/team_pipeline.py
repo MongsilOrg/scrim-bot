@@ -353,7 +353,8 @@ async def process_team_edit(
 
         # 관리자가 수정해도 신청자 user_id 유지
         new_team_data.user_id = original_team_data.user_id or str(interaction.user.id)
-        new_team_data.created_at = interaction.created_at
+        new_team_data.created_at = original_team_data.created_at
+        new_team_data.updated_at = get_current_kst_time()
         replaced, replace_reason = await team_data_manager.replace_team(
             original_team_name, new_team_data, new_team_mmr, enforce_rules=not is_roster_change
         )
