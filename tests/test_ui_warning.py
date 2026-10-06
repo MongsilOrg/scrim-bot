@@ -77,5 +77,33 @@ class SanctionResultCardTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(warning_modals.DM_FAILED_TEXT, text)
 
 
+class MissingDetailTest(unittest.IsolatedAsyncioTestCase):
+    async def test_empty_detail_offers_retry_button(self):
+        target = _target()
+        modal = warning_modals.WarningReasonModal(target)
+        modal.reason_radio = SimpleNamespace(value="기타경고")
+        modal.detail_input = SimpleNamespace(value="  ")
+        interaction = MagicMock()
+        sent = AsyncMock(return_value=MagicMock())
+
+        with patch.object(warning_modals, "send_response", new=sent), \
+                patch.object(warning_modals.BotManager, "get_instance") as get_instance:
+            await modal.on_submit(interaction)
+
+        get_instance.assert_not_called()
+        view = sent.await_args.args[1]
+        self.assertIn(warning_modals.MISSING_DETAIL_TEXT, _view_text(view))
+        self.assertIs(view.message, sent.return_value)
+
+        button = next(item for item in view.walk_children() if isinstance(item, discord.ui.Button))
+        click = MagicMock()
+        click.response.send_modal = AsyncMock()
+        await button.callback(click)
+        reopened = click.response.send_modal.await_args.args[0]
+        self.assertIsInstance(reopened, warning_modals.WarningReasonModal)
+        defaults = [o.value for o in reopened.reason_radio.options if o.default]
+        self.assertEqual(defaults, ["기타경고"])
+
+
 if __name__ == "__main__":
     unittest.main()

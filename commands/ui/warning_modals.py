@@ -1,12 +1,14 @@
 import discord
 from discord.components import RadioGroupOption
-from discord.ui import Label, Modal, RadioGroup, TextDisplay, TextInput
+from discord import ButtonStyle
+from discord.ui import ActionRow, Button, Container, Label, Modal, RadioGroup, Separator, TextDisplay, TextInput
 
 from bot.manager import BotManager
 from models.warning_manager import MASTERS_NOT_DEDUCTED, WarningManager
 from utils.layout_helpers import (
     error_view, custom_view,
-    send_response,
+    send_response, FOOTER_TEXT,
+    TimeoutEditView,
 )
 from config.logging_config import get_logger
 
@@ -124,18 +126,43 @@ def _follow_up_fields(target_user: discord.Member, dm_sent: bool, restricted: bo
     return fields
 
 
+MISSING_DETAIL_TEXT = "기타를 고르면 상세 사유를 적어야 합니다. 다시 입력 버튼을 눌러주세요."
+
+
+def _missing_detail_view(target_user: discord.Member, reason_choice: str) -> TimeoutEditView:
+    view = TimeoutEditView()
+    view.add_item(Container(
+        TextDisplay(content=f"## ❌ 상세 사유 없음\n{MISSING_DETAIL_TEXT}"),
+        Separator(),
+        TextDisplay(content=FOOTER_TEXT),
+        accent_colour=discord.Color.red(),
+    ))
+    retry_button = Button(label="다시 입력", style=ButtonStyle.primary)
+
+    async def reopen(btn_interaction: discord.Interaction) -> None:
+        await btn_interaction.response.send_modal(WarningReasonModal(target_user, reason_choice))
+
+    retry_button.callback = reopen
+    view.add_item(ActionRow(retry_button))
+    return view
+
+
 class WarningReasonModal(Modal):
 
-    def __init__(self, target_user: discord.Member):
+    def __init__(self, target_user: discord.Member, selected: str | None = None):
         super().__init__(title="제재 부여")
         self.target_user = target_user
 
+        choices = [
+            ("지각", "지각", "경고, 참여 제한"),
+            ("대타", "대타", "주의"),
+            ("기타 주의", "기타주의", "사유 직접 입력"),
+            ("기타 경고", "기타경고", "사유 직접 입력"),
+        ]
         self.reason_radio = RadioGroup(
             options=[
-                RadioGroupOption(label="지각", value="지각", description="경고, 참여 제한"),
-                RadioGroupOption(label="대타", value="대타", description="주의"),
-                RadioGroupOption(label="기타 주의", value="기타주의", description="사유 직접 입력"),
-                RadioGroupOption(label="기타 경고", value="기타경고", description="사유 직접 입력"),
+                RadioGroupOption(label=label, value=value, description=description, default=value == selected)
+                for label, value, description in choices
             ],
             required=True,
         )
@@ -157,17 +184,20 @@ class WarningReasonModal(Modal):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         try:
-            if not interaction.response.is_done():
-                await interaction.response.defer(ephemeral=True)
-
             reason_choice = self.reason_radio.value
             detail = self.detail_input.value.strip() if self.detail_input.value else ""
 
+            # 모달 제출에는 모달로 답할 수 없어 다시 여는 버튼을 붙임
+            if reason_choice in ("기타주의", "기타경고") and not detail:
+                retry_view = _missing_detail_view(self.target_user, reason_choice)
+                retry_view.message = await send_response(interaction, retry_view)
+                return
+
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=True)
+
             warning_type = REASON_TYPE[reason_choice]
             if reason_choice in ("기타주의", "기타경고"):
-                if not detail:
-                    await interaction.followup.send(view=error_view("기타를 선택한 경우 상세 사유를 입력해주세요."), ephemeral=True)
-                    return
                 reason = detail
             else:
                 reason = f"{reason_choice} - {detail}" if detail else reason_choice
