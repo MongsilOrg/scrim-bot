@@ -93,61 +93,72 @@ class BSERAPIClient:
         }
 
     async def _request(self, method: str, url: str, *, params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
+        """None은 조회 실패. 4xx 본문은 그대로 돌려줘 호출부가 code로 판단."""
         if not self.session:
             await self.initialize_session()
 
         retries = 0
+        rate_limited = 0
         wait_time = self.INITIAL_WAIT
+        try:
+            while retries <= self.MAX_RETRIES:
+                try:
+                    async with self.session.request(method, url, params=params, timeout=self.request_timeout) as response:
+                        status = response.status
 
-        while retries <= self.MAX_RETRIES:
-            try:
-                async with self.session.request(method, url, params=params, timeout=self.request_timeout) as response:
-                    status = response.status
-                    data = await response.json(content_type=None)
-
-                    if status == 429:
-                        retry_after = response.headers.get('Retry-After')
-                        if retries < self.MAX_RETRIES:
-                            if retry_after:
-                                try:
-                                    wait_time = float(retry_after) + 1
-                                except (ValueError, TypeError):
-                                    wait_time = min(wait_time * 2, self.MAX_WAIT)
-                            else:
+                        if status == 429:
+                            if retries >= self.MAX_RETRIES:
+                                return None
+                            retry_after = response.headers.get('Retry-After')
+                            try:
+                                wait_time = float(retry_after) + 1 if retry_after else min(wait_time * 2, self.MAX_WAIT)
+                            except (ValueError, TypeError):
                                 wait_time = min(wait_time * 2, self.MAX_WAIT)
-                            await asyncio.sleep(wait_time + random.random())
+                            rate_limited += 1
                             retries += 1
+                            await asyncio.sleep(wait_time + random.random())
                             continue
-                        logger.warning(f"[API] 429 재시도 횟수 초과 ({self.MAX_RETRIES}회)")
-                        return None
 
-                    if 500 <= status < 600 and retries < self.MAX_RETRIES:
+                        # 점검이나 장애 때 5xx 본문은 JSON이 아닌 HTML이라 본문보다 상태를 먼저 봄
+                        if 500 <= status < 600:
+                            if retries < self.MAX_RETRIES:
+                                retries += 1
+                                await asyncio.sleep(wait_time + random.random())
+                                wait_time = min(wait_time * 2, self.MAX_WAIT)
+                                continue
+                            if log_once(f"api5xx:{status}", 600):
+                                logger.warning(f"[API] 서버 오류 {status}, 재시도 {self.MAX_RETRIES}회 후 실패")
+                            return None
+
+                        try:
+                            return await response.json(content_type=None)
+                        except ValueError:
+                            if log_once(f"api-nonjson:{status}", 600):
+                                logger.warning(f"[API] JSON이 아닌 응답 - 상태: {status}")
+                            return None
+
+                except aiohttp.ClientError as e:
+                    if retries < self.MAX_RETRIES:
+                        retries += 1
                         await asyncio.sleep(wait_time + random.random())
                         wait_time = min(wait_time * 2, self.MAX_WAIT)
-                        retries += 1
                         continue
+                    logger.error(f"[API] HTTP 요청 실패 - URL: {url}: {e}", exc_info=True)
+                    return None
+                except asyncio.TimeoutError:
+                    if retries < self.MAX_RETRIES:
+                        retries += 1
+                        await asyncio.sleep(wait_time + random.random())
+                        wait_time = min(wait_time * 2, self.MAX_WAIT)
+                        continue
+                    logger.warning(f"[API] HTTP 타임아웃 - URL: {url}")
+                    return None
 
-                    return data
+            return None
+        finally:
+            if rate_limited:
+                logger.info(f"[API] 429 재시도 {rate_limited}회")
 
-            except aiohttp.ClientError as e:
-                if retries < self.MAX_RETRIES:
-                    await asyncio.sleep(wait_time + random.random())
-                    wait_time = min(wait_time * 2, self.MAX_WAIT)
-                    retries += 1
-                    continue
-                logger.error(f"[API] HTTP 요청 실패 - URL: {url}: {e}", exc_info=True)
-                return None
-            except asyncio.TimeoutError:
-                if retries < self.MAX_RETRIES:
-                    await asyncio.sleep(wait_time + random.random())
-                    wait_time = min(wait_time * 2, self.MAX_WAIT)
-                    retries += 1
-                    continue
-                logger.warning(f"[API] HTTP 타임아웃 - URL: {url}")
-                return None
-
-        return None
-    
     def _set_mmr_cache(self, cache_key: str, mmr: float) -> None:
         self._prune_expired(self._mmr_cache, self.MMR_CACHE_TTL)
         self._mmr_cache[cache_key] = {'data': mmr, 'timestamp': time.time()}
