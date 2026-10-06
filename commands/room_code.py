@@ -10,6 +10,7 @@ from discord.ui import ActionRow, Button, Container, DynamicItem, LayoutView, Se
 from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
+from services.holidays_api import get_rest_day_info
 from services.score_aggregation import compute_ban_list_for_channel
 from utils.layout_helpers import error_view, permission_error_view, warning_view, send_response, FOOTER_TEXT
 from utils.helpers import (
@@ -165,8 +166,9 @@ class WeatherButton(
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        if not is_admin(interaction.user):
-            await send_response(interaction, error_view("관리자만 날씨를 선택할 수 있습니다."))
+        denied = await _sub_weather_denial(interaction.user, self.group_letter)
+        if denied:
+            await send_response(interaction, permission_error_view(denied))
             return
         if self.weather_index >= len(SUB_WEATHERS):
             await send_response(interaction, error_view("알 수 없는 날씨입니다."))
@@ -190,7 +192,7 @@ class WeatherButton(
         )
 
         await interaction.response.edit_message(view=new_view)
-        logger.info(f"[날씨] {self.group_letter}조 {self.round_number}R 서브 날씨 선택: {weather_name}")
+        logger.info(f"[날씨] {self.group_letter}조 {self.round_number}R 서브 날씨 선택: {weather_name}, 선택: {interaction.user}")
 
 
 def _can_post_room_code(member: discord.Member, group_letter: str) -> bool:
@@ -198,6 +200,30 @@ def _can_post_room_code(member: discord.Member, group_letter: str) -> bool:
         return True
     role_name = f"{group_letter}조"
     return any(role.name == role_name for role in getattr(member, 'roles', []))
+
+
+REST_DAY_CHECK_TIMEOUT = 2.0
+
+
+async def _is_rest_day_today() -> bool:
+    # 버튼 응답 3초 제한. shield로 조회는 끝까지 돌려 캐시를 채움
+    try:
+        info = await asyncio.wait_for(asyncio.shield(get_rest_day_info()), REST_DAY_CHECK_TIMEOUT)
+    except Exception:
+        logger.warning("[날씨] 휴무일 판정 실패 - 평일로 처리", exc_info=True)
+        return False
+    return bool(info.get("is_rest_day"))
+
+
+async def _sub_weather_denial(member: discord.Member, group_letter: str) -> str | None:
+    """고를 수 있으면 None, 막히면 거부 문구."""
+    if is_admin(member):
+        return None
+    if not await _is_rest_day_today():
+        return "서브 날씨는 관리자만 고를 수 있습니다."
+    if _can_post_room_code(member, group_letter):
+        return None
+    return f"서브 날씨는 관리자와 {group_letter}조 참가자만 고를 수 있습니다."
 
 
 async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
