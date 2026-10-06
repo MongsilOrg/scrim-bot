@@ -66,7 +66,7 @@ class MemberRestrictionScopeTest(unittest.TestCase):
 
         self.assertFalse(allowed)
         self.assertIn('Horrific', msg)
-        self.assertIn('2026-08-31', msg)
+        self.assertIn('8월 31일 월요일', msg)
 
     def test_edit_checks_only_newly_added_member(self):
         new_team = TeamData(name='기체', players=['할수있다', '준라가스'], staff=['horrific'])

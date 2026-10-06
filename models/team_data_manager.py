@@ -8,7 +8,7 @@ import discord
 from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
-from utils.helpers import build_member_lookup, get_current_kst_time
+from utils.helpers import build_member_lookup, effective_scrim_date, get_current_kst_time
 from utils.validators import member_name_keys, normalize_nickname_for_comparison, normalize_team_name
 
 from .team_data import TeamData
@@ -26,6 +26,18 @@ DEADLINE_PASSED_MSG = (
     f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시에 신청과 수정이 마감되었습니다. {NEXT_OPEN_NOTICE}"
 )
 ASSIGNMENT_CLOSED_MSG = f"조편성이 끝나 신청과 수정이 마감되었습니다. {NEXT_OPEN_NOTICE}"
+
+
+WEEKDAY_NAMES = ('월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일')
+
+
+def format_korean_date(value: Optional[str]) -> str:
+    """'2026-10-06'을 '10월 6일 화요일'로, 형식이 다르면 그대로."""
+    try:
+        parsed = datetime.strptime(value or '', '%Y-%m-%d')
+    except ValueError:
+        return value or ''
+    return f"{parsed.month}월 {parsed.day}일 {WEEKDAY_NAMES[parsed.weekday()]}"
 
 
 class TeamDataManager:
@@ -256,10 +268,6 @@ class TeamDataManager:
         new_team: Optional[TeamData] = None,
         previous_members: Optional[List[str]] = None,
     ) -> Tuple[bool, str]:
-        warning_manager = BotManager.get_instance().get_warning_manager()
-        if not (warning_manager and await warning_manager.ensure_connected()):
-            return True, ""
-
         member_names = list(new_team.all_members) if new_team else []
         if previous_members is not None:
             known = {normalize_nickname_for_comparison(name) for name in previous_members}
@@ -267,9 +275,29 @@ class TeamDataManager:
                 name for name in member_names
                 if normalize_nickname_for_comparison(name) not in known
             ]
+        blocked = await self.find_restricted_members(current_time, member_names)
+        if not blocked:
+            return True, ""
+        lines = [f"**{member}**: {until}까지" for member, until in blocked]
+        return False, (
+            "경고로 참가가 제한된 닉네임이 있습니다.\n"
+            + "\n".join(lines)
+            + f"\n{MASTERS_NOT_DEDUCTED}"
+        )
+
+    async def find_restricted_members(
+        self, current_time: datetime, member_names: List[str]
+    ) -> List[Tuple[str, str]]:
+        """반환: 닉네임과 제한 해제일 문구. 판정 기준은 신청 중인 스크림 날짜."""
         member_names = list(dict.fromkeys(member_names))
         if not member_names:
-            return True, ""
+            return []
+        warning_manager = BotManager.get_instance().get_warning_manager()
+        if not (warning_manager and await warning_manager.ensure_connected()):
+            return []
+
+        # 22시 이후 신청은 다음 날 스크림이라 오늘까지인 제한은 걸리지 않음
+        check_time = datetime.combine(effective_scrim_date(current_time), current_time.timetz())
 
         # 닉네임만으로 검사하면 개명으로 우회 가능
         client = self.client
@@ -277,26 +305,19 @@ class TeamDataManager:
         member_map = build_member_lookup(guild)
 
         def _scan_restricted():
+            found = []
             for member in member_names:
                 resolved = member_map.get(normalize_nickname_for_comparison(member))
                 target_id = str(resolved.id) if resolved else None
                 restricted, restricted_until = warning_manager.is_restricted(
-                    target_id, member, current_time
+                    target_id, member, check_time
                 )
                 if restricted:
-                    return member, restricted_until
-            return None
+                    found.append((member, format_korean_date(restricted_until)))
+            return found
 
         # is_restricted는 캐시 미스 때 시트를 동기 조회
-        blocked = await asyncio.to_thread(_scan_restricted)
-        if blocked:
-            member, restricted_until = blocked
-            return False, (
-                f"⚠️ 팀원 '{member}'이(가) 경고로 인해 스크림 참가가 제한되었습니다.\n"
-                f"{restricted_until}까지 참여가 제한됩니다.\n"
-                f"💡 {MASTERS_NOT_DEDUCTED}"
-            )
-        return True, ""
+        return await asyncio.to_thread(_scan_restricted)
 
     def _should_check_auto_assign(self) -> bool:
         current_time = get_current_kst_time()
