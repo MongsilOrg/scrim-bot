@@ -315,11 +315,14 @@ async def transition_to_next_scrim(client: "ScrimBot", channel: discord.TextChan
         scrim_channel_id=settings.SCRIM_CHANNEL_ID,
     )
 
-    # 대시보드 메시지 ID 확정 후 백업
-    await refresh_dashboard(channel)
-    team_data_manager.save_backup()
-
     team_data_manager.start_background_tasks()
+
+    try:
+        await refresh_dashboard(channel)
+    except Exception as e:
+        logger.error(f"[스크림] 전환 중 대시보드 갱신 실패: {e}", exc_info=True)
+    # 대시보드 메시지 ID 확정 후 백업
+    team_data_manager.save_backup()
 
     if team_data_manager.teams:
         try:
@@ -327,33 +330,49 @@ async def transition_to_next_scrim(client: "ScrimBot", channel: discord.TextChan
         except Exception as e:
             logger.error(f"[스크림] MMR 메시지 생성 실패: {e}", exc_info=True)
 
-    logger.info(f"[스크림] 다음 스크림 전환 완료 - {date_info['month']}/{date_info['day']} ({date_info['weekday_name']})")
+    logger.info(f"[스크림] 다음 스크림 전환 완료 - {date_info['month']}/{date_info['day']} {date_info['weekday_name']}")
 
 
+# 전환 실패 때 재시도 간격
+RESET_RETRY_SECONDS = 300
+
+
+async def _run_scheduled_transition(client: "ScrimBot", refresh_dashboard, log) -> bool:
+    guild = client.get_guild(settings.GUILD_ID)
+    if not guild:
+        log(f"[스크림] 자동 전환 건너뜀 - 서버를 찾을 수 없음, 서버 ID: {settings.GUILD_ID}")
+        return False
+    channel = guild.get_channel(settings.SCRIM_CHANNEL_ID)
+    if not channel:
+        log(f"[스크림] 자동 전환 건너뜀 - 채널 없음: {settings.SCRIM_CHANNEL_ID}")
+        return False
+    try:
+        await transition_to_next_scrim(client, channel, refresh_dashboard)
+    except Exception as e:
+        log(f"[스크림] 자동 전환 실패: {e}", exc_info=True)
+        return False
+    return True
+
+
+# 시각 대신 만료 여부로 판단, 22시 직전 재시작이나 절전으로 지난 전환도 처리
 async def daily_reset_loop(client: "ScrimBot", refresh_dashboard) -> None:
     await client.wait_until_ready()
+    failing = False
     while not client.is_closed():
-        now = get_current_kst_time()
+        team_data_manager = BotManager.get_instance().get_team_data_manager()
+        if is_scrim_expired(team_data_manager):
+            # Sentry 중복 방지로 연속 실패는 첫 번째만 ERROR
+            log = logger.warning if failing else logger.error
+            failing = not await _run_scheduled_transition(client, refresh_dashboard, log)
+        else:
+            failing = False
 
-        target = now.replace(hour=settings.NEXT_SCRIM_OPEN_HOUR, minute=0, second=0, microsecond=0)
-        if now >= target:
-            target += timedelta(days=1)
-
-        wait_seconds = (target - now).total_seconds()
+        if failing:
+            wait_seconds = RESET_RETRY_SECONDS
+        else:
+            now = get_current_kst_time()
+            target = now.replace(hour=settings.NEXT_SCRIM_OPEN_HOUR, minute=0, second=0, microsecond=0)
+            if now >= target:
+                target += timedelta(days=1)
+            wait_seconds = min((target - now).total_seconds(), ScrimOrchestrator.MAX_ASSIGN_WAIT_SECONDS) + 1
         await asyncio.sleep(wait_seconds)
-
-        try:
-            guild = client.guilds[0] if client.guilds else None
-            if not guild:
-                logger.warning("[스크림] 자동 전환 건너뜀 - 서버를 찾을 수 없음")
-                continue
-            channel = guild.get_channel(settings.SCRIM_CHANNEL_ID)
-            if not channel:
-                logger.warning(f"[스크림] 자동 전환 건너뜀 - 채널 없음: {settings.SCRIM_CHANNEL_ID}")
-                continue
-
-            await transition_to_next_scrim(client, channel, refresh_dashboard)
-        except Exception as e:
-            logger.error(f"[스크림] 자동 전환 실패: {e}", exc_info=True)
-
-        await asyncio.sleep(60)

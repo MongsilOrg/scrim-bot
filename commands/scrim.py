@@ -49,38 +49,43 @@ async def _refresh_scrim_dashboard(channel: discord.TextChannel) -> None:
         team_data_manager.save_backup()
 
 
-async def setup_scrim_dashboard(client: ScrimBot) -> None:
-    global _daily_reset_task
-
-    guild = client.guilds[0] if client.guilds else None
+async def _sync_scrim_dashboard(client: ScrimBot) -> None:
+    guild = client.get_guild(settings.GUILD_ID)
     if not guild:
-        logger.warning("[스크림] 서버를 찾을 수 없습니다.")
+        logger.error(f"[스크림] 서버를 찾을 수 없음 - 서버 ID: {settings.GUILD_ID}")
         return
 
     channel = guild.get_channel(SCRIM_CHANNEL_ID)
     if not channel:
-        logger.warning("[스크림] 대시보드 채널을 찾을 수 없습니다.")
+        logger.error(f"[스크림] 대시보드 채널을 찾을 수 없음 - 채널 ID: {SCRIM_CHANNEL_ID}")
         return
 
     team_data_manager = BotManager.get_instance().get_team_data_manager()
     team_data_manager.scrim_channel_id = SCRIM_CHANNEL_ID
 
-    if team_data_manager.scrim_day is not None and is_scrim_expired(team_data_manager):
+    if is_scrim_expired(team_data_manager):
         await transition_to_next_scrim(client, channel, _refresh_scrim_dashboard)
-    elif team_data_manager.scrim_day is None:
-        await transition_to_next_scrim(client, channel, _refresh_scrim_dashboard)
-    else:
-        await _refresh_scrim_dashboard(channel)
+        return
 
-        if not team_data_manager.is_team_assignment_started and team_data_manager.teams:
-            try:
-                await team_data_manager.update_mmr_message(channel)
-                logger.info("[스크림] MMR 메시지 재생성 완료")
-            except Exception as e:
-                logger.error(f"[스크림] MMR 메시지 재생성 실패: {e}", exc_info=True)
+    await _refresh_scrim_dashboard(channel)
 
-    if _daily_reset_task is not None:
-        _daily_reset_task.cancel()
-    _daily_reset_task = asyncio.create_task(daily_reset_loop(client, _refresh_scrim_dashboard))
+    if not team_data_manager.is_team_assignment_started and team_data_manager.teams:
+        try:
+            await team_data_manager.update_mmr_message(channel)
+            logger.info("[스크림] MMR 메시지 재생성 완료")
+        except Exception as e:
+            logger.error(f"[스크림] MMR 메시지 재생성 실패: {e}", exc_info=True)
+
+
+async def setup_scrim_dashboard(client: ScrimBot) -> None:
+    global _daily_reset_task
+
+    try:
+        await _sync_scrim_dashboard(client)
+    finally:
+        # 대시보드 연동이 실패해도 22시 전환 유지
+        if _daily_reset_task is not None:
+            _daily_reset_task.cancel()
+        _daily_reset_task = asyncio.create_task(daily_reset_loop(client, _refresh_scrim_dashboard))
 
     logger.info("[스크림] 대시보드 연동 완료")
