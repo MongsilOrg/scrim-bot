@@ -26,4 +26,4 @@ async def 제재부여(interaction: discord.Interaction, user: discord.Member) -
 
     except Exception as e:
         logger.error(f"[명령어] 제재 부여 명령어 처리 실패: {e}", exc_info=True)
-        await send_response(interaction, error_view("명령어 처리 중 오류가 발생했습니다."))
+        await send_response(interaction, error_view("명령을 처리하지 못했습니다. 잠시 후 다시 시도해주세요."))

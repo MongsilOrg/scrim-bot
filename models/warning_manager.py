@@ -280,13 +280,13 @@ class WarningManager:
 
         lines = ["[주의 누적]"]
         for i, caution in enumerate(converted_cautions[:self.CAUTION_TO_WARNING_COUNT], 1):
-            caution_date = caution.get('날짜', 'N/A')
-            caution_reason = caution.get('사유', 'N/A')
+            caution_date = caution.get('날짜', '기록 없음')
+            caution_reason = caution.get('사유', '기록 없음')
             if for_external:
-                lines.append(f"{i}회 ({caution_date}): {caution_reason}")
+                lines.append(f"{i}회 {caution_date}: {caution_reason}")
             else:
-                caution_admin = caution.get('관리자ID', 'N/A')
-                lines.append(f"{i}회 ({caution_date}, {caution_admin}): {caution_reason}")
+                caution_admin = caution.get('관리자ID', '기록 없음')
+                lines.append(f"{i}회 {caution_date}, {caution_admin}: {caution_reason}")
 
         return "\n".join(lines)
 

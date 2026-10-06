@@ -1,6 +1,5 @@
 import asyncio
 import unittest
-from unittest import mock
 
 from models.team_data import TeamData
 from models.team_processor import TeamProcessor

@@ -671,6 +671,7 @@ async def _apply_roster_warnings(
 
         success_count = 0
         fail_names = []
+        no_dm_names = []
 
         for player in original_players:
             discord_member = member_map.get(normalize_nickname_for_comparison(player))
@@ -687,12 +688,13 @@ async def _apply_roster_warnings(
 
             if success:
                 success_count += 1
-                if discord_member:
-                    await send_sanction_dm(
-                        discord_member, REASON_TYPE["대타"], reason,
-                        auto_warning=auto_warning,
-                        converted_cautions=converted_cautions,
-                    )
+                delivered = bool(discord_member) and await send_sanction_dm(
+                    discord_member, REASON_TYPE["대타"], reason,
+                    auto_warning=auto_warning,
+                    converted_cautions=converted_cautions,
+                )
+                if not delivered:
+                    no_dm_names.append(target_name)
             else:
                 fail_names.append(target_name)
                 logger.error(f"[로스터주의] 주의 부여 실패 - 대상: {target_name}, 메시지: {message}")
@@ -700,8 +702,10 @@ async def _apply_roster_warnings(
         result_text = f"주의 {success_count}명을 부여했습니다."
         if fail_names:
             result_text += f" 부여하지 못한 닉네임: {', '.join(fail_names)}"
+        if no_dm_names:
+            result_text += f"\nDM을 보내지 못했습니다. 대상자에게 직접 알려주세요: {', '.join(no_dm_names)}"
 
-        logger.info(f"[로스터주의] {original_team_name} - {result_text} (사유: {reason})")
+        logger.info(f"[로스터주의] {original_team_name} - {result_text}, 사유: {reason}")
         return result_text
 
     except Exception as e:

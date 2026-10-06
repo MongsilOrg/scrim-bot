@@ -88,6 +88,12 @@ class TeamDataManager:
     async def check_and_auto_assign(self) -> None:
         await self._orchestrator.check_and_auto_assign()
 
+    def assignment_needs_rerun(self) -> bool:
+        return self._orchestrator.needs_rerun()
+
+    def rerun_team_assignment(self):
+        return self._orchestrator.rerun_team_assignment()
+
     async def start_team_assignment(self) -> None:
         await self._orchestrator.start_team_assignment()
 

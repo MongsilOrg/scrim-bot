@@ -279,6 +279,18 @@ class TeamInputView(LayoutView):
                 return
 
             team_data_manager = BotManager.get_instance().get_team_data_manager()
+            # 조편성이 실패했거나 도중에 멈춘 날의 복구 수단
+            if team_data_manager.assignment_needs_rerun():
+                view = ConfirmView(
+                    title="🔁 조편성 다시 실행",
+                    body="오늘 조편성이 끝나지 않았습니다. 남은 단계부터 다시 실행합니다.",
+                    confirm_label="다시 실행",
+                    accent_colour=Color.orange(),
+                    error_text="조편성을 다시 실행하지 못했습니다. 잠시 후 다시 시도해주세요.",
+                    on_confirm=self._rerun_assignment,
+                )
+                view.message = await send_response(interaction, view)
+                return
             if team_data_manager.is_team_assignment_started:
                 await send_error_message(interaction, ASSIGNMENT_CLOSED_FORCE_CANCEL_MSG)
                 return
@@ -296,6 +308,13 @@ class TeamInputView(LayoutView):
         except Exception as e:
             logger.error(f"[뷰] 관리 콜백 처리 실패: {e}", exc_info=True)
             await send_error_message(interaction, "관리 화면을 여는 중 오류가 발생했습니다.")
+
+    async def _rerun_assignment(self, interaction: discord.Interaction) -> LayoutView:
+        if not is_admin(interaction.user):
+            return permission_error_view()
+        ok, message = BotManager.get_instance().get_team_data_manager().rerun_team_assignment()
+        logger.info(f"[조편성] 다시 실행 요청 - {interaction.user} | {message}")
+        return info_view(message) if ok else error_view(message)
 
     async def _execute_force_cancel(self, interaction: discord.Interaction, team_name: str) -> LayoutView:
         try:

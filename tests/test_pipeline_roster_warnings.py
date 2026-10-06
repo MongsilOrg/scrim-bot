@@ -1,4 +1,3 @@
-import asyncio
 import unittest
 from datetime import date
 from unittest import mock

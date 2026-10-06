@@ -223,17 +223,13 @@ class ScheduleView(LayoutView):
 
         async def execute_cancel(confirm_interaction: discord.Interaction):
             if not is_admin(confirm_interaction.user):
-                await send_response(confirm_interaction, permission_error_view())
-                return
+                return permission_error_view()
             schedule_mgr.assignments.clear()
             schedule_mgr.actual_deployments.clear()
             schedule_mgr.save_backup()
             logger.info(f"[일정] 편성 취소 - 관리자: {confirm_interaction.user}")
-            await send_response(
-                confirm_interaction,
-                success_view("편성과 투입 기록을 지웠습니다.", title="↩️ 편성 취소"),
-            )
             await _refresh_schedule_status(confirm_interaction)
+            return success_view("편성과 투입 기록을 지웠습니다.", title="↩️ 편성 취소")
 
         async def do_cancel(btn_interaction: discord.Interaction):
             deploy_count = len(schedule_mgr.actual_deployments)

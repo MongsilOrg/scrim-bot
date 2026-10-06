@@ -84,6 +84,12 @@ class ScrimOrchestrator:
             done.append(stage)
         self._manager.save_backup()
 
+    def needs_rerun(self, now=None) -> bool:
+        """스크림 당일 조편성 시간대인데 오늘 조편성이 끝나지 않은 상태"""
+        now = now or get_current_kst_time()
+        return (self._manager.is_scrim_date_today(now) and is_assignment_window(now)
+                and not self.is_assignment_done_today(now))
+
     def rerun_team_assignment(self) -> Tuple[bool, str]:
         mgr = self._manager
         now = get_current_kst_time()
@@ -219,7 +225,7 @@ class ScrimOrchestrator:
                 mentions = " ".join(f"<@&{role_id}>" for role_id in sorted(settings.ADMIN_ROLE_IDS))
                 text = (
                     f"⚠️ **조편성 확인 필요**\n{reason}\n"
-                    "원인을 확인해주세요. 봇을 재시작하면 남은 단계부터 이어서 진행합니다."
+                    "원인을 확인한 뒤 스크림 채널 관리 버튼에서 조편성을 다시 실행해주세요."
                 )
                 if mentions:
                     text = f"{mentions}\n{text}"

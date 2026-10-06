@@ -9,7 +9,6 @@ from commands.ui.roster_views import GroupRosterView, build_rest_day_guide_view
 from utils.layout_helpers import error_view, FOOTER_TEXT
 from config.logging_config import get_logger
 from config.settings import settings
-from services.holidays_api import get_rest_day_info
 from services.notion_api import get_server_info
 from utils.helpers import (
     get_current_kst_time, get_group_letter,
@@ -206,48 +205,6 @@ class DiscordService:
 
         except Exception as e:
             logger.error(f"[Discord] 기존 조별 공지 메시지 수정 실패: {e}", exc_info=True)
-
-    async def send_notices(self, guild: discord.Guild, groups: List[List], unmatched_teams: List[Tuple[str, "TeamData", float]] = None) -> None:
-        try:
-            # 역할 재배정이 공지보다 늦으면 멘션과 채널 권한이 이전 조 멤버에게 감
-            await self.handle_discord_roles(guild, groups)
-
-            try:
-                is_rest_day = (await get_rest_day_info())["is_rest_day"]
-            except Exception as e:
-                logger.error(f"[Discord] 휴무일 정보 조회 실패, 자율 진행 안내 생략: {e}", exc_info=True)
-                is_rest_day = False
-
-            info = await asyncio.to_thread(get_server_info)
-
-            for group_letter in settings.GROUP_CHANNEL_IDS.keys():
-                try:
-                    channel_id = settings.GROUP_CHANNEL_IDS.get(group_letter)
-
-                    if channel_id:
-                        channel = guild.get_channel(channel_id)
-                        if channel:
-                            await self.clear_channel_messages(channel)
-
-                            group_index = ord(group_letter) - ord('A')
-                            if group_index < len(groups) and len(groups[group_index]) > 0:
-                                group = groups[group_index]
-                                message = self.create_group_announcement_message(group_letter, group, info)
-                                await self.send_group_announcement_with_image(channel, message, group, is_rest_day=is_rest_day)
-                            else:
-                                pass
-                        else:
-                            logger.error(f"[Discord] 조별 채널을 찾을 수 없음 - 조: {group_letter}조, 채널 ID: {channel_id}")
-                    else:
-                        logger.error(f"[Discord] 조별 채널 ID가 설정되지 않음 - 조: {group_letter}조")
-                except Exception as e:
-                    logger.error(f"[Discord] 조별 공지 전송 실패 - 조: {group_letter}조: {e}", exc_info=True)
-                    continue
-
-            await self.rename_voice_channels(guild, groups)
-
-        except Exception as e:
-            logger.error(f"[Discord] 공지 전송 실패: {e}", exc_info=True)
 
     async def _retry_discord(self, coro_factory, *, error_message: str, retries: int = 3, base_delay: float = 0.2) -> None:
         for retry in range(retries):
