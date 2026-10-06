@@ -14,14 +14,14 @@ def _member(uid, name):
 
 
 class ScheduleReminderTest(unittest.IsolatedAsyncioTestCase):
-    def test_next_reminder_is_sunday_21(self):
+    def test_next_reminder_is_sunday_22(self):
         tue = datetime(2026, 10, 6, 15, 0, tzinfo=KST)
-        self.assertEqual(schedule._next_reminder(tue), datetime(2026, 10, 11, 21, 0, tzinfo=KST))
-        sun_late = datetime(2026, 10, 11, 21, 30, tzinfo=KST)
-        self.assertEqual(schedule._next_reminder(sun_late), datetime(2026, 10, 18, 21, 0, tzinfo=KST))
+        self.assertEqual(schedule._next_reminder(tue), datetime(2026, 10, 11, 22, 0, tzinfo=KST))
+        sun_late = datetime(2026, 10, 11, 22, 30, tzinfo=KST)
+        self.assertEqual(schedule._next_reminder(sun_late), datetime(2026, 10, 18, 22, 0, tzinfo=KST))
 
     async def _run(self, *, assignments=None, week_start_offset=timedelta(hours=3)):
-        now = datetime(2026, 10, 11, 21, 0, tzinfo=KST)
+        now = datetime(2026, 10, 11, 22, 0, tzinfo=KST)
         mgr = SimpleNamespace(
             assignments=assignments or {}, week_start=now + week_start_offset, week_label="10/12 ~ 10/17",
             get_responded_user_ids=lambda: {"1"},
@@ -45,6 +45,15 @@ class ScheduleReminderTest(unittest.IsolatedAsyncioTestCase):
     async def test_skips_after_assignment_or_when_week_not_open(self):
         self.assertEqual((await self._run(assignments={0: ["1"]}))[0], 0)
         self.assertEqual((await self._run(week_start_offset=-timedelta(days=1)))[0], 0)
+
+
+class WeekOpenTest(unittest.TestCase):
+    def test_week_opens_friday_night(self):
+        mgr = SimpleNamespace(week_start=datetime(2026, 10, 5, tzinfo=KST))
+        with patch.object(schedule, "get_current_kst_time", return_value=datetime(2026, 10, 9, 21, 59, tzinfo=KST)):
+            self.assertFalse(schedule._should_auto_reset(mgr))
+        with patch.object(schedule, "get_current_kst_time", return_value=datetime(2026, 10, 9, 22, 0, tzinfo=KST)):
+            self.assertTrue(schedule._should_auto_reset(mgr))
 
 
 if __name__ == "__main__":

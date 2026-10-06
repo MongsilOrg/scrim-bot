@@ -8,7 +8,7 @@ import discord
 from commands.ui.schedule_views import refresh_dashboard, schedule_members
 from config.logging_config import get_logger
 from config.settings import settings
-from models.schedule_manager import REMINDER_HOUR, REMINDER_WEEKDAY
+from models.schedule_manager import OPEN_WEEKDAY, REMINDER_HOUR, REMINDER_WEEKDAY
 from utils.helpers import get_current_kst_time
 
 logger = get_logger('schedule')
@@ -21,7 +21,7 @@ def _should_auto_reset(schedule_mgr) -> bool:
     if not schedule_mgr.week_start:
         return False
     now = get_current_kst_time()
-    deadline = schedule_mgr.week_start + timedelta(days=5, hours=settings.NEXT_SCRIM_OPEN_HOUR)
+    deadline = schedule_mgr.week_start + timedelta(days=OPEN_WEEKDAY, hours=settings.NEXT_SCRIM_OPEN_HOUR)
     return now >= deadline
 
 
@@ -29,15 +29,15 @@ async def _weekly_reset_loop(client: ScrimBot) -> None:
     await client.wait_until_ready()
     while not client.is_closed():
         now = get_current_kst_time()
-        days_until_saturday = (5 - now.weekday()) % 7
-        if days_until_saturday == 0 and now.hour >= settings.NEXT_SCRIM_OPEN_HOUR:
-            days_until_saturday = 7
+        days_until_open = (OPEN_WEEKDAY - now.weekday()) % 7
+        if days_until_open == 0 and now.hour >= settings.NEXT_SCRIM_OPEN_HOUR:
+            days_until_open = 7
 
-        next_saturday_22 = now.replace(
+        next_open = now.replace(
             hour=settings.NEXT_SCRIM_OPEN_HOUR, minute=0, second=0, microsecond=0
-        ) + timedelta(days=days_until_saturday)
+        ) + timedelta(days=days_until_open)
 
-        wait_seconds = (next_saturday_22 - now).total_seconds()
+        wait_seconds = (next_open - now).total_seconds()
         await asyncio.sleep(wait_seconds)
 
         try:

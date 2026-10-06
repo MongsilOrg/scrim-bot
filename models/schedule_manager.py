@@ -14,9 +14,10 @@ logger = get_logger('schedule_manager')
 WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일']
 # 토요일과 일요일은 운영진 근무 없이 자율 진행
 ACTIVE_DAYS = [0, 1, 2, 3, 4]
-# 다음 주 일정이 토요일 22시에 열리고, 미응답자 알림은 일요일 21시
+# 다음 주 일정은 마지막 근무일 22시에 열리고, 미응답자 알림은 일요일 22시
+OPEN_WEEKDAY = ACTIVE_DAYS[-1]
 REMINDER_WEEKDAY = 6
-REMINDER_HOUR = 21
+REMINDER_HOUR = 22
 POOL_SIZE = 6
 
 EXCLUDED_USER_IDS: Set[int] = {settings.TEST_ACCOUNT_CONTACT_ID}
