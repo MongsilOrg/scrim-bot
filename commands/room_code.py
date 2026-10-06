@@ -30,6 +30,11 @@ assert len(MAIN_WEATHERS) == settings.TOTAL_ROUNDS, (
     "MAIN_WEATHERS 는 라운드당 하나씩 정의되어야 합니다"
 )
 
+ROUND_OVERFLOW_TEXT = (
+    f"오늘 {settings.TOTAL_ROUNDS}라운드 공지를 모두 올렸습니다. "
+    "번호가 틀렸다면 운영진에게 알려주세요."
+)
+
 
 def clean_room_code(room_code: str) -> str:
     return room_code.replace(" ", "").replace("\t", "").replace("\n", "")
@@ -263,6 +268,10 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
         round_start_time = calculate_round_start_time(now)
 
         round_number = await get_round_number(interaction.channel)
+        if round_number > settings.TOTAL_ROUNDS:
+            logger.info(f"[명령어] 라운드 초과 방코드 거절 - 사용자: {interaction.user}, 조: {group_letter}조, 코드: {cleaned_room_code}")
+            await send_response(interaction, warning_view(ROUND_OVERFLOW_TEXT))
+            return
 
         main_weather = MAIN_WEATHERS.get(round_number, "알 수 없음")
         weather_options = None

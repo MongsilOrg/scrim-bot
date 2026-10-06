@@ -1,7 +1,9 @@
 import asyncio
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import discord
 
 from commands import room_code
 
@@ -40,6 +42,48 @@ class SubWeatherPermissionTest(unittest.IsolatedAsyncioTestCase):
                 patch.object(room_code, "get_rest_day_info", new=slow):
             denied = await room_code._sub_weather_denial(_member("A조"), "A")
         self.assertEqual(denied, "서브 날씨는 관리자만 고를 수 있습니다.")
+
+
+def _view_text(view):
+    texts = []
+
+    def walk(item):
+        content = getattr(item, "content", None)
+        if isinstance(content, str):
+            texts.append(content)
+        for child in getattr(item, "children", []) or []:
+            walk(child)
+
+    for item in view.children:
+        walk(item)
+    return "\n".join(texts)
+
+
+def _interaction(channel):
+    interaction = MagicMock()
+    interaction.channel = channel
+    interaction.user = _member("A조")
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
+class RoundOverflowTest(unittest.IsolatedAsyncioTestCase):
+    async def test_fifth_round_is_refused_without_side_effects(self):
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.id = 1
+        interaction = _interaction(channel)
+        sent = AsyncMock()
+        with patch.object(room_code, "get_group_letter", return_value="A"), \
+                patch.object(room_code, "_can_post_room_code", return_value=True), \
+                patch.object(room_code, "get_round_number", new=AsyncMock(return_value=room_code.settings.TOTAL_ROUNDS + 1)), \
+                patch.object(room_code, "send_response", new=sent), \
+                patch.object(room_code.BotManager, "get_instance") as get_instance:
+            await room_code.방코드(interaction, "123456")
+
+        get_instance.assert_not_called()
+        interaction.followup.send.assert_not_called()
+        self.assertIn(room_code.ROUND_OVERFLOW_TEXT, _view_text(sent.await_args.args[1]))
 
 
 if __name__ == "__main__":
