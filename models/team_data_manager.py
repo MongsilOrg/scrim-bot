@@ -522,32 +522,38 @@ class TeamDataManager:
 
     def check_duplicate_with_bot_teams(self, team_name: str, team_members: List[str], exclude_team: str = None) -> Tuple[bool, str]:
         try:
-            normalized_new_members = [normalize_nickname_for_comparison(member) for member in team_members]
             normalized_new_team_name = normalize_team_name(team_name)
             normalized_exclude = normalize_team_name(exclude_team) if exclude_team else None
-
-            for existing_team_name, existing_team in self.teams.items():
-                if exclude_team and normalize_team_name(existing_team_name) == normalized_exclude:
+            for existing_team_name in self.teams:
+                existing_key = normalize_team_name(existing_team_name)
+                if exclude_team and existing_key == normalized_exclude:
                     continue
-
-                if normalize_team_name(existing_team_name) == normalized_new_team_name:
+                if existing_key == normalized_new_team_name:
                     return False, f"이미 등록된 팀명입니다: {team_name}"
 
-                existing_members = existing_team.all_members
-
-                normalized_existing_members = [normalize_nickname_for_comparison(member) for member in existing_members]
-
-                duplicate_members = set(normalized_new_members) & set(normalized_existing_members)
-                if duplicate_members:
-                    duplicate_details = []
-                    for new_member in team_members:
-                        if normalize_nickname_for_comparison(new_member) in duplicate_members:
-                            duplicate_details.append(f"- {new_member}: {existing_team_name} 팀")
-                    detail_str = "\n".join(duplicate_details)
-                    return False, f"이미 등록된 팀원이 있습니다.\n{detail_str}"
+            conflicts = self.find_member_conflicts(team_members, exclude_team=exclude_team)
+            if conflicts:
+                detail_str = "\n".join(f"**{member}**: {other} 팀" for member, other in conflicts)
+                return False, f"다른 팀에 이미 등록된 닉네임이 있습니다.\n{detail_str}"
 
             return True, ""
 
         except Exception as e:
             logger.error(f"[팀데이터] 봇 팀 중복 검사 실패: {e}", exc_info=True)
             return True, ""
+
+    def find_member_conflicts(self, team_members: List[str], exclude_team: Optional[str] = None) -> List[Tuple[str, str]]:
+        """반환: 다른 팀에 이미 있는 닉네임과 그 팀명."""
+        normalized_exclude = normalize_team_name(exclude_team) if exclude_team else None
+        owner_by_key: Dict[str, str] = {}
+        for existing_team_name, existing_team in self.teams.items():
+            if exclude_team and normalize_team_name(existing_team_name) == normalized_exclude:
+                continue
+            for member in existing_team.all_members:
+                owner_by_key.setdefault(normalize_nickname_for_comparison(member), existing_team_name)
+        conflicts = []
+        for member in team_members:
+            owner = owner_by_key.get(normalize_nickname_for_comparison(member))
+            if owner:
+                conflicts.append((member, owner))
+        return conflicts

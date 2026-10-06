@@ -382,15 +382,29 @@ async def process_team_edit(
         if is_roster_change and group_letter:
             await _update_changed_team(group_letter, team_data_manager, original_team_name, new_team_name, new_team_mmr)
 
+        roster_warnings: List[str] = []
+        if is_roster_change:
+            roster_warnings = await _collect_roster_warnings(
+                team_data_manager, team_processor, new_team_data, original_team_name
+            )
+            if roster_warnings:
+                logger.info(f"[로스터변경경고] {new_team_name} | {' / '.join(roster_warnings)}")
+
         await _send_edit_result(
             temp_message, team_processor, original_team_name, new_team_data, new_team_mmr,
-            added, removed, is_maintenance,
+            added, removed, is_maintenance, roster_warnings=roster_warnings,
         )
 
         if is_roster_change and apply_warning:
-            await _apply_roster_warnings(
-                interaction, original_team_name, original_team_data.players, warning_reason, temp_message
+            sanction_line = await _apply_roster_warnings(
+                interaction, original_team_name, original_team_data.players, warning_reason
             )
+            if sanction_line:
+                await _send_edit_result(
+                    temp_message, team_processor, original_team_name, new_team_data, new_team_mmr,
+                    added, removed, is_maintenance,
+                    roster_warnings=roster_warnings, sanction_line=sanction_line,
+                )
         if is_roster_change:
             if group_letter:
                 await _update_group_announcement(group_letter)
@@ -496,6 +510,9 @@ async def _send_edit_result(
     added: Set[str],
     removed: Set[str],
     is_maintenance: bool,
+    *,
+    roster_warnings: Optional[List[str]] = None,
+    sanction_line: str = "",
 ) -> None:
     new_team_name = new_team_data.name
     if is_maintenance:
@@ -515,11 +532,43 @@ async def _send_edit_result(
         diff_parts.append(f"추가: {', '.join(sorted(added))}")
     diff_summary = '\n'.join(diff_parts) if diff_parts else "변경 없음"
     mmr_line = build_team_mmr_line(new_team_mmr, new_team_data.players, team_processor.is_test_account)
-    await update_temp_message(
-        temp_message,
-        f"**{new_team_name}** 팀이 수정되었습니다.\n\n{diff_summary}\n{mmr_line}",
-        discord.Color.green()
-    )
+    body = f"**{new_team_name}** 팀이 수정되었습니다.\n\n{diff_summary}\n{mmr_line}"
+    if sanction_line:
+        body += f"\n{sanction_line}"
+    if roster_warnings:
+        body += "\n\n확인이 필요한 닉네임이 있습니다.\n" + "\n".join(roster_warnings)
+    color = discord.Color.orange() if roster_warnings else discord.Color.green()
+    await update_temp_message(temp_message, body, color)
+
+
+async def _collect_roster_warnings(
+    team_data_manager: "TeamDataManager",
+    team_processor: "TeamProcessor",
+    new_team_data: TeamData,
+    original_team_name: str,
+) -> List[str]:
+    """조편성 뒤 관리자 로스터 변경은 막지 않고 결과 카드에 경고만 붙임."""
+    warnings: List[str] = []
+    members = new_team_data.all_members
+    try:
+        restricted = await team_data_manager.find_restricted_members(get_current_kst_time(), members)
+        if restricted:
+            warnings.append("참가 제한: " + ", ".join(f"**{m}** {until}까지" for m, until in restricted))
+    except Exception as e:
+        logger.warning(f"[로스터변경] 제한 확인 실패: {e}")
+
+    conflicts = team_data_manager.find_member_conflicts(members, exclude_team=original_team_name)
+    if conflicts:
+        warnings.append("다른 팀과 중복: " + ", ".join(f"**{m}** {team} 팀" for m, team in conflicts))
+
+    real_members = [m for m in members if not team_processor.is_test_account(m)]
+    client = BotManager.get_instance().get_client()
+    guild = client.get_guild(settings.GUILD_ID) if client else None
+    if guild and real_members:
+        _, not_found = validate_members_in_guild(guild, real_members)
+        if not_found:
+            warnings.append("서버에서 찾지 못한 닉네임: " + ", ".join(f"**{m}**" for m in not_found))
+    return warnings
 
 
 def _get_group_teams(team_data_manager: "TeamDataManager", group_letter: str) -> Optional[list]:
@@ -617,8 +666,8 @@ async def _apply_roster_warnings(
     original_team_name: str,
     original_players: List[str],
     reason: str,
-    temp_message: discord.Message,
-) -> None:
+) -> str:
+    """반환: 결과 카드에 붙일 주의 부여 결과, 처리 실패면 빈 문자열."""
     try:
         admin_name = interaction.user.display_name or interaction.user.name
         warning_manager = BotManager.get_instance().get_warning_manager()
@@ -655,24 +704,16 @@ async def _apply_roster_warnings(
                 fail_names.append(target_name)
                 logger.error(f"[로스터주의] 주의 부여 실패 - 대상: {target_name}, 메시지: {message}")
 
-        result_parts = [f"주의 {success_count}명 부여 완료"]
+        result_text = f"주의 {success_count}명을 부여했습니다."
         if fail_names:
-            result_parts.append(f"실패: {', '.join(fail_names)}")
-        result_text = " | ".join(result_parts)
-
-        try:
-            await update_temp_message(
-                temp_message,
-                f"**{original_team_name}** 로스터 변경 완료\n⚡ {result_text}",
-                discord.Color.green()
-            )
-        except Exception:
-            pass
+            result_text += f" 부여하지 못한 닉네임: {', '.join(fail_names)}"
 
         logger.info(f"[로스터주의] {original_team_name} - {result_text} (사유: {reason})")
+        return result_text
 
     except Exception as e:
         logger.error(f"[로스터주의] 주의 부여 처리 실패: {e}", exc_info=True)
+        return "주의를 부여하지 못했습니다. 경고 시트를 확인해주세요."
 
 
 async def _update_mmr_message_for_individual_team(team_data_manager: "TeamDataManager") -> None:
