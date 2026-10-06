@@ -41,7 +41,8 @@ class FakeResponse:
 
 class FakeInteraction:
     def __init__(self, user_id=1):
-        self.user = mock.Mock(id=user_id)
+        self.user = mock.Mock(id=user_id, display_name=f"user{user_id}", global_name=None)
+        self.user.name = f"user{user_id}"
         self.channel = None
         self.response = FakeResponse()
         self.original_edits = []

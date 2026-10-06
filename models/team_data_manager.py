@@ -21,13 +21,11 @@ logger = get_logger('team_data_manager')
 
 ACTION_EMOJI = {"신청": "📝", "취소": "❌", "수정": "✏️", "강제취소": "🔨"}
 
-ASSIGNMENT_CLOSED_EDIT_MSG = (
-    f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시 조편성이 완료되어 팀 수정이 불가능합니다."
+NEXT_OPEN_NOTICE = f"다음 스크림 신청은 {settings.NEXT_SCRIM_OPEN_HOUR}시에 열립니다."
+DEADLINE_PASSED_MSG = (
+    f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시에 신청과 수정이 마감되었습니다. {NEXT_OPEN_NOTICE}"
 )
-ASSIGNMENT_CLOSED_REGISTER_MSG = (
-    f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시 조편성이 완료되어 팀 등록이 불가능합니다. "
-    "다음 스크림에 신청해주세요."
-)
+ASSIGNMENT_CLOSED_MSG = f"조편성이 끝나 신청과 수정이 마감되었습니다. {NEXT_OPEN_NOTICE}"
 
 
 class TeamDataManager:
@@ -240,8 +238,9 @@ class TeamDataManager:
             logger.warning(f"{label}: 태스크 취소 중 예외 무시: {exc}")
 
     def check_team_time_rules(self, current_time: datetime, *, is_edit: bool = False) -> Tuple[bool, str]:
+        """신청과 수정은 같은 마감을 따름. is_edit는 호출부 호환용."""
         if self.is_team_assignment_started:
-            return False, ASSIGNMENT_CLOSED_EDIT_MSG if is_edit else ASSIGNMENT_CLOSED_REGISTER_MSG
+            return False, ASSIGNMENT_CLOSED_MSG
 
         if not self.is_scrim_date_today(current_time):
             return True, ""
@@ -249,11 +248,7 @@ class TeamDataManager:
         if current_time.hour < settings.TEAM_REGISTRATION_DEADLINE_HOUR:
             return True, ""
 
-        action = "팀 수정이" if is_edit else "추가 등록이"
-        return False, (
-            f"⏰ {settings.TEAM_REGISTRATION_DEADLINE_HOUR}:00 이후에는 {action} 불가능합니다.\n"
-            f"💡 관리자에게 문의해주세요."
-        )
+        return False, DEADLINE_PASSED_MSG
 
     async def check_member_restrictions(
         self,

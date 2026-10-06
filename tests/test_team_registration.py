@@ -40,19 +40,19 @@ class TeamTimeRulesTest(unittest.TestCase):
         with self.subTest('조편성 완료면 차단, 등록 문구'):
             allowed, msg = self._rules(started=True)
             self.assertFalse(allowed)
-            self.assertIn('팀 등록이 불가능', msg)
+            self.assertIn('조편성이 끝나', msg)
         with self.subTest('조편성 완료 + 수정이면 수정 문구'):
             allowed, msg = self._rules(started=True, is_edit=True)
             self.assertFalse(allowed)
-            self.assertIn('팀 수정이 불가능', msg)
+            self.assertIn('조편성이 끝나', msg)
         with self.subTest('스크림 당일 마감 이후면 차단'):
             allowed, msg = self._rules(scrim_day=11, hour=self.DEADLINE)
             self.assertFalse(allowed)
-            self.assertIn('추가 등록이 불가능', msg)
+            self.assertIn('마감되었습니다', msg)
         with self.subTest('스크림 당일 마감 이후 수정도 차단, 수정 문구'):
             allowed, msg = self._rules(scrim_day=11, hour=self.DEADLINE, is_edit=True)
             self.assertFalse(allowed)
-            self.assertIn('팀 수정이 불가능', msg)
+            self.assertIn('마감되었습니다', msg)
         with self.subTest('스크림 당일 마감 전이면 허용'):
             allowed, _ = self._rules(scrim_day=11, hour=self.DEADLINE - 1)
             self.assertTrue(allowed)

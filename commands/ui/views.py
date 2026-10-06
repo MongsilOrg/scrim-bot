@@ -14,9 +14,8 @@ from utils.layout_helpers import (
     send_error_message,
 )
 from commands.team_pipeline import schedule_mmr_refresh
-from models.team_data_manager import ASSIGNMENT_CLOSED_REGISTER_MSG
 from models.user_team_cache import UserTeamCache
-from utils.helpers import get_team_members, is_admin
+from utils.helpers import get_current_kst_time, get_team_members, is_admin
 
 from .modals import TeamEditModal, TeamModal
 
@@ -111,14 +110,16 @@ class TeamInputView(LayoutView):
         try:
             team_data_manager = BotManager.get_instance().get_team_data_manager()
 
-            if team_data_manager.is_team_assignment_started:
-                await send_error_message(interaction, ASSIGNMENT_CLOSED_REGISTER_MSG)
+            # 입력을 다 쓴 뒤 마감 안내를 받지 않도록 창을 열기 전에 확인
+            is_open, closed_reason = team_data_manager.check_team_time_rules(get_current_kst_time())
+            if not is_open:
+                await send_error_message(interaction, closed_reason)
                 return
-            
+
             user_team = team_data_manager.find_user_team(
                 str(interaction.user.id), interaction.user
             )
-            
+
             if user_team:
                 await self._show_team_edit_modal(interaction, user_team, team_data_manager)
             else:
