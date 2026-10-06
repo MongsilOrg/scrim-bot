@@ -32,6 +32,7 @@ ASSIGNMENT_CLOSED_CANCEL_MSG = (
 ASSIGNMENT_CLOSED_FORCE_CANCEL_MSG = (
     f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시 조편성이 완료되어 강제취소가 불가능합니다."
 )
+TEAM_ALREADY_GONE_MSG = "이미 취소된 팀입니다."
 MODAL_SERVER_ERROR_MSG = "Discord 서버 오류로 입력 창을 열지 못했습니다. 잠시 후 다시 시도해주세요."
 
 
@@ -232,30 +233,24 @@ class TeamInputView(LayoutView):
             logger.error(f"[뷰] 팀 수정 모달 표시 실패: {e}", exc_info=True)
             await send_error_message(interaction, "팀 수정 모달 표시 중 오류가 발생했습니다.")
     
-    async def _process_team_cancellation(self, interaction: discord.Interaction, team_name: str) -> None:
+    async def _process_team_cancellation(self, interaction: discord.Interaction, team_name: str) -> LayoutView:
         try:
             team_data_manager = BotManager.get_instance().get_team_data_manager()
 
             if team_data_manager.is_team_assignment_started:
                 logger.info(f"[팀취소거부] {team_name} | 사유: 조편성 완료")
-                await send_error_message(interaction, ASSIGNMENT_CLOSED_CANCEL_MSG)
-                return
+                return error_view(ASSIGNMENT_CLOSED_CANCEL_MSG)
 
             team_info = team_data_manager.get_team_data(team_name)
-            players = []
-            staff = []
-            if team_info:
-                players, staff = get_team_members(team_info)
+            if team_info is None:
+                logger.info(f"[팀취소거부] {team_name} | 사유: 팀 없음")
+                return error_view(TEAM_ALREADY_GONE_MSG)
+            players, staff = get_team_members(team_info)
 
             success, failure_reason = await team_data_manager.remove_team(team_name)
             if not success:
-                logger.warning(f"[팀취소거부] {team_name} | 사유: {failure_reason or '(사유 없음)'}")
-                error_message = failure_reason if failure_reason else (
-                    "팀 취소가 실패했습니다.\n\n"
-                    "💡 취소 시간 제한을 확인해주세요."
-                )
-                await send_response(interaction, error_view(error_message))
-                return
+                logger.warning(f"[팀취소거부] {team_name} | 사유: {failure_reason}")
+                return error_view(failure_reason)
 
             players_str = ', '.join(players) if players else '없음'
             staff_str = ', '.join(staff) if staff else '없음'
@@ -265,15 +260,12 @@ class TeamInputView(LayoutView):
             )
             logger.info(f"[팀취소] {team_name} | 선수: [{players_str}] | 스태프: [{staff_str}]")
 
-            await send_response(interaction, success_view(f"**{team_name}** 팀이 취소되었습니다."))
-
             schedule_mmr_refresh(team_data_manager, interaction.channel)
+            return success_view(f"**{team_name}** 팀이 취소되었습니다.")
 
-        except discord.NotFound:
-            logger.warning("[뷰] 팀 취소 interaction 만료")
         except Exception as e:
             logger.error(f"[뷰] 팀 취소 실패: {e}", exc_info=True)
-            await send_error_message(interaction, "팀 취소 중 오류가 발생했습니다.")
+            return error_view("팀 취소 중 오류가 발생했습니다.")
 
     async def manage_callback(self, interaction: discord.Interaction) -> None:
         if await check_cooldown(interaction):
@@ -302,32 +294,28 @@ class TeamInputView(LayoutView):
             logger.error(f"[뷰] 관리 콜백 처리 실패: {e}", exc_info=True)
             await send_error_message(interaction, "관리 화면을 여는 중 오류가 발생했습니다.")
 
-    async def _execute_force_cancel(self, interaction: discord.Interaction, team_name: str) -> None:
+    async def _execute_force_cancel(self, interaction: discord.Interaction, team_name: str) -> LayoutView:
         try:
             team_data_manager = BotManager.get_instance().get_team_data_manager()
 
             # 확인 대기 중 권한과 조편성 상태 변화 가능
             if not is_admin(interaction.user):
-                await send_response(interaction, permission_error_view())
-                return
+                return permission_error_view()
             if team_data_manager.is_team_assignment_started:
-                await send_error_message(interaction, ASSIGNMENT_CLOSED_FORCE_CANCEL_MSG)
-                return
+                return error_view(ASSIGNMENT_CLOSED_FORCE_CANCEL_MSG)
 
             team_info = team_data_manager.get_team_data(team_name)
             if team_info is None:
                 logger.info(f"[강제취소거부] {team_name} | 사유: 팀 없음")
-                await send_error_message(interaction, "이미 취소되었거나 존재하지 않는 팀입니다.")
-                return
+                return error_view(TEAM_ALREADY_GONE_MSG)
 
             players, staff = get_team_members(team_info)
             applicant_id = team_info.user_id
 
             success, failure_reason = await team_data_manager.remove_team(team_name)
             if not success:
-                logger.warning(f"[강제취소거부] {team_name} | 사유: {failure_reason or '(사유 없음)'}")
-                await send_response(interaction, error_view(failure_reason or "강제취소에 실패했습니다."))
-                return
+                logger.warning(f"[강제취소거부] {team_name} | 사유: {failure_reason}")
+                return error_view(failure_reason)
 
             players_str = ', '.join(players) if players else '없음'
             staff_str = ', '.join(staff) if staff else '없음'
@@ -338,15 +326,12 @@ class TeamInputView(LayoutView):
             )
             logger.info(f"[강제취소] {team_name} | 운영진: {interaction.user} | 선수: [{players_str}]")
 
-            await send_response(interaction, success_view(f"**{team_name}** 팀을 강제 취소했습니다."))
-
             schedule_mmr_refresh(team_data_manager, interaction.channel)
+            return success_view(f"**{team_name}** 팀을 강제 취소했습니다.")
 
-        except discord.NotFound:
-            logger.warning("[뷰] 강제취소 실행 interaction 만료")
         except Exception as e:
             logger.error(f"[뷰] 강제취소 실행 실패: {e}", exc_info=True)
-            await send_response(interaction, error_view("강제취소 중 오류가 발생했습니다."))
+            return error_view("강제 취소 중 오류가 발생했습니다.")
 
 
 class _TimeoutEditView(LayoutView):
@@ -395,23 +380,31 @@ class ConfirmView(_TimeoutEditView):
         self.add_item(ActionRow(self.confirm_button, self.back_button))
 
     async def confirm_callback(self, interaction: discord.Interaction) -> None:
+        """on_confirm이 LayoutView를 돌려주면 확인 카드를 그 결과로 바꿈."""
+        # 멈추지 않으면 on_timeout이 결과 카드를 시간 초과로 덮어씀
+        self.stop()
+        self.confirm_button.disabled = True
+        self.back_button.disabled = True
         try:
-            self.confirm_button.disabled = True
-            self.back_button.disabled = True
             await interaction.response.edit_message(view=self)
-
-            await self._on_confirm(interaction)
+            result = await self._on_confirm(interaction)
+        except discord.NotFound:
+            logger.warning(f"[뷰] 확인 interaction 만료 - {self._title}")
+            return
         except Exception as e:
             logger.error(f"[뷰] 확인 콜백 실패: {e}", exc_info=True)
-            await interaction.followup.send(
-                view=error_view(self._error_text),
-                ephemeral=True
-            )
+            result = error_view(self._error_text)
+        if isinstance(result, LayoutView):
+            try:
+                await interaction.edit_original_response(view=result)
+            except Exception as e:
+                logger.warning(f"[뷰] 확인 결과 표시 실패 - {self._title}: {e}")
 
     async def back_callback(self, interaction: discord.Interaction) -> None:
+        self.stop()
         try:
             logger.info(f"[뷰] 확인 돌아가기 - {self._title} | 사용자: {interaction.user}")
-            await interaction.response.edit_message(view=info_view("이전 화면으로 돌아갔습니다."), embed=None, content=None)
+            await interaction.response.edit_message(view=info_view("취소하지 않았습니다.", title="↩️ 돌아가기"))
         except Exception as e:
             logger.error(f"[뷰] 돌아가기 콜백 실패: {e}", exc_info=True)
 
@@ -463,9 +456,10 @@ class ForceCancelSelectView(_TimeoutEditView):
 
             parent_view = self.parent_view
 
-            async def _confirm_force_cancel(inter: discord.Interaction, team_name: str = selected) -> None:
-                if parent_view is not None:
-                    await parent_view._execute_force_cancel(inter, team_name)
+            async def _confirm_force_cancel(inter: discord.Interaction, team_name: str = selected) -> Optional[LayoutView]:
+                if parent_view is None:
+                    return None
+                return await parent_view._execute_force_cancel(inter, team_name)
 
             confirm_view = ConfirmView(
                 title="🔨 강제취소 확인",
