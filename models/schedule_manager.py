@@ -12,7 +12,8 @@ from utils.layout_helpers import format_kr_date
 logger = get_logger('schedule_manager')
 
 WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일']
-ACTIVE_DAYS = [0, 1, 2, 3, 4, 5]
+# 토요일과 일요일은 운영진 근무 없이 자율 진행
+ACTIVE_DAYS = [0, 1, 2, 3, 4]
 # 다음 주 일정이 토요일 22시에 열리고, 미응답자 알림은 일요일 21시
 REMINDER_WEEKDAY = 6
 REMINDER_HOUR = 21
@@ -28,7 +29,7 @@ BACKUP_PATH = os.path.join(
 
 
 def _week_label(monday: datetime) -> str:
-    return f"{format_kr_date(monday)}부터 {format_kr_date(monday + timedelta(days=5))}까지"
+    return f"{format_kr_date(monday)}부터 {format_kr_date(monday + timedelta(days=ACTIVE_DAYS[-1]))}까지"
 
 
 class ScheduleManager:

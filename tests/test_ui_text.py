@@ -40,7 +40,7 @@ class ScheduleStatusTextTest(unittest.TestCase):
         mgr = ScheduleManager()
         with patch("models.schedule_manager.get_current_kst_time", return_value=datetime(2026, 10, 3, 22, tzinfo=KST)):
             mgr.initialize_week()
-        self.assertEqual(mgr.week_label, "10월 5일 월요일부터 10월 10일 토요일까지")
+        self.assertEqual(mgr.week_label, "10월 5일 월요일부터 10월 9일 금요일까지")
         mgr.register_schedule("a", "Alice", {0, 1})
         mgr.register_schedule("b", "Bob", set(), "출장")
         mgr.generate_assignments()
