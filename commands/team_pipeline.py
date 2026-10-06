@@ -261,12 +261,8 @@ async def process_team_registration(
 
         success, failure_reason = await team_data_manager.add_team(team_name, team_data, interaction.user)
         if not success:
-            error_message = failure_reason if failure_reason else (
-                "팀 등록에 실패했습니다.\n\n"
-                "💡 등록 시간 제한을 확인해주세요."
-            )
-            logger.info(f"[팀신청실패] {team_name} | 단계: 저장 | 사유: {failure_reason or '(사유 없음)'}")
-            await update_temp_message(temp_message, error_message, discord.Color.red())
+            logger.info(f"[팀신청실패] {team_name} | 단계: 저장 | 사유: {failure_reason}")
+            await update_temp_message(temp_message, failure_reason, discord.Color.red())
             return
 
         registered = True
