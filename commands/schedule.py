@@ -40,7 +40,7 @@ async def _weekly_reset_loop(client: ScrimBot) -> None:
             schedule_mgr = BotManager.get_instance().get_schedule_manager()
             schedule_mgr.initialize_week()
 
-            guild = client.guilds[0] if client.guilds else None
+            guild = client.get_guild(settings.GUILD_ID)
             if guild:
                 channel = guild.get_channel(settings.SCHEDULE_CHANNEL_ID)
                 if channel:
@@ -55,7 +55,7 @@ async def _weekly_reset_loop(client: ScrimBot) -> None:
 async def setup_schedule_dashboard(client: ScrimBot) -> None:
     global _weekly_reset_task
 
-    guild = client.guilds[0] if client.guilds else None
+    guild = client.get_guild(settings.GUILD_ID)
     if not guild:
         logger.warning("[일정] 서버를 찾을 수 없습니다.")
         return
