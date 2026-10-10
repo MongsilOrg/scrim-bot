@@ -1,15 +1,12 @@
 import asyncio
-import io
 from datetime import datetime, timedelta, timezone
 
 import discord
-from discord.ui import Container, File, LayoutView, Separator, TextDisplay
 
 from bot.client import ScrimBot
 from config.logging_config import get_logger
 from config.settings import settings
-from utils.helpers import KST
-from utils.layout_helpers import FOOTER_TEXT, warning_view
+from utils.layout_helpers import warning_view
 
 logger = get_logger('ticket')
 
@@ -41,33 +38,7 @@ def _texts(components) -> list[str]:
     return out
 
 
-def _line(message: discord.Message) -> str:
-    stamp = message.created_at.astimezone(KST).strftime('%Y-%m-%d %H:%M')
-    parts = [message.content] if message.content else []
-    parts += [e.description or e.title or '' for e in message.embeds]
-    parts += _texts(message.components)
-    parts += [a.url for a in message.attachments]
-    body = '\n    '.join(p for p in parts if p) or '(내용 없음)'
-    return f"[{stamp}] {message.author.display_name} ({message.author.id}): {body}"
-
-
-async def _archive_and_delete(channel: discord.TextChannel, log_channel: discord.TextChannel, reason: str) -> None:
-    lines = [_line(m) async for m in channel.history(limit=None, oldest_first=True)]
-    openers = ' '.join(f"<@{uid}>" for uid in _opener_ids(channel)) or '알 수 없음'
-    filename = f"{channel.name}.txt"
-    view = LayoutView()
-    view.add_item(Container(
-        TextDisplay(content=f"## 🗂️ {channel.name}\n{reason}\n\n신청자 {openers}\n메시지 {len(lines)}개"),
-        File(media=f"attachment://{filename}"),
-        Separator(),
-        TextDisplay(content=FOOTER_TEXT),
-        accent_colour=discord.Color.greyple(),
-    ))
-    # 기록을 남기지 못하면 지우지 않음
-    await log_channel.send(
-        view=view, file=discord.File(io.BytesIO('\n'.join(lines).encode('utf-8')), filename=filename),
-        allowed_mentions=discord.AllowedMentions.none(),
-    )
+async def _delete(channel: discord.TextChannel, reason: str) -> None:
     await channel.delete(reason="티켓 자동 정리")
     logger.info(f"[티켓] {channel.name} 삭제 - {reason}")
 
@@ -75,9 +46,8 @@ async def _archive_and_delete(channel: discord.TextChannel, log_channel: discord
 async def cleanup_tickets(client: ScrimBot) -> None:
     guild = client.get_guild(settings.GUILD_ID)
     category = guild and guild.get_channel(settings.TICKET_CATEGORY_ID)
-    log_channel = guild and guild.get_channel(settings.TICKET_LOG_CHANNEL_ID)
-    if not isinstance(category, discord.CategoryChannel) or not isinstance(log_channel, discord.TextChannel):
-        logger.warning("[티켓] 티켓 카테고리나 기록 채널을 찾을 수 없습니다.")
+    if not isinstance(category, discord.CategoryChannel):
+        logger.warning("[티켓] 티켓 카테고리를 찾을 수 없습니다.")
         return
 
     now = datetime.now(timezone.utc)
@@ -90,10 +60,10 @@ async def cleanup_tickets(client: ScrimBot) -> None:
 
             if channel.name.startswith('closed-'):
                 if idle >= DELETE_CLOSED_AFTER:
-                    await _archive_and_delete(channel, log_channel, "닫힌 뒤 하루가 지나 삭제했습니다.")
+                    await _delete(channel, "닫힌 뒤 하루 경과")
             elif last and last[0].author.id == client.user.id and any(NOTICE_TITLE in t for t in _texts(last[0].components)):
                 if idle >= DELETE_AFTER_NOTICE:
-                    await _archive_and_delete(channel, log_channel, "삭제 예정 안내 뒤 하루 동안 대화가 없어 삭제했습니다.")
+                    await _delete(channel, "삭제 예정 안내 뒤 하루 동안 대화 없음")
             elif idle >= IDLE_NOTICE_AFTER:
                 mentions = ' '.join(f"<@{uid}>" for uid in _opener_ids(channel))
                 at = int((now + DELETE_AFTER_NOTICE).timestamp())
