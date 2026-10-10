@@ -49,6 +49,8 @@ class Settings:
     SCRIM_CHANNEL_ID: int = _parse_int(os.getenv('SCRIM_CHANNEL_ID', '1212383364258992128'))
     LOG_CHANNEL_ID: int = _parse_int(os.getenv('LOG_CHANNEL_ID', '1487384132035022961'))
     SCHEDULE_CHANNEL_ID: int = _parse_int(os.getenv('SCHEDULE_CHANNEL_ID', '1485653533637476512'))
+    TICKET_CATEGORY_ID: int = _parse_int(os.getenv('TICKET_CATEGORY_ID', '1255872853107277875'))
+    TICKET_LOG_CHANNEL_ID: int = _parse_int(os.getenv('TICKET_LOG_CHANNEL_ID', '1558406530867667004'))
 
     GROUP_CHANNEL_IDS: dict = _parse_group_channel_ids(os.getenv('GROUP_CHANNEL_IDS', ''))
 

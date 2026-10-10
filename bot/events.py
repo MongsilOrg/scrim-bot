@@ -5,6 +5,7 @@ from discord import app_commands
 
 from bot.manager import BotManager
 from commands.schedule import setup_schedule_dashboard
+from commands.ticket_cleanup import setup_ticket_cleanup
 from commands.scrim import setup_scrim_dashboard
 from utils.layout_helpers import error_view, image_response_view, custom_view, send_response
 from config.logging_config import get_logger
@@ -65,6 +66,8 @@ async def bootstrap_on_ready(client: "ScrimBot") -> None:
         await setup_schedule_dashboard(client)
     except Exception as e:
         logger.error(f"[시작] 일정 대시보드 연동 실패: {e}", exc_info=True)
+
+    setup_ticket_cleanup(client)
 
     try:
         synced = await client.tree.sync(guild=discord.Object(id=settings.GUILD_ID))
