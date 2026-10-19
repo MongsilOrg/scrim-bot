@@ -66,7 +66,7 @@ def processing_view(description: str = "잠시 기다려주세요.") -> LayoutVi
     return _build_view("⏳ 처리 중", description, discord.Color.blue())
 
 
-def timeout_view(description: str = "시간이 지나 닫혔습니다. 버튼을 다시 눌러주세요.") -> LayoutView:
+def timeout_view(description: str = "시간이 지나 닫혔습니다.\n버튼을 다시 눌러주세요.") -> LayoutView:
     return _build_view("⏳ 닫힘", description, discord.Color.greyple())
 
 
@@ -135,7 +135,7 @@ def image_response_view(
     return view
 
 
-RESPONSE_FAILED_TEXT = "화면을 표시하지 못했습니다. 다시 시도해주세요."
+RESPONSE_FAILED_TEXT = "화면을 표시하지 못했습니다.\n다시 시도해주세요."
 
 
 def is_interaction_expired(exc: BaseException) -> bool:
@@ -276,7 +276,7 @@ async def check_cooldown(interaction: discord.Interaction, cooldown_seconds: flo
     now = time.monotonic()
     last_click = _button_cooldowns.get(user_id, 0)
     if now - last_click < cooldown_seconds:
-        await send_response(interaction, info_view("요청 처리 중입니다. 잠시 기다려주세요.", title="⏳ 대기"))
+        await send_response(interaction, info_view("요청 처리 중입니다.\n잠시 기다려주세요.", title="⏳ 대기"))
         return True
     _button_cooldowns[user_id] = now
     if len(_button_cooldowns) > _COOLDOWN_CLEANUP_THRESHOLD:

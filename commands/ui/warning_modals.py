@@ -105,7 +105,7 @@ async def send_sanction_dm(
     return False
 
 
-DM_FAILED_TEXT = "DM을 보내지 못했습니다. 대상자에게 직접 알려주세요."
+DM_FAILED_TEXT = "DM을 보내지 못했습니다.\n대상자에게 직접 알려주세요."
 
 
 def _registered_team(target_user: discord.Member) -> str | None:
@@ -126,12 +126,12 @@ def _follow_up_fields(target_user: discord.Member, dm_sent: bool, restricted: bo
         if team_name:
             fields.append((
                 "신청 팀",
-                f"현재 **{team_name}** 팀에 등록되어 있습니다. 필요하면 관리 버튼에서 강제 취소해주세요.",
+                f"현재 **{team_name}** 팀에 등록되어 있습니다.\n필요하면 관리 버튼에서 강제 취소해주세요.",
             ))
     return fields
 
 
-MISSING_DETAIL_TEXT = "기타를 고르면 상세 사유를 적어야 합니다. 다시 입력 버튼을 눌러주세요."
+MISSING_DETAIL_TEXT = "기타를 고르면 상세 사유를 적어야 합니다.\n다시 입력 버튼을 눌러주세요."
 
 
 def _missing_detail_view(target_user: discord.Member, reason_choice: str) -> TimeoutEditView:
@@ -272,4 +272,4 @@ class WarningReasonModal(Modal):
 
         except Exception as e:
             logger.error(f"[모달] 제재 모달 처리 실패 - 대상: {self.target_user.display_name if self.target_user else 'Unknown'}, 오류: {e}", exc_info=True)
-            await send_response(interaction, error_view("제재를 처리하지 못했습니다. 시트에 기록됐는지 확인한 뒤 다시 시도해주세요."))
+            await send_response(interaction, error_view("제재를 처리하지 못했습니다.\n시트에 기록됐는지 확인한 뒤 다시 시도해주세요."))

@@ -30,7 +30,7 @@ assert len(MAIN_WEATHERS) == settings.TOTAL_ROUNDS, (
 )
 
 ROUND_OVERFLOW_TEXT = (
-    f"오늘 {settings.TOTAL_ROUNDS}라운드 공지를 모두 올렸습니다. "
+    f"오늘 {settings.TOTAL_ROUNDS}라운드 공지를 모두 올렸습니다.\n"
     "번호가 틀렸다면 운영진에게 알려주세요."
 )
 
@@ -317,7 +317,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
 
         if not validate_room_code(room_code):
             try:
-                await send_response(interaction, error_view("방 코드는 6자리 숫자로 입력해주세요. 예: `123456`"))
+                await send_response(interaction, error_view("방 코드는 6자리 숫자로 입력해주세요.\n예: `123456`"))
             except discord.NotFound:
                 logger.warning("[명령어] Interaction 만료됨")
             return
@@ -358,7 +358,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
         expected_selected = round_number - 1
         if len(selected) < expected_selected:
             missed = expected_selected - len(selected)
-            weather_warning = f"이전 라운드 공지 {missed}개에서 서브 날씨를 고르지 않았습니다. 이전 공지의 날씨 버튼으로 골라주세요."
+            weather_warning = f"이전 라운드 공지 {missed}개에서 서브 날씨를 고르지 않았습니다.\n이전 공지의 날씨 버튼으로 골라주세요."
 
         if len(available) == 1:
             sub_weather = available[0]
@@ -395,7 +395,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
 
         posted = await _post_notice(interaction, send_kwargs, cleaned_room_code)
         if not posted:
-            await send_response(interaction, error_view("방 코드 공지를 올리지 못했습니다. 잠시 뒤 다시 입력해주세요."))
+            await send_response(interaction, error_view("방 코드 공지를 올리지 못했습니다.\n잠시 뒤 다시 입력해주세요."))
             return
 
         logger.debug(f"[명령어] Round {round_number} 방코드 공지 완료: {cleaned_room_code}")

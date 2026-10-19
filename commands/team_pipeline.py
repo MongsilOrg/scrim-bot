@@ -53,7 +53,7 @@ async def _handle_pipeline_exception(
         logger.warning(f"[{tag}] interaction 만료 - 팀명: {team_name}")
     elif isinstance(exc, discord.HTTPException):
         logger.error(f"[{tag}] Discord API 오류: {exc.status} {exc.text}", exc_info=exc)
-        await send_error_message(interaction, f"{action} 중 Discord 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+        await send_error_message(interaction, f"{action} 중 Discord 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.")
     else:
         logger.error(f"[{tag}] {generic_log}: {exc}", exc_info=exc)
         await send_error_message(interaction, generic_message)
@@ -300,7 +300,7 @@ async def process_team_registration(
         await _handle_pipeline_exception(
             interaction, e,
             tag="팀등록", action="팀 신청", team_name=team_name,
-            generic_message="팀 신청 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+            generic_message="팀 신청 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.",
             generic_log="팀 등록 실패",
         )
     finally:
@@ -418,7 +418,7 @@ async def process_team_edit(
         await _handle_pipeline_exception(
             interaction, e,
             tag="팀수정", action="팀 수정", team_name=new_team_name,
-            generic_message="팀 수정 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+            generic_message="팀 수정 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.",
             generic_log="팀 정보 수정 실패",
         )
     finally:
@@ -708,18 +708,18 @@ async def _apply_roster_warnings(
                 fail_names.append(target_name)
                 logger.error(f"[로스터주의] 주의 부여 실패 - 대상: {target_name}, 메시지: {message}")
 
-        result_text = f"주의 {success_count}명을 부여했습니다."
+        result_text = f"{success_count}명에게 주의를 부여했습니다."
         if fail_names:
-            result_text += f" 부여하지 못한 닉네임: {', '.join(fail_names)}"
+            result_text += f"\n부여하지 못한 닉네임: {', '.join(fail_names)}"
         if no_dm_names:
-            result_text += f"\nDM을 보내지 못했습니다. 대상자에게 직접 알려주세요: {', '.join(no_dm_names)}"
+            result_text += f"\nDM을 보내지 못했습니다.\n대상자에게 직접 알려주세요: {', '.join(no_dm_names)}"
 
         logger.info(f"[로스터주의] {original_team_name} - {result_text}, 사유: {reason}")
         return result_text
 
     except Exception as e:
         logger.error(f"[로스터주의] 주의 부여 처리 실패: {e}", exc_info=True)
-        return "주의를 부여하지 못했습니다. 경고 시트를 확인해주세요."
+        return "주의를 부여하지 못했습니다.\n경고 시트를 확인해주세요."
 
 
 async def _update_mmr_message_for_individual_team(team_data_manager: "TeamDataManager") -> None:

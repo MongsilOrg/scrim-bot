@@ -22,13 +22,13 @@ def validate_team_name(team_name: str) -> Tuple[bool, str]:
     team_name = team_name.strip()
 
     if len(team_name) < 3:
-        return False, f"팀명은 3~12글자로 입력해주세요. 지금 {len(team_name)}글자입니다."
+        return False, f"팀명은 3~12글자로 입력해주세요.\n지금 {len(team_name)}글자입니다."
 
     if len(team_name) > 12:
-        return False, f"팀명은 3~12글자로 입력해주세요. 지금 {len(team_name)}글자입니다."
+        return False, f"팀명은 3~12글자로 입력해주세요.\n지금 {len(team_name)}글자입니다."
 
     if not re.match(r'^[가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z\s]+$', team_name):
-        return False, "팀명에는 한글과 영어만 쓸 수 있습니다. 숫자와 특수문자를 빼주세요."
+        return False, "팀명에는 한글과 영어만 쓸 수 있습니다.\n숫자와 특수문자를 빼주세요."
 
     return True, ""
 
@@ -38,10 +38,10 @@ def validate_team_data(team_data) -> Tuple[bool, str]:
         players, staff = team_data.players, team_data.staff
 
         if not 3 <= len(players) <= 4:
-            return False, f"선수는 3~4명이어야 합니다. 지금 {len(players)}명입니다."
+            return False, f"선수는 3~4명이어야 합니다.\n지금 {len(players)}명입니다."
 
         if len(staff) > 3:
-            return False, f"스태프는 3명까지 넣을 수 있습니다. 지금 {len(staff)}명입니다."
+            return False, f"스태프는 3명까지 넣을 수 있습니다.\n지금 {len(staff)}명입니다."
 
         for player in players:
             if not player or not player.strip():
@@ -55,7 +55,7 @@ def validate_team_data(team_data) -> Tuple[bool, str]:
         
     except Exception as e:
         logger.error(f"[유효성검사] 팀 데이터 유효성 검사 실패: {e}", exc_info=True)
-        return False, "팀 정보를 확인하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+        return False, "팀 정보를 확인하는 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요."
 
 
 def validate_discord_user_in_team(team_data, member: 'discord.Member') -> bool:
@@ -114,7 +114,7 @@ def check_duplicate_members(players: List[str], staff: List[str]) -> Tuple[bool,
         
     except Exception as e:
         logger.error(f"[유효성검사] 팀원 중복 검사 실패: {e}", exc_info=True)
-        return False, "닉네임 중복을 확인하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+        return False, "닉네임 중복을 확인하는 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요."
 
 
 def validate_members_in_guild(
@@ -213,7 +213,7 @@ def build_test_account_notice(nicknames: List[str]) -> str:
 MEMBER_NAME_RULE = "입력한 닉네임은 서버 별명과 게임 닉네임에 모두 맞아야 합니다."
 GUILD_NICKNAME_ERROR = "서버 별명과 다른 닉네임: **{names}**"
 GAME_NICKNAME_ERROR = "게임에서 찾지 못한 닉네임: **{names}**"
-API_UNAVAILABLE_NOTICE = "게임 서버가 응답하지 않아 게임 닉네임을 확인하지 못했습니다. 잠시 후 다시 시도해주세요."
+API_UNAVAILABLE_NOTICE = "게임 서버가 응답하지 않아 게임 닉네임을 확인하지 못했습니다.\n잠시 후 다시 시도해주세요."
 
 
 def build_team_mmr_line(team_mmr: float, players: List[str], is_test_account) -> str:
@@ -222,7 +222,7 @@ def build_team_mmr_line(team_mmr: float, players: List[str], is_test_account) ->
     if players and all(is_test_account(player) for player in players):
         return (
             "팀 평균 MMR: 미등록\n"
-            f"테스트 계정 MMR이 등록되지 않았습니다. <@{settings.TEST_ACCOUNT_CONTACT_ID}>에게 문의해주세요."
+            f"테스트 계정 MMR이 등록되지 않았습니다.\n<@{settings.TEST_ACCOUNT_CONTACT_ID}>에게 문의해주세요."
         )
     return "팀 평균 MMR: 확인 중\n잠시 후 자동으로 갱신됩니다."
 

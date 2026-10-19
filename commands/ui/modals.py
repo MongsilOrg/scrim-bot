@@ -74,7 +74,7 @@ class TeamModal(Modal):
             logger.warning("[모달] 팀 등록 interaction 만료")
         except Exception as e:
             logger.error(f"[모달] 팀 모달 제출 처리 실패: {e}", exc_info=True)
-            await send_error_message(interaction, "팀 신청 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+            await send_error_message(interaction, "팀 신청 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.")
 
 
 class TeamEditModal(Modal):
@@ -177,4 +177,4 @@ class TeamEditModal(Modal):
             logger.warning("[모달] 팀 수정 interaction 만료")
         except Exception as e:
             logger.error(f"[모달] 팀 정보 수정 모달 제출 처리 실패: {e}", exc_info=True)
-            await send_error_message(interaction, "팀 수정 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+            await send_error_message(interaction, "팀 수정 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.")

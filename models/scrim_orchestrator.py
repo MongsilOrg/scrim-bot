@@ -25,7 +25,7 @@ STAGE_ROLES = 'roles'
 STAGE_GROUP_NOTICES = 'group_notices'
 STAGE_VOICE = 'voice'
 
-DELAY_NOTICE = "조편성이 늦어지고 있습니다. 운영진이 확인하고 있습니다."
+DELAY_NOTICE = "조편성이 늦어지고 있습니다.\n운영진이 확인하고 있습니다."
 
 
 class ScrimOrchestrator:
@@ -94,7 +94,7 @@ class ScrimOrchestrator:
         mgr = self._manager
         now = get_current_kst_time()
         if self._assign_lock.locked():
-            return False, "조편성이 진행 중입니다. 끝난 뒤 다시 확인해주세요."
+            return False, "조편성이 진행 중입니다.\n끝난 뒤 다시 확인해주세요."
         if not (mgr.is_scrim_date_today(now) and is_assignment_window(now)):
             return False, (
                 f"조편성은 스크림 당일 {settings.TEAM_REGISTRATION_DEADLINE_HOUR}시부터 "

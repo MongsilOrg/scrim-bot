@@ -193,7 +193,7 @@ class MySanctionsButtonTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_failure_message(self):
         _, _, sent = await self._press(None)
-        self.assertIn("제재 기록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.", texts(sent[0]))
+        self.assertIn("제재 기록을 불러오지 못했습니다.\n잠시 후 다시 시도해주세요.", texts(sent[0]))
 
     async def test_cooldown_skips_lookup(self):
         inter, warning_manager, _ = await self._press({'has_records': False}, cooldown=True)

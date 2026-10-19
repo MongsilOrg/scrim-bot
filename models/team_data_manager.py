@@ -23,9 +23,9 @@ ACTION_EMOJI = {"신청": "📝", "취소": "❌", "수정": "✏️", "강제�
 
 NEXT_OPEN_NOTICE = f"다음 스크림 신청은 {settings.NEXT_SCRIM_OPEN_HOUR}시에 열립니다."
 DEADLINE_PASSED_MSG = (
-    f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시에 신청과 수정이 마감되었습니다. {NEXT_OPEN_NOTICE}"
+    f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시에 신청과 수정이 마감되었습니다.\n{NEXT_OPEN_NOTICE}"
 )
-ASSIGNMENT_CLOSED_MSG = f"조편성이 끝나 신청과 수정이 마감되었습니다. {NEXT_OPEN_NOTICE}"
+ASSIGNMENT_CLOSED_MSG = f"조편성이 끝나 신청과 수정이 마감되었습니다.\n{NEXT_OPEN_NOTICE}"
 
 PHASE_OPEN = 'open'
 PHASE_CLOSED = 'closed'
@@ -453,7 +453,7 @@ class TeamDataManager:
 
         except Exception as e:
             logger.error(f"[팀데이터] 팀 추가 실패: {e}", exc_info=True)
-            return False, "팀 신청 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+            return False, "팀 신청 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요."
 
     async def remove_team(self, team_name: str) -> Tuple[bool, str]:
         """반환: 성공 여부, 실패 사유 또는 빈 문자열."""
@@ -476,7 +476,7 @@ class TeamDataManager:
 
         except Exception as e:
             logger.error(f"[팀데이터] 팀 제거 실패: {e}", exc_info=True)
-            return False, "팀 취소 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+            return False, "팀 취소 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요."
 
     def find_user_team(self, user_id: str, member: Optional[discord.Member] = None) -> Optional[str]:
         for team_name, team_data in self.teams.items():
@@ -522,7 +522,7 @@ class TeamDataManager:
             if old_team_name not in self.teams:
                 # 검증과 저장 사이에 취소된 팀, 여기서 추가하면 부활
                 logger.warning(f"[팀데이터] 교체 대상 팀 없음 - 교체 중단: {old_team_name}")
-                return False, f"**{old_team_name}** 팀을 찾지 못했습니다. 이미 취소되었을 수 있습니다."
+                return False, f"**{old_team_name}** 팀을 찾지 못했습니다.\n이미 취소되었을 수 있습니다."
 
             if enforce_rules:
                 is_allowed, reason = self.check_team_time_rules(get_current_kst_time(), is_edit=True)

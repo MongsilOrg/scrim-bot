@@ -63,12 +63,12 @@ class DashboardViewTest(unittest.TestCase):
         expected = {
             PHASE_OPEN: f"현재 5팀 신청, {settings.TEAMS_PER_GROUP}팀 미만이면 취소됩니다.",
             PHASE_CLOSED: (
-                f"{DEADLINE}시에 신청이 마감되었습니다. "
+                f"{DEADLINE}시에 신청이 마감되었습니다.\n"
                 f"{settings.NEXT_SCRIM_OPEN_HOUR}시에 다음 스크림 신청이 열립니다."
             ),
-            PHASE_ASSIGNED: f"조편성을 마쳤습니다. 다음 스크림 신청은 {settings.NEXT_SCRIM_OPEN_HOUR}시에 열립니다.",
+            PHASE_ASSIGNED: f"조편성을 마쳤습니다.\n다음 스크림 신청은 {settings.NEXT_SCRIM_OPEN_HOUR}시에 열립니다.",
             PHASE_CANCELLED: (
-                f"오늘 스크림은 팀 부족으로 취소되었습니다. "
+                f"오늘 스크림은 팀 부족으로 취소되었습니다.\n"
                 f"다음 스크림 신청은 {settings.NEXT_SCRIM_OPEN_HOUR}시에 열립니다."
             ),
         }

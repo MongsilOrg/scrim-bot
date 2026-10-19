@@ -32,22 +32,22 @@ logger = get_logger('views')
 ASSIGNMENT_CLOSED_CANCEL_MSG = "조편성이 끝나 팀을 취소할 수 없습니다."
 ASSIGNMENT_CLOSED_FORCE_CANCEL_MSG = "조편성이 끝나 강제 취소할 수 없습니다."
 NO_TEAMS_MSG = "신청된 팀이 없습니다."
-OPEN_INPUT_ERROR_MSG = "입력 창을 여는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+OPEN_INPUT_ERROR_MSG = "입력 창을 여는 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요."
 TEAM_ALREADY_GONE_MSG = "이미 취소된 팀입니다."
-MODAL_SERVER_ERROR_MSG = "Discord 서버 오류로 입력 창을 열지 못했습니다. 잠시 후 다시 시도해주세요."
+MODAL_SERVER_ERROR_MSG = "Discord 서버 오류로 입력 창을 열지 못했습니다.\n잠시 후 다시 시도해주세요."
 MY_SANCTIONS_TITLE = "📋 내 제재"
 NO_SANCTIONS_MSG = "받은 제재가 없습니다."
-SANCTION_LOOKUP_FAILED_MSG = "제재 기록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요."
+SANCTION_LOOKUP_FAILED_MSG = "제재 기록을 불러오지 못했습니다.\n잠시 후 다시 시도해주세요."
 
 
 def dashboard_status_line(phase: str, team_count: int) -> str:
     if phase == PHASE_ASSIGNED:
-        return f"조편성을 마쳤습니다. {NEXT_OPEN_NOTICE}"
+        return f"조편성을 마쳤습니다.\n{NEXT_OPEN_NOTICE}"
     if phase == PHASE_CANCELLED:
-        return f"오늘 스크림은 팀 부족으로 취소되었습니다. {NEXT_OPEN_NOTICE}"
+        return f"오늘 스크림은 팀 부족으로 취소되었습니다.\n{NEXT_OPEN_NOTICE}"
     if phase == PHASE_CLOSED:
         return (
-            f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시에 신청이 마감되었습니다. "
+            f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시에 신청이 마감되었습니다.\n"
             f"{settings.NEXT_SCRIM_OPEN_HOUR}시에 다음 스크림 신청이 열립니다."
         )
     return f"현재 {team_count}팀 신청, {settings.TEAMS_PER_GROUP}팀 미만이면 취소됩니다."
@@ -77,7 +77,7 @@ def my_sanctions_view(summary: dict) -> LayoutView:
 
 def applicant_only_cancel_msg(applicant_id: Optional[str]) -> str:
     target = f"신청자 <@{applicant_id}>" if applicant_id else "신청자"
-    return f"팀 취소는 신청자만 할 수 있습니다. {target}에게 요청해주세요."
+    return f"팀 취소는 신청자만 할 수 있습니다.\n{target}에게 요청해주세요."
 
 
 class TeamInputView(LayoutView):
@@ -367,10 +367,10 @@ class TeamInputView(LayoutView):
             if team_data_manager.assignment_needs_rerun():
                 view = ConfirmView(
                     title="🔁 조편성 다시 실행",
-                    body="오늘 조편성이 끝나지 않았습니다. 남은 단계부터 다시 실행합니다.",
+                    body="오늘 조편성이 끝나지 않았습니다.\n남은 단계부터 다시 실행합니다.",
                     confirm_label="다시 실행",
                     accent_colour=Color.orange(),
-                    error_text="조편성을 다시 실행하지 못했습니다. 잠시 후 다시 시도해주세요.",
+                    error_text="조편성을 다시 실행하지 못했습니다.\n잠시 후 다시 시도해주세요.",
                     on_confirm=self._rerun_assignment,
                 )
                 view.message = await send_response(interaction, view)

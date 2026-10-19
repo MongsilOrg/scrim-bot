@@ -83,7 +83,7 @@ class WarningManager:
             if not self._connect_failure_notified:
                 self._connect_failure_notified = True
                 await self._notify_log_channel(
-                    "⚠️ 경고 시트에 연결하지 못했습니다. 연결될 때까지 팀 등록에서 제재 여부를 확인하지 않습니다."
+                    "⚠️ 경고 시트에 연결하지 못했습니다.\n연결될 때까지 팀 등록에서 제재 여부를 확인하지 않습니다."
                 )
             return False
 
@@ -373,7 +373,7 @@ class WarningManager:
     ) -> Tuple[bool, str, Optional[Dict], List[Dict]]:
         """반환: 성공 여부, 메시지, 자동 생성된 경고 정보, 변환된 주의 내역."""
         if not await self.ensure_connected():
-            return False, "구글 시트에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.", None, []
+            return False, "구글 시트에 연결하지 못했습니다.\n잠시 후 다시 시도해주세요.", None, []
 
         # 정리 루프의 행 삭제와 행 번호가 엇갈리지 않게 직렬화
         async with self._write_lock:
@@ -462,7 +462,7 @@ class WarningManager:
                     fallback_on_failure=False,
                 )
                 if terms is None:
-                    return False, "누적 경고 집계에 실패했습니다. 잠시 후 다시 시도해주세요.", None, []
+                    return False, "누적 경고 집계에 실패했습니다.\n잠시 후 다시 시도해주세요.", None, []
 
                 warning_count = terms['warning_count']
                 duration_days = terms['duration_days']
@@ -513,7 +513,7 @@ class WarningManager:
         except Exception as e:
             logger.error(f"[경고관리] 경고 추가 실패 - 대상: {target}, 유형: {warning_type}, 오류: {e}", exc_info=True)
             return False, (
-                "제재 기록 중 오류가 발생했습니다. "
+                "제재 기록 중 오류가 발생했습니다.\n"
                 "시트에 일부만 기록되었을 수 있으니 패널티 시트를 확인해주세요."
             ), None, []
     
@@ -570,7 +570,7 @@ class WarningManager:
             return
         self._lookup_failure_notified_at = now
         text = (
-            "⚠️ 경고 시트 조회에 실패했고 캐시도 없어 제재 여부를 확인하지 못했습니다. "
+            "⚠️ 경고 시트 조회에 실패했고 캐시도 없어 제재 여부를 확인하지 못했습니다.\n"
             "조회가 될 때까지 팀 등록은 제재 확인 없이 통과합니다."
         )
         try:

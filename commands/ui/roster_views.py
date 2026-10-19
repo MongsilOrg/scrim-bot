@@ -81,7 +81,7 @@ class GroupRosterView(LayoutView):
             await self._recreate_view_on_message(interaction)
         except Exception as e:
             logger.error(f"[뷰] 로스터 변경 콜백 처리 실패: {e}", exc_info=True)
-            await send_error_message(interaction, "로스터 변경 메뉴를 열지 못했습니다. 버튼을 다시 눌러주세요.")
+            await send_error_message(interaction, "로스터 변경 메뉴를 열지 못했습니다.\n버튼을 다시 눌러주세요.")
 
     async def _recreate_view_on_message(self, interaction: discord.Interaction) -> None:
         try:
@@ -161,7 +161,7 @@ class TeamSelectionView(TimeoutEditView):
                     break
 
             if not selected_team_data:
-                await send_response(interaction, error_view("선택한 팀을 찾지 못했습니다. 로스터 변경 버튼을 다시 눌러주세요."))
+                await send_response(interaction, error_view("선택한 팀을 찾지 못했습니다.\n로스터 변경 버튼을 다시 눌러주세요."))
                 return
 
             if interaction.response.is_done():
@@ -178,6 +178,6 @@ class TeamSelectionView(TimeoutEditView):
         except Exception as e:
             logger.error(f"[뷰] 팀 선택 콜백 처리 실패: {e}", exc_info=True)
             try:
-                await send_response(interaction, error_view("팀 수정 창을 열지 못했습니다. 팀을 다시 선택해주세요."))
+                await send_response(interaction, error_view("팀 수정 창을 열지 못했습니다.\n팀을 다시 선택해주세요."))
             except Exception as e2:
                 logger.error(f"[뷰] 에러 메시지 전송 실패: {e2}", exc_info=True)

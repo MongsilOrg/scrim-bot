@@ -68,7 +68,7 @@ class ReadjustNoticeTest(unittest.TestCase):
     def test_notice_lists_people_and_days(self):
         mgr = _manager()
         text = schedule_views._readjust_notice(mgr, [(3, ["b"], ["a"])])
-        self.assertEqual(text, "남은 요일 편성이 바뀌었습니다. 목요일 Bob 추가, Alice 빠짐.")
+        self.assertEqual(text, "남은 요일 편성이 바뀌었습니다.\n목요일 Bob 추가, Alice 빠짐.")
 
     def test_empty(self):
         self.assertEqual(schedule_views._readjust_notice(_manager(), []), "")
