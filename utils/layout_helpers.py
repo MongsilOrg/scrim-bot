@@ -85,7 +85,7 @@ class TimeoutEditView(LayoutView):
                 logger.debug(f"[레이아웃] 닫힘 안내 편집 실패: {e}")
 
 
-def permission_error_view(description: str = "관리자 권한이 없습니다.") -> LayoutView:
+def permission_error_view(description: str = "관리자만 사용할 수 있습니다.") -> LayoutView:
     return _build_view("❌ 권한 없음", description, discord.Color.red())
 
 

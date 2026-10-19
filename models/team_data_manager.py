@@ -315,6 +315,7 @@ class TeamDataManager:
             "경고로 참가가 제한된 닉네임이 있습니다.\n"
             + "\n".join(lines)
             + f"\n{MASTERS_NOT_DEDUCTED}"
+            + "\n제한된 닉네임을 빼고 다시 입력해주세요."
         )
 
     async def find_restricted_members(
@@ -541,7 +542,7 @@ class TeamDataManager:
                 for name in self.teams
             ):
                 logger.info(f"[팀데이터] 교체 거부 - 이미 있는 팀명: {new_team.name}")
-                return False, f"이미 신청된 팀명입니다: **{new_team.name}**"
+                return False, f"이미 신청된 팀명입니다: **{new_team.name}**\n다른 팀명을 입력해주세요."
 
             old_team = self.teams[old_team_name]
             self._remove_member_index(old_team_name, old_team)
@@ -565,12 +566,12 @@ class TeamDataManager:
                 if exclude_team and existing_key == normalized_exclude:
                     continue
                 if existing_key == normalized_new_team_name:
-                    return False, f"이미 신청된 팀명입니다: **{team_name}**"
+                    return False, f"이미 신청된 팀명입니다: **{team_name}**\n다른 팀명을 입력해주세요."
 
             conflicts = self.find_member_conflicts(team_members, exclude_team=exclude_team)
             if conflicts:
                 detail_str = "\n".join(f"**{member}**: {other}" for member, other in conflicts)
-                return False, f"다른 팀에 이미 신청된 닉네임이 있습니다.\n{detail_str}"
+                return False, f"다른 팀에 이미 신청된 닉네임이 있습니다.\n{detail_str}\n위 닉네임을 빼거나 기존 팀에서 뺀 뒤 다시 입력해주세요."
 
             return True, ""
 

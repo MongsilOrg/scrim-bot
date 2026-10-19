@@ -710,7 +710,7 @@ async def _apply_roster_warnings(
 
         result_text = f"{success_count}명에게 주의를 부여했습니다."
         if fail_names:
-            result_text += f"\n부여하지 못한 닉네임: {', '.join(fail_names)}"
+            result_text += f"\n부여하지 못한 닉네임: {', '.join(fail_names)}\n제재 부여 메뉴로 따로 부여해주세요."
         if no_dm_names:
             result_text += f"\nDM을 보내지 못했습니다.\n대상자에게 직접 알려주세요: {', '.join(no_dm_names)}"
 

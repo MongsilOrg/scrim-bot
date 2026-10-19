@@ -253,7 +253,7 @@ class TeamInputView(LayoutView):
                 fields=fields,
                 confirm_label="신청 취소하기",
                 accent_colour=Color.orange(),
-                error_text="팀 취소 중 오류가 발생했습니다.",
+                error_text="팀 취소 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.",
                 on_confirm=lambda i: self._process_team_cancellation(i, user_team),
             )
             if not interaction.response.is_done():
@@ -267,14 +267,14 @@ class TeamInputView(LayoutView):
             logger.warning("[뷰] 팀 취소 interaction 만료")
         except Exception as e:
             logger.error(f"[뷰] 팀 취소 콜백 처리 실패: {e}", exc_info=True)
-            await send_error_message(interaction, "팀 취소 중 오류가 발생했습니다.")
+            await send_error_message(interaction, "팀 취소 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.")
     
     
     async def _show_team_edit_modal(self, interaction: discord.Interaction, team_name: str, team_data_manager) -> None:
         try:
             team_data = team_data_manager.get_team_data(team_name)
             if not team_data:
-                await send_error_message(interaction, "팀 정보를 찾을 수 없습니다.")
+                await send_error_message(interaction, "팀 정보를 찾을 수 없습니다.\n신청 및 수정 버튼을 다시 눌러주세요.")
                 return
 
             team_mmr = team_data_manager.get_team_mmr(team_name) or 0.0
@@ -334,7 +334,7 @@ class TeamInputView(LayoutView):
 
         except Exception as e:
             logger.error(f"[뷰] 팀 취소 실패: {e}", exc_info=True)
-            return error_view("팀 취소 중 오류가 발생했습니다.")
+            return error_view("팀 취소 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.")
 
     async def my_sanctions_callback(self, interaction: discord.Interaction) -> None:
         if await check_cooldown(interaction):
@@ -391,7 +391,7 @@ class TeamInputView(LayoutView):
             logger.warning("[뷰] 관리 interaction 만료")
         except Exception as e:
             logger.error(f"[뷰] 관리 콜백 처리 실패: {e}", exc_info=True)
-            await send_error_message(interaction, "관리 화면을 여는 중 오류가 발생했습니다.")
+            await send_error_message(interaction, "관리 화면을 여는 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.")
 
     async def _rerun_assignment(self, interaction: discord.Interaction) -> LayoutView:
         if not is_admin(interaction.user):
@@ -437,7 +437,7 @@ class TeamInputView(LayoutView):
 
         except Exception as e:
             logger.error(f"[뷰] 강제취소 실행 실패: {e}", exc_info=True)
-            return error_view("강제 취소 중 오류가 발생했습니다.")
+            return error_view("강제 취소 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.")
 
 
 class _TimeoutEditView(LayoutView):
@@ -557,7 +557,7 @@ class ForceCancelSelectView(_TimeoutEditView):
             values = (interaction.data or {}).get("values") or []
             selected = values[0] if values else None
             if not selected:
-                await send_response(interaction, error_view("선택된 팀을 확인할 수 없습니다."))
+                await send_response(interaction, error_view("선택된 팀을 확인할 수 없습니다.\n팀을 다시 선택해주세요."))
                 return
 
             parent_view = self.parent_view
@@ -572,7 +572,7 @@ class ForceCancelSelectView(_TimeoutEditView):
                 body=f"**{selected}** 팀을 강제 취소하시겠습니까?",
                 confirm_label="강제 취소하기",
                 accent_colour=Color.red(),
-                error_text="강제 취소 중 오류가 발생했습니다.",
+                error_text="강제 취소 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.",
                 on_confirm=_confirm_force_cancel,
             )
             self.stop()  # 멈추지 않으면 on_timeout이 확인 뷰를 덮어씀
@@ -584,5 +584,5 @@ class ForceCancelSelectView(_TimeoutEditView):
             logger.warning("[뷰] 강제취소 팀 선택 interaction 만료")
         except Exception as e:
             logger.error(f"[뷰] 강제취소 팀 선택 실패: {e}", exc_info=True)
-            await send_response(interaction, error_view("팀 선택 중 오류가 발생했습니다."))
+            await send_response(interaction, error_view("팀 선택 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요."))
 

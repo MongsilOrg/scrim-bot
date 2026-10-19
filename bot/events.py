@@ -102,7 +102,7 @@ async def on_app_command_error(
 ) -> None:
     logger.error(f"[명령어] 앱 명령어 오류: {error}", exc_info=True)
     try:
-        await send_response(interaction, error_view("명령어 처리 중 오류가 발생했습니다."))
+        await send_response(interaction, error_view("명령어 처리 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요."))
     except Exception:
         pass
 

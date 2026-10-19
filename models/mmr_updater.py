@@ -360,6 +360,8 @@ class MmrUpdater:
             f"확인 안 된 닉네임: {', '.join(invalid_members)}\n"
             f"신청자: {applicant}, DM {'발송함' if dm_sent else '발송 못 함'}"
         )
+        if not dm_sent:
+            content += "\n신청자에게 직접 알려주세요."
         try:
             await channel.send(content, allowed_mentions=discord.AllowedMentions.none())
         except Exception as e:
@@ -403,7 +405,7 @@ class MmrUpdater:
                     f"**{team_name}** 팀의 닉네임 중 게임에서 찾을 수 없는 닉네임이 있습니다.\n\n"
                     f"확인 안 된 닉네임: **{', '.join(invalid_members)}**\n\n"
                     f"게임 안에서 닉네임을 확인하고 "
-                    f"<#{settings.SCRIM_CHANNEL_ID}> 채널의 **신청/수정** 버튼으로 "
+                    f"<#{settings.SCRIM_CHANNEL_ID}> 채널의 **신청 및 수정** 버튼으로 "
                     f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시 전에 고쳐주세요."
                 )
                 accent = discord.Color.red()
