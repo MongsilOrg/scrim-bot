@@ -65,7 +65,7 @@ async def send_sanction_dm(
     auto_warning: dict = None,
     converted_cautions: list = None,
 ) -> bool:
-    """대상자에게 DM이 갔으면 True."""
+    """대상자에게 DM을 보냈으면 True."""
     try:
         if auto_warning and converted_cautions:
             fields = [
@@ -192,7 +192,7 @@ class WarningReasonModal(Modal):
             reason_choice = self.reason_radio.value
             detail = self.detail_input.value.strip() if self.detail_input.value else ""
 
-            # 모달 제출에는 모달로 답할 수 없어 다시 여는 버튼을 붙임
+            # 모달 제출에는 모달로 답할 수 없어 다시 여는 버튼을 보냄
             if reason_choice in ("기타주의", "기타경고") and not detail:
                 retry_view = _missing_detail_view(self.target_user, reason_choice)
                 retry_view.message = await send_response(interaction, retry_view)

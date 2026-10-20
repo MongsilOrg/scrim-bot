@@ -123,7 +123,7 @@ async def _validate_team_rules(
     if not real_members:
         return True, False
 
-    # 서버 확인과 게임 확인을 함께 돌려 한 번에 모든 실패를 보여줌
+    # 서버 확인과 게임 확인을 모두 실행해 한 번에 모든 실패를 보여줌
     guild_missing: List[str] = []
     client = BotManager.get_instance().get_client()
     guild = client.get_guild(settings.GUILD_ID) if client else None
@@ -378,7 +378,7 @@ async def process_team_edit(
 
         if is_roster_change and group_letter:
             await _update_changed_team(group_letter, team_data_manager, original_team_name, new_team_name, new_team_mmr)
-            # 대타가 시즌 통계에 들어가도록 바뀐 조 구성을 한 줄 더 남김
+            # 대타가 시즌 통계에 포함되도록 바뀐 조 구성을 한 줄 더 남김
             client = BotManager.get_instance().get_client()
             team_data_manager.spawn_task(record_assignment(
                 team_data_manager.groups, None, registered=None,
@@ -549,7 +549,7 @@ async def _collect_roster_warnings(
     team_processor: "TeamProcessor",
     new_team_data: TeamData,
 ) -> List[str]:
-    """조편성 뒤 관리자 로스터 변경은 막지 않고 결과 카드에 경고만 붙임. 교체 저장 뒤 호출."""
+    """조편성 뒤 관리자 로스터 변경은 막지 않고 결과 카드에 경고만 추가. 교체 저장 뒤 호출."""
     warnings: List[str] = []
     members = new_team_data.all_members
     try:
@@ -669,7 +669,7 @@ async def _apply_roster_warnings(
     original_players: List[str],
     reason: str,
 ) -> str:
-    """반환: 결과 카드에 붙일 주의 부여 결과, 처리 실패면 빈 문자열."""
+    """반환: 결과 카드에 추가할 주의 부여 결과, 처리 실패면 빈 문자열."""
     try:
         admin_name = interaction.user.display_name or interaction.user.name
         warning_manager = BotManager.get_instance().get_warning_manager()

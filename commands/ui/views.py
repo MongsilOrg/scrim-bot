@@ -310,7 +310,7 @@ class TeamInputView(LayoutView):
             if team_info is None:
                 logger.info(f"[팀취소거부] {team_name} | 사유: 팀 없음")
                 return error_view(TEAM_ALREADY_GONE_MSG)
-            # 확인 카드가 떠 있는 사이 팀이 바뀔 수 있음
+            # 확인 카드가 표시된 사이 팀이 바뀔 수 있음
             if team_info.user_id != str(interaction.user.id):
                 logger.info(f"[팀취소거부] {team_name} | 사유: 신청자 아님 | 요청자: {interaction.user}")
                 return error_view(applicant_only_cancel_msg(team_info.user_id))

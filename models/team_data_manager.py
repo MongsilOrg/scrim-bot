@@ -329,7 +329,7 @@ class TeamDataManager:
         if not (warning_manager and await warning_manager.ensure_connected()):
             return []
 
-        # 22시 이후 신청은 다음 날 스크림이라 오늘까지인 제한은 걸리지 않음
+        # 22시 이후 신청은 다음 날 스크림이라 오늘까지인 제한은 적용하지 않음
         check_time = datetime.combine(effective_scrim_date(current_time), current_time.timetz())
 
         # 닉네임만으로 검사하면 개명으로 우회 가능

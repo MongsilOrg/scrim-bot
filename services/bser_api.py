@@ -33,7 +33,7 @@ class BSERAPIClient:
     _mmr_cache: Dict[str, Dict[str, Any]] = {}
 
     def __init__(self, *, quiet: bool = False):
-        # quiet는 점검으로 본 주기에 선수별 실패 로그를 DEBUG로 내림
+        # quiet는 점검으로 판정한 주기에 선수별 실패 로그를 DEBUG로 내림
         self.quiet = quiet
         self.api_key = settings.BSER_API_KEY
         self.base_url = "https://open-api.bser.io/v1"
@@ -128,7 +128,7 @@ class BSERAPIClient:
                             await asyncio.sleep(wait_time + random.random())
                             continue
 
-                        # 점검이나 장애 때 5xx 본문은 JSON이 아닌 HTML이라 본문보다 상태를 먼저 봄
+                        # 점검이나 장애 때 5xx 본문은 JSON이 아닌 HTML이라 본문보다 상태 코드를 먼저 확인
                         if 500 <= status < 600:
                             if retries < self.MAX_RETRIES:
                                 retries += 1
@@ -188,7 +188,7 @@ class BSERAPIClient:
             del cls._nickname_cache[key]
 
     async def check_server_maintenance(self) -> bool:
-        # 패치 점검 중에는 닉네임 검색과 rank/uid가 멈춤. 랭킹 1위 닉네임 검색으로 판정하고 판정할 수 없으면 점검으로 봄
+        # 패치 점검 중에는 닉네임 검색과 rank/uid가 결과를 돌려주지 않음. 랭킹 1위 닉네임 검색으로 판정하고 판정할 수 없으면 점검으로 간주
         try:
             top = await self._request("GET", f"{self.base_url}/rank/top/{self.RANK_SEASON_ID}/3/10")
             ranks = (top or {}).get("topRanks") or []
@@ -252,7 +252,7 @@ class BSERAPIClient:
             return {"userRank": {"mmr": 0}}
 
         if code == 403:
-            # User Mismatch는 닉네임이 다른 계정으로 넘어간 경우라 캐시된 UID를 버려야 다음 조회에서 새 UID를 받음
+            # User Mismatch는 그 닉네임을 다른 계정이 쓰게 된 경우라 캐시된 UID를 버려야 다음 조회에서 새 UID를 받음
             self._forget_uid(uid)
             if log_once(f"rank403:{uid}"):
                 logger.warning(f"[API] 사용자 MMR 조회 거부 403 - UID: {uid}, 메시지: {data.get('message')}, 닉네임 캐시 삭제")

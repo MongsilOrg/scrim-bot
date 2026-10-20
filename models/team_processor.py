@@ -82,7 +82,7 @@ class TeamProcessor:
         return await asyncio.to_thread(self._load_seeds_data_sync)
 
     def _load_seeds_data_sync(self) -> bool:
-        """실패 시 seeds_data를 비우면 TTL 동안 시드팀 우선 선발이 빠짐."""
+        """실패 시 seeds_data를 비우면 TTL 동안 시드팀 우선 선발을 하지 않음."""
         try:
             if not self.gspread_spreadsheet:
                 self._initialize_gspread_client()

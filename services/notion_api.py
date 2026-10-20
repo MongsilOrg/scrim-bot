@@ -201,7 +201,7 @@ def _build_server_info(is_tournament: bool, broadcast: bool) -> dict:
 
 
 def _server_info_day(now_kst: datetime) -> tuple:
-    # check_notion_for_tags가 보는 두 날짜와 같아야 날짜가 바뀐 뒤 이전 판정을 쓰지 않음
+    # check_notion_for_tags가 확인하는 두 날짜와 같아야 날짜가 바뀐 뒤 이전 판정을 쓰지 않음
     return effective_scrim_date(now_kst), now_kst.date()
 
 
@@ -210,7 +210,7 @@ def _log_server_info_failure(e: Exception, fallback: str) -> None:
     transient = isinstance(e, (requests.ConnectionError, requests.Timeout)) or bool(status and (status >= 500 or status == 429))
     if not log_once(f"notion-server-info:{status or type(e).__name__}", 600):
         return
-    # 노션 쪽 일시 장애는 경고만. 인증이나 요청 오류는 손봐야 하므로 ERROR
+    # 노션 쪽 일시 장애는 경고만. 인증이나 요청 오류는 수정이 필요해 ERROR
     if transient:
         logger.warning(f"[노션] 서버 정보 조회 실패, {fallback} 사용: {e}")
     else:

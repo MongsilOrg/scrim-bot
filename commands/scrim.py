@@ -40,7 +40,7 @@ def request_dashboard_refresh() -> None:
 async def _debounced_dashboard_refresh() -> None:
     global _dashboard_refresh_task
     await asyncio.sleep(DASHBOARD_REFRESH_DELAY_SECONDS)
-    # 편집 중에 들어온 요청은 다음 편집으로 넘김
+    # 편집 중에 받은 요청은 다음 편집에서 처리
     _dashboard_refresh_task = None
 
     bot_manager = BotManager.get_instance()

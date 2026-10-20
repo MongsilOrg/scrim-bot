@@ -97,7 +97,7 @@ class AbsenceReasonModal(Modal):
 
 
 async def _ensure_schedule_ready(interaction: discord.Interaction, *, need_assignments: bool = False):
-    """통과하면 일정 매니저, 막히면 None."""
+    """통과하면 일정 매니저, 통과하지 못하면 None."""
     if await check_cooldown(interaction):
         return None
     if not is_admin(interaction.user):

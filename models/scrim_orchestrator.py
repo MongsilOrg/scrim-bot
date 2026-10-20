@@ -115,7 +115,7 @@ class ScrimOrchestrator:
                 await self._run_assignment()
             except Exception as e:
                 logger.error(f"[조편성] 자동 조편성 중 오류: {e}", exc_info=True)
-                # 조가 저장된 뒤에는 공지가 나갔을 수 있어 되돌리지 않고 이어하기에 맡김
+                # 조가 저장된 뒤에는 공지가 전송됐을 수 있어 되돌리지 않고 이어하기에 맡김
                 if self._manager.groups is None:
                     self._rollback_assignment()
                 await self._report_assignment_failure("조편성 처리 중 오류가 발생했습니다.")
@@ -165,7 +165,7 @@ class ScrimOrchestrator:
 
         team_data_manager.is_team_assignment_started = True
 
-        # MMR 갱신 중에는 취소가 열려 있어 팀 수가 줄 수 있음
+        # MMR 갱신 중에도 팀 취소가 가능해 팀 수가 줄 수 있음
         total_teams_current = len(team_data_manager.teams)
         if total_teams_current < settings.TEAMS_PER_GROUP:
             team_data_manager.is_team_assignment_started = False
@@ -298,7 +298,7 @@ class ScrimOrchestrator:
             'unmatched': [team_name for team_name, _, _ in unmatched_teams],
         }
         team_data_manager.save_backup()
-        # 공지와 역할 처리를 늦추지 않게 따로 돌림
+        # 공지와 역할 처리를 늦추지 않게 별도 태스크로 실행
         team_data_manager.spawn_task(record_assignment(
             groups, unmatched_teams, registered=len(team_data_manager.teams),
             guild=client.get_guild(settings.GUILD_ID) if client else None,
@@ -331,7 +331,7 @@ class ScrimOrchestrator:
             await service.send_global_announcement(guild, groups, unmatched_teams)
             self._mark_stage(STAGE_GLOBAL_NOTICE)
 
-        # 역할 재배정이 공지보다 늦으면 멘션과 채널 권한이 이전 조 멤버에게 감
+        # 역할 재배정이 공지보다 늦으면 멘션과 채널 권한이 이전 조 멤버에게 적용됨
         if STAGE_ROLES not in done:
             await service.handle_discord_roles(guild, groups)
             self._mark_stage(STAGE_ROLES)

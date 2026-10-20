@@ -11,7 +11,7 @@ from services.bser_api import BSERAPIClient
 
 logger = get_logger('validators')
 
-# 영문 경계가 없으면 Fastest, Latest, Contest도 걸림
+# 영문 경계가 없으면 Fastest, Latest, Contest도 일치함
 TEST_NICKNAME_PATTERN = re.compile(r'(?:^|[^a-z])test(?:[^a-z]|$)')
 
 

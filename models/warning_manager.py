@@ -563,7 +563,7 @@ class WarningManager:
             return None
 
     def _notify_lookup_failure(self) -> None:
-        """is_restricted는 스레드에서 돌아 로그 채널 전송을 봇 이벤트 루프에 넘김."""
+        """is_restricted는 스레드에서 실행되어 로그 채널 전송을 봇 이벤트 루프에 넘김."""
         now = time.monotonic()
         if (self._lookup_failure_notified_at is not None
                 and now - self._lookup_failure_notified_at < self.LOOKUP_FAILURE_NOTIFY_SECONDS):
@@ -650,7 +650,7 @@ class WarningManager:
     MY_SANCTION_HISTORY_LIMIT = 5
 
     async def get_member_sanctions(self, target_id: str) -> Optional[Dict]:
-        """대상ID가 같은 행만 집계, ID가 빈 옛 기록은 이름이 같아도 빠짐. None은 조회 실패."""
+        """대상ID가 같은 행만 집계, ID가 빈 옛 기록은 이름이 같아도 제외. None은 조회 실패."""
         target_id = str(target_id or '').strip()
         if not target_id or not await self.ensure_connected():
             return None

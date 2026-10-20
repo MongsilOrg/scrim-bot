@@ -153,7 +153,7 @@ class RoomCodeView(LayoutView):
 
 
 BAN_PREFIX = "밴: "
-# 배포 전에 올라온 공지의 밴 줄
+# 배포 전에 게시된 공지의 밴 줄
 LEGACY_BAN_PREFIX = "🚫 밴: "
 
 
@@ -231,7 +231,7 @@ REST_DAY_CHECK_TIMEOUT = 2.0
 
 
 async def _is_rest_day_today() -> bool:
-    # 버튼 응답 3초 제한. shield로 조회는 끝까지 돌려 캐시를 채움
+    # 버튼 응답 3초 제한. shield로 조회는 끝까지 실행해 캐시를 채움
     try:
         info = await asyncio.wait_for(asyncio.shield(get_rest_day_info()), REST_DAY_CHECK_TIMEOUT)
     except Exception:
@@ -241,7 +241,7 @@ async def _is_rest_day_today() -> bool:
 
 
 async def _sub_weather_denial(member: discord.Member, group_letter: str) -> str | None:
-    """고를 수 있으면 None, 막히면 거부 문구."""
+    """고를 수 있으면 None, 고를 수 없으면 거부 문구."""
     if is_admin(member):
         return None
     if not await _is_rest_day_today():
