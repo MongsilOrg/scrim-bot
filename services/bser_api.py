@@ -204,7 +204,7 @@ class BSERAPIClient:
             return True
 
     async def lookup_user_uid(self, user_nickname: str) -> Tuple[str, Optional[str]]:
-        """반환: UID_FOUND, UID_NOT_FOUND, UID_ERROR 중 하나와 UID. 점검 중에는 모든 닉네임이 UID_NOT_FOUND."""
+        """반환: UID_FOUND, UID_NOT_FOUND, UID_ERROR 중 하나와 UID. 점검 중에는 캐시에 없는 닉네임이 모두 UID_NOT_FOUND."""
         # 닉네임 조회 API는 대소문자 구분
         cache_key = self._get_cache_key("user/nickname", {"query": user_nickname})
         cached_result = self._get_from_nickname_cache(cache_key)

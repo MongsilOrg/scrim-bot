@@ -356,7 +356,7 @@ async def process_team_edit(
             original_team_name, new_team_data, new_team_mmr, enforce_rules=not is_roster_change
         )
         if not replaced:
-            # 모달이 열린 사이 팀이 취소되거나 개명된 경우
+            # 모달이 열린 사이 팀이 취소, 개명되었거나 마감 시각, 중복 검사에 걸린 경우
             await update_temp_message(temp_message, replace_reason, discord.Color.red())
             return
 
@@ -669,7 +669,7 @@ async def _apply_roster_warnings(
     original_players: List[str],
     reason: str,
 ) -> str:
-    """반환: 결과 카드에 추가할 주의 부여 결과, 처리 실패면 빈 문자열."""
+    """반환: 결과 카드에 추가할 주의 부여 결과, 처리 실패면 실패 안내 문구."""
     try:
         admin_name = interaction.user.display_name or interaction.user.name
         warning_manager = BotManager.get_instance().get_warning_manager()
