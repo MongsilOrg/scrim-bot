@@ -424,7 +424,7 @@ class TeamProcessor:
 
                 if excluded_teams:
                     excluded_team_names = [team[0] for team in excluded_teams]
-                    logger.warning(f"[조편성] 예비팀 - {len(excluded_team_names)}개: {', '.join(excluded_team_names[:10])}{'...' if len(excluded_team_names) > 10 else ''}")
+                    logger.warning(f"[조편성] 예비팀 - {len(excluded_team_names)}개: {', '.join(excluded_team_names[:10])}{f' 외 {len(excluded_team_names) - 10}개' if len(excluded_team_names) > 10 else ''}")
             else:
                 final_teams = all_teams
 

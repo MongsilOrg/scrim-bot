@@ -13,7 +13,7 @@ def _notice(weather_line):
 class SubWeatherFromChannelTest(unittest.IsolatedAsyncioTestCase):
     def test_chosen_sub_weather(self):
         self.assertEqual(room_code._chosen_sub_weather(_notice("날씨: `비`, `강풍`\n시작: `20:00`")), "강풍")
-        self.assertIsNone(room_code._chosen_sub_weather(_notice("날씨: `비`, 서브 날씨는 아래 버튼으로 고릅니다")))
+        self.assertIsNone(room_code._chosen_sub_weather(_notice("날씨: `비`, 서브 날씨는 아래 버튼으로 골라주세요")))
         self.assertEqual(room_code._chosen_sub_weather(_notice("🌤️ `비` / `자색 안개`")), "자색 안개")
 
     async def test_deleted_notice_frees_weather(self):

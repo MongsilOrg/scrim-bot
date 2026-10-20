@@ -75,7 +75,7 @@ async def send_sanction_dm(
             ]
             dm_view = custom_view(
                 "🚨 경고 알림",
-                f"주의가 {WarningManager.CAUTION_TO_WARNING_COUNT}회 쌓여 **경고**가 부여되었습니다.",
+                f"주의가 {WarningManager.CAUTION_TO_WARNING_COUNT}회 누적되어 **경고**가 부여되었습니다.",
                 discord.Color.red(),
                 fields=fields,
             )
@@ -91,7 +91,7 @@ async def send_sanction_dm(
         else:
             fields = [
                 ("사유", reason),
-                ("안내", f"주의가 {WarningManager.CAUTION_TO_WARNING_COUNT}회 쌓이면 경고로 바뀌고 스크림 참여가 제한됩니다."),
+                ("안내", f"주의가 {WarningManager.CAUTION_TO_WARNING_COUNT}회 누적되면 경고로 전환되고 스크림 참여가 제한됩니다."),
             ]
             dm_view = custom_view("⚡ 주의 알림", "**주의**가 부여되었습니다.", CAUTION_COLOR, fields=fields)
 
@@ -241,7 +241,7 @@ class WarningReasonModal(Modal):
                     ]
                     view_result = custom_view(
                         "🚨 경고 자동 부여 완료",
-                        f"주의가 {WarningManager.CAUTION_TO_WARNING_COUNT}회 쌓여 경고가 자동 부여되었습니다.",
+                        f"주의가 {WarningManager.CAUTION_TO_WARNING_COUNT}회 누적되어 경고가 자동 부여되었습니다.",
                         discord.Color.red(),
                         fields=fields,
                     )
@@ -260,7 +260,7 @@ class WarningReasonModal(Modal):
                     fields = [
                         ("대상", target_line),
                         ("사유", reason),
-                        ("참고", f"주의가 {WarningManager.CAUTION_TO_WARNING_COUNT}회 쌓이면 경고로 자동 전환됩니다."),
+                        ("참고", f"주의가 {WarningManager.CAUTION_TO_WARNING_COUNT}회 누적되면 경고로 자동 전환됩니다."),
                         *follow_up,
                     ]
                     view_result = custom_view("⚡ 주의 부여 완료", "", CAUTION_COLOR, fields=fields)

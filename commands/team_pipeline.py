@@ -243,7 +243,7 @@ async def process_team_registration(
                              f"본인이 속한 팀만 신청할 수 있습니다.\n\n"
                              f"**지금 서버 별명**: {submitter_name}\n"
                              f"**입력한 닉네임**: {', '.join(all_members) if all_members else '없음'}\n\n"
-                             f"본인의 서버 별명을 선수나 스태프 칸에 넣어주세요.")
+                             f"본인의 서버 별명을 선수나 스태프 칸에 입력해주세요.")
                 notice = build_test_account_notice(split_test_nicknames(all_members)[1])
                 if notice:
                     error_msg = f"{error_msg}\n\n{notice}"

@@ -30,8 +30,8 @@ assert len(MAIN_WEATHERS) == settings.TOTAL_ROUNDS, (
 )
 
 ROUND_OVERFLOW_TEXT = (
-    f"오늘 {settings.TOTAL_ROUNDS}라운드 공지를 모두 올렸습니다.\n"
-    "번호가 틀렸다면 운영진에게 알려주세요."
+    f"오늘 {settings.TOTAL_ROUNDS}라운드 공지를 모두 게시했습니다.\n"
+    "라운드 번호가 틀렸다면 운영진에게 알려주세요."
 )
 
 
@@ -295,7 +295,7 @@ async def _post_notice(interaction: discord.Interaction, send_kwargs: dict, room
         except NOTICE_RETRYABLE_ERRORS as e:
             logger.warning(f"[명령어] 방코드 공지 전송 오류 - 시도 {attempt}/{NOTICE_MAX_ATTEMPTS}: {e}")
             if await _notice_already_posted(channel, room_code, bot_user, interaction.created_at):
-                logger.info("[명령어] 오류 응답이었지만 공지는 이미 올라감 - 재전송 생략")
+                logger.info("[명령어] 오류 응답이었지만 공지는 이미 게시됨 - 재전송 생략")
                 return True
             if attempt < NOTICE_MAX_ATTEMPTS:
                 await asyncio.sleep(attempt)
@@ -324,11 +324,11 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
 
         group_letter = get_group_letter(interaction.channel.id)
         if not group_letter:
-            await send_response(interaction, error_view("방 코드는 조별 채널에서만 올릴 수 있습니다."))
+            await send_response(interaction, error_view("방 코드는 조별 채널에서만 공지할 수 있습니다."))
             return
         if not _can_post_room_code(interaction.user, group_letter):
             logger.info(f"[명령어] 방코드 권한 없음 - 사용자: {interaction.user}, 조: {group_letter}조")
-            await send_response(interaction, permission_error_view(f"관리자와 {group_letter}조 참가자만 방 코드를 올릴 수 있습니다."))
+            await send_response(interaction, permission_error_view(f"관리자와 {group_letter}조 참가자만 방 코드를 공지할 수 있습니다."))
             return
 
         # 채널 기록 스캔과 CSV 집계가 3초 응답 제한을 넘김
@@ -366,7 +366,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
         elif len(available) == 0:
             weather_value = f"`{main_weather}`"
         else:
-            weather_value = f"`{main_weather}`, 서브 날씨는 아래 버튼으로 고릅니다"
+            weather_value = f"`{main_weather}`, 서브 날씨는 아래 버튼으로 골라주세요"
             weather_options = available
 
         ban_display = None
@@ -395,7 +395,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
 
         posted = await _post_notice(interaction, send_kwargs, cleaned_room_code)
         if not posted:
-            await send_response(interaction, error_view("방 코드 공지를 올리지 못했습니다.\n잠시 뒤 다시 입력해주세요."))
+            await send_response(interaction, error_view("방 코드를 공지하지 못했습니다.\n잠시 뒤 다시 입력해주세요."))
             return
 
         logger.debug(f"[명령어] Round {round_number} 방코드 공지 완료: {cleaned_room_code}")

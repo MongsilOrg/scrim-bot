@@ -22,7 +22,7 @@ def _view_text(view):
     return "\n".join(texts)
 
 
-CLOSED_TEXT = "시간이 지나 닫혔습니다.\n버튼을 다시 눌러주세요."
+CLOSED_TEXT = "제한 시간이 지났습니다.\n버튼을 다시 눌러주세요."
 
 
 class TimeoutViewTextTest(unittest.TestCase):

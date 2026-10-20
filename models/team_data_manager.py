@@ -259,7 +259,7 @@ class TeamDataManager:
 
         try:
             task.cancel()
-            logger.info(f"{label}: 태스크 취소 요청됨, 종료 대기 중...")
+            logger.info(f"{label}: 태스크 취소 요청됨, 종료 대기 중")
 
             try:
                 await asyncio.wait_for(task, timeout=timeout)
@@ -571,7 +571,7 @@ class TeamDataManager:
             conflicts = self.find_member_conflicts(team_members, exclude_team=exclude_team)
             if conflicts:
                 detail_str = "\n".join(f"**{member}**: {other}" for member, other in conflicts)
-                return False, f"다른 팀에 이미 신청된 닉네임이 있습니다.\n{detail_str}\n위 닉네임을 빼거나 기존 팀에서 뺀 뒤 다시 입력해주세요."
+                return False, f"다른 팀에 이미 신청된 닉네임이 있습니다.\n{detail_str}\n위 닉네임을 빼거나 기존 팀에서 제외한 뒤 다시 입력해주세요."
 
             return True, ""
 

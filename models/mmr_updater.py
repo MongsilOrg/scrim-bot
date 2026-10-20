@@ -37,7 +37,7 @@ class MmrUpdater:
         try:
             if self._render_waiters > 0:
                 # 대기 중인 뒤 요청이 더 새 상태로 그림
-                logger.debug("[MMR메시지] 뒤 요청에 합쳐 갱신 생략")
+                logger.debug("[MMR메시지] 이후 요청과 병합해 갱신 생략")
                 return
             await self._render_mmr_message(channel, mmr_fail_count)
         finally:
@@ -406,7 +406,7 @@ class MmrUpdater:
                     f"확인 안 된 닉네임: **{', '.join(invalid_members)}**\n\n"
                     f"게임 안에서 닉네임을 확인하고 "
                     f"<#{settings.SCRIM_CHANNEL_ID}> 채널의 **신청 및 수정** 버튼으로 "
-                    f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시 전에 고쳐주세요."
+                    f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시 전에 수정해주세요."
                 )
                 accent = discord.Color.red()
 

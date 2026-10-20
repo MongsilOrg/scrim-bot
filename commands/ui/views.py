@@ -50,7 +50,7 @@ def dashboard_status_line(phase: str, team_count: int) -> str:
             f"{settings.TEAM_REGISTRATION_DEADLINE_HOUR}시에 신청이 마감되었습니다.\n"
             f"{settings.NEXT_SCRIM_OPEN_HOUR}시에 다음 스크림 신청이 열립니다."
         )
-    return f"현재 {team_count}팀 신청, {settings.TEAMS_PER_GROUP}팀 미만이면 취소됩니다."
+    return f"현재 {team_count}팀이 신청했습니다.\n{settings.TEAMS_PER_GROUP}팀 미만이면 스크림이 취소됩니다."
 
 
 def my_sanctions_view(summary: dict) -> LayoutView:

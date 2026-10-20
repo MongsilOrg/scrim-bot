@@ -108,7 +108,7 @@ def check_duplicate_members(players: List[str], staff: List[str]) -> Tuple[bool,
 
         if duplicates:
             duplicate_list = ', '.join(dict.fromkeys(duplicates))
-            return False, f"같은 닉네임이 여러 번 들어 있습니다: **{duplicate_list}**\n한 번씩만 입력해주세요."
+            return False, f"같은 닉네임을 여러 번 입력했습니다: **{duplicate_list}**\n한 번씩만 입력해주세요."
         
         return True, ""
         
@@ -210,7 +210,7 @@ def build_test_account_notice(nicknames: List[str]) -> str:
     )
 
 
-MEMBER_NAME_RULE = "입력한 닉네임은 서버 별명과 게임 닉네임에 모두 맞아야 합니다."
+MEMBER_NAME_RULE = "입력한 닉네임은 서버 별명, 게임 닉네임과 모두 같아야 합니다."
 GUILD_NICKNAME_ERROR = "서버 별명과 다른 닉네임: **{names}**"
 GAME_NICKNAME_ERROR = "게임에서 찾지 못한 닉네임: **{names}**"
 API_UNAVAILABLE_NOTICE = "게임 서버가 응답하지 않아 게임 닉네임을 확인하지 못했습니다.\n잠시 후 다시 시도해주세요."

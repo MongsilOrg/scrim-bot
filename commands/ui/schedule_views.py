@@ -229,7 +229,7 @@ class ScheduleView(LayoutView):
             schedule_mgr.save_backup()
             logger.info(f"[일정] 편성 취소 - 관리자: {confirm_interaction.user}")
             await _refresh_schedule_status(confirm_interaction)
-            return success_view("편성과 투입 기록을 지웠습니다.", title="↩️ 편성 취소")
+            return success_view("편성과 투입 기록을 삭제했습니다.", title="↩️ 편성 취소")
 
         async def do_cancel(btn_interaction: discord.Interaction):
             deploy_count = len(schedule_mgr.actual_deployments)
@@ -256,9 +256,9 @@ class ScheduleView(LayoutView):
         back_btn.callback = do_back
 
         deploy_count = len(schedule_mgr.actual_deployments)
-        desc = "재편성 시 기존 편성을 덮어씁니다."
+        desc = "재편성하면 기존 편성을 삭제하고 다시 배정합니다."
         if deploy_count:
-            desc += f"\n편성 취소 시 투입 기록 {deploy_count}건도 함께 삭제됩니다."
+            desc += f"\n편성을 취소하면 투입 기록 {deploy_count}건도 함께 삭제됩니다."
 
         menu_view = TimeoutEditView()
         menu_view.add_item(Container(
@@ -283,7 +283,7 @@ def _readjust_notice(schedule_mgr, changes) -> str:
     parts = []
     for day, added, removed in changes:
         names = [f"{schedule_mgr.admin_names.get(uid, uid)} 추가" for uid in added]
-        names += [f"{schedule_mgr.admin_names.get(uid, uid)} 빠짐" for uid in removed]
+        names += [f"{schedule_mgr.admin_names.get(uid, uid)} 제외" for uid in removed]
         parts.append(f"{WEEKDAYS[day]}요일 {', '.join(names)}")
     if not parts:
         return ""

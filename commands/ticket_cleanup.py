@@ -69,7 +69,7 @@ async def cleanup_tickets(client: ScrimBot) -> None:
                 at = int((now + DELETE_AFTER_NOTICE).timestamp())
                 await channel.send(
                     view=warning_view(
-                        f"{mentions} 이틀 동안 대화가 없어 <t:{at}:f>에 삭제됩니다.\n문의가 남아 있으면 메시지를 남겨주세요.",
+                        f"{mentions} 이틀 동안 대화가 없어 <t:{at}:f>에 티켓을 삭제합니다.\n문의할 내용이 남아 있으면 메시지를 보내주세요.",
                         title=NOTICE_TITLE,
                     ),
                     allowed_mentions=discord.AllowedMentions(users=True),

@@ -571,7 +571,7 @@ class WarningManager:
         self._lookup_failure_notified_at = now
         text = (
             "⚠️ 경고 시트 조회에 실패했고 캐시도 없어 제재 여부를 확인하지 못했습니다.\n"
-            "조회가 될 때까지 팀 등록은 제재 확인 없이 통과합니다."
+            "조회에 성공할 때까지 팀 등록에서 제재 여부를 확인하지 않습니다."
         )
         try:
             client = BotManager.get_instance().get_client()

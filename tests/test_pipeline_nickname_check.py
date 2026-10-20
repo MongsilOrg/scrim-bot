@@ -53,7 +53,7 @@ class CombinedNicknameCheckTest(unittest.IsolatedAsyncioTestCase):
         api.assert_awaited_once()
         self.assertIn("서버 별명과 다른 닉네임: **가**", message)
         self.assertIn("게임에서 찾지 못한 닉네임: **나**", message)
-        self.assertIn("서버 별명과 게임 닉네임에 모두 맞아야", message)
+        self.assertIn("서버 별명, 게임 닉네임과 모두 같아야", message)
 
     async def test_guild_failure_still_fails_during_maintenance(self):
         result, message, _ = await self._run(guild_missing=["가"], api_result=(True, [], True))
