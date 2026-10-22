@@ -102,7 +102,7 @@ def build_rest_day_guide_view(team_name: str, user_id: Optional[str] = None) -> 
         "📢 **공휴일, 주말 스크림 자율 진행 안내**\n"
         "공휴일과 주말 스크림은 레이팅컷 기준 조편성까지만 진행합니다.\n"
         "아래 링크를 확인한 뒤 참여해주세요.\n\n"
-        f"`{team_name}` 팀은 사설방 개설 후 양식에 맞춰 업로드해주세요.\n"
+        f"`{team_name}` 팀은 사설방을 만든 뒤 양식에 맞춰 경기 결과 CSV를 올려주세요.\n"
         f"{settings.CUSTOM_GAME_GUIDE_LINK}\n\n"
         "공휴일, 주말 스크림 중 발생한 문제는 당일 안에 문의해주세요."
     )
@@ -124,7 +124,7 @@ class TeamSelectionView(TimeoutEditView):
         self.is_empty = not parent_view.group_teams
 
         self.add_item(Container(
-            TextDisplay(content="## 팀 선택\n변경할 팀을 선택해주세요."),
+            TextDisplay(content="## 팀 선택"),
             Separator(),
             TextDisplay(content=FOOTER_TEXT),
             accent_colour=Color.blue(),

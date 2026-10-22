@@ -6,7 +6,7 @@ import discord
 from discord.ui import Container, LayoutView, MediaGallery, Separator, TextDisplay
 
 from commands.ui.roster_views import GroupRosterView, build_rest_day_guide_view
-from utils.layout_helpers import error_view, FOOTER_TEXT
+from utils.layout_helpers import error_view, format_kr_date, FOOTER_TEXT
 from config.logging_config import get_logger
 from config.settings import settings
 from services.notion_api import get_server_info
@@ -38,11 +38,11 @@ class DiscordService:
                 logger.error("[Discord] 전체 공지 채널을 찾을 수 없음")
                 return
 
-            date_str = get_current_kst_time().strftime('%m.%d')
+            date_str = format_kr_date(get_current_kst_time())
 
             view = LayoutView()
             view.add_item(Container(
-                TextDisplay(content=f"## 📢 {date_str} {settings.SCRIM_START_HOUR}시 스크림 조편성입니다"),
+                TextDisplay(content=f"## 📢 {date_str} {settings.SCRIM_START_HOUR}시 스크림 조편성 결과"),
                 accent_colour=discord.Color.green(),
             ))
 
@@ -153,7 +153,7 @@ class DiscordService:
         except Exception as e:
             logger.error(f"[Discord] 조별 공지 전송 실패 - 채널: {channel.name}: {e}", exc_info=True)
             try:
-                await channel.send(view=error_view(f"조별 공지 전송 중 오류가 발생했습니다.\n{message}"))
+                await channel.send(view=error_view(f"조별 공지를 보내지 못했습니다.\n운영진이 확인하고 있습니다.\n{message}"))
             except Exception as e2:
                 logger.error(f"[Discord] 에러 메시지 전송 실패 - 채널: {channel.name}: {e2}", exc_info=True)
 
@@ -441,7 +441,7 @@ class DiscordService:
 
     def create_group_announcement_message(self, group_letter: str, group: List[Tuple[str, "TeamData", float]], info: dict) -> str:
         current_time = get_current_kst_time()
-        date_str = f"{current_time.strftime('%m.%d')}({'월화수목금토일'[current_time.weekday()]})"
+        date_str = format_kr_date(current_time)
 
         message = f"## 📢 {date_str} {settings.SCRIM_START_HOUR}시 스크림 {group_letter}조 조편성 결과\n{info['operate']}"
 

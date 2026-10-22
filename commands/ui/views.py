@@ -32,6 +32,7 @@ logger = get_logger('views')
 ASSIGNMENT_CLOSED_CANCEL_MSG = "조편성이 끝나 팀을 취소할 수 없습니다."
 ASSIGNMENT_CLOSED_FORCE_CANCEL_MSG = "조편성이 끝나 강제 취소할 수 없습니다."
 NO_TEAMS_MSG = "신청된 팀이 없습니다."
+NO_OWN_TEAM_MSG = "신청한 팀이 없습니다."
 OPEN_INPUT_ERROR_MSG = "입력 창을 여는 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요."
 TEAM_ALREADY_GONE_MSG = "이미 취소된 팀입니다."
 MODAL_SERVER_ERROR_MSG = "Discord 서버 오류로 입력 창을 열지 못했습니다.\n잠시 후 다시 시도해주세요."
@@ -222,7 +223,7 @@ class TeamInputView(LayoutView):
             
             if not user_team:
                 logger.info(f"[팀취소시도] 팀 없음 | 요청자: {interaction.user}")
-                await send_error_message(interaction, NO_TEAMS_MSG)
+                await send_error_message(interaction, NO_OWN_TEAM_MSG)
                 return
 
             logger.info(f"[팀취소시도] {user_team} | 요청자: {interaction.user}")
@@ -372,6 +373,7 @@ class TeamInputView(LayoutView):
                     accent_colour=Color.orange(),
                     error_text="조편성을 다시 실행하지 못했습니다.\n잠시 후 다시 시도해주세요.",
                     on_confirm=self._rerun_assignment,
+                    back_text="실행하지 않았습니다.",
                 )
                 view.message = await send_response(interaction, view)
                 return
@@ -465,9 +467,11 @@ class ConfirmView(_TimeoutEditView):
         confirm_emoji: Optional[str] = None,
         error_text: str,
         on_confirm,
+        back_text: str = "취소하지 않았습니다.",
     ):
         super().__init__()
         self._on_confirm = on_confirm
+        self._back_text = back_text
         self._error_text = error_text
         self._title = title
 
@@ -510,7 +514,7 @@ class ConfirmView(_TimeoutEditView):
         self.stop()
         try:
             logger.info(f"[뷰] 확인 돌아가기 - {self._title} | 사용자: {interaction.user}")
-            await interaction.response.edit_message(view=info_view("취소하지 않았습니다.", title="↩️ 돌아가기"))
+            await interaction.response.edit_message(view=info_view(self._back_text, title="↩️ 돌아가기"))
         except Exception as e:
             logger.error(f"[뷰] 돌아가기 콜백 실패: {e}", exc_info=True)
 
@@ -528,7 +532,7 @@ class ForceCancelSelectView(_TimeoutEditView):
         self.parent_view = parent_view
 
         self.add_item(Container(
-            TextDisplay(content="## 🛠️ 팀 강제 취소\n취소할 팀을 선택해주세요."),
+            TextDisplay(content="## 🛠️ 팀 강제 취소"),
             Separator(),
             TextDisplay(content=FOOTER_TEXT),
             accent_colour=Color.orange(),

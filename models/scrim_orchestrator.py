@@ -6,7 +6,7 @@ import discord
 
 from bot.manager import BotManager
 from commands.ui.roster_views import GroupRosterView
-from utils.layout_helpers import custom_view, warning_view
+from utils.layout_helpers import custom_view, format_kr_date, warning_view
 from config.logging_config import get_logger
 from config.settings import settings
 from services.holidays_api import get_rest_day_info
@@ -192,7 +192,9 @@ class ScrimOrchestrator:
                 logger.error("[조편성] 스크림 채널을 찾을 수 없어 취소 공지 생략")
                 return
 
-            date_str = f"{team_data_manager.scrim_month}/{team_data_manager.scrim_day}"
+            date_str = format_kr_date(
+                date(get_current_kst_time().year, team_data_manager.scrim_month, team_data_manager.scrim_day)
+            )
             mentions = " ".join(
                 f"<@{team.user_id}>" for team in team_data_manager.teams.values() if team.user_id
             )
@@ -229,12 +231,15 @@ class ScrimOrchestrator:
             if log_channel:
                 mentions = " ".join(f"<@&{role_id}>" for role_id in sorted(settings.ADMIN_ROLE_IDS))
                 text = (
-                    f"⚠️ **조편성 확인 필요**\n{reason}\n"
+                    f"{reason}\n"
                     "원인을 확인한 뒤 스크림 채널 관리 버튼에서 조편성을 다시 실행해주세요."
                 )
                 if mentions:
                     text = f"{mentions}\n{text}"
-                await log_channel.send(text, allowed_mentions=discord.AllowedMentions(roles=True))
+                await log_channel.send(
+                    view=warning_view(text, title="⚠️ 조편성 확인 필요"),
+                    allowed_mentions=discord.AllowedMentions(roles=True),
+                )
             else:
                 logger.error(f"[조편성] 로그 채널을 찾을 수 없어 운영진 알림 생략 - 채널 ID: {settings.LOG_CHANNEL_ID}")
         except Exception as e:

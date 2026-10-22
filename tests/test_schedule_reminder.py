@@ -38,7 +38,7 @@ class ScheduleReminderTest(unittest.IsolatedAsyncioTestCase):
     async def test_mentions_only_non_responders(self):
         sent, send = await self._run()
         self.assertEqual(sent, 2)
-        text = send.await_args.args[0]
+        text = send.await_args.kwargs['view'].children[0].children[0].content
         self.assertIn("<@2> <@3>", text)
         self.assertNotIn("<@1>", text)
 

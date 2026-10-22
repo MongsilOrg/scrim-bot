@@ -9,7 +9,7 @@ from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
 from utils.helpers import get_current_kst_time
-from utils.layout_helpers import FOOTER_TEXT
+from utils.layout_helpers import FOOTER_TEXT, warning_view
 
 from services.bser_api import UID_ERROR, UID_NOT_FOUND, BSERAPIClient
 from services.image_generator import TOURNAMENT_COLOR, ImageGenerator
@@ -70,9 +70,9 @@ class MmrUpdater:
 
             update_time = mgr._last_success_time or get_current_kst_time().strftime('%H:%M')
             if mgr.is_maintenance:
-                desc = f"서버 점검 중 / 마지막 갱신: `{update_time}`"
+                desc = f"마지막 갱신 `{update_time}`, 서버 점검 중"
             else:
-                desc = f"총 **{len(mgr.teams)}**팀 / 마지막 갱신: `{update_time}`"
+                desc = f"총 **{len(mgr.teams)}**팀, 마지막 갱신 `{update_time}`"
                 if mmr_fail_count > 0:
                     desc += f"\n{mmr_fail_count}개 팀 MMR 갱신 실패"
 
@@ -355,7 +355,6 @@ class MmrUpdater:
             return
         applicant = f"<@{team_data.user_id}>" if team_data.user_id else "없음"
         content = (
-            f"⚠️ 점검 해제 뒤 닉네임 확인 실패\n"
             f"팀: **{team_name}**\n"
             f"확인 안 된 닉네임: {', '.join(invalid_members)}\n"
             f"신청자: {applicant}, DM {'발송함' if dm_sent else '발송 못 함'}"
@@ -363,7 +362,10 @@ class MmrUpdater:
         if not dm_sent:
             content += "\n신청자에게 직접 알려주세요."
         try:
-            await channel.send(content, allowed_mentions=discord.AllowedMentions.none())
+            await channel.send(
+                view=warning_view(content, title="⚠️ 점검 해제 뒤 닉네임 확인 실패"),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
         except Exception as e:
             logger.warning(f"[점검해제] 로그 채널 알림 실패 - {team_name}: {e}")
 

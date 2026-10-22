@@ -60,7 +60,7 @@ class SanctionTextTest(unittest.TestCase):
         text = warning_modals._restriction_summary(
             {"restricted_until": "2026-10-09", "warning_count": 2, "duration_days": 3}
         )
-        self.assertEqual(text, "**10월 9일 금요일**까지 스크림에 참여할 수 없습니다.\n누적 경고 2회, 제한 3일")
+        self.assertEqual(text, "**10월 9일 금요일**까지 스크림에 참가할 수 없습니다.\n누적 경고 2회, 제한 3일")
 
     def test_missing_values(self):
         self.assertIsNone(FORBIDDEN.search(warning_modals._restriction_summary({})))

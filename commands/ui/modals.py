@@ -8,6 +8,7 @@ from config.logging_config import get_logger
 from models.team_data import TeamData
 from commands.team_pipeline import process_team_edit, process_team_registration
 from utils.layout_helpers import processing_view, send_error_message
+from utils.validators import MEMBER_NAME_RULE
 
 if TYPE_CHECKING:
     from .roster_views import GroupRosterView
@@ -16,7 +17,7 @@ if TYPE_CHECKING:
 logger = get_logger('modals')
 
 
-MEMBER_INPUT_DESCRIPTION = "서버 별명과 게임 닉네임이 둘 다 이 이름과 같아야 합니다."
+MEMBER_INPUT_DESCRIPTION = MEMBER_NAME_RULE
 MEMBER_INPUT_PLACEHOLDER = "한 줄에 한 명씩 입력해주세요"
 
 

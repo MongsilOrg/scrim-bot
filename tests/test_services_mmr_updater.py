@@ -127,7 +127,7 @@ class VerifyUnverifiedTeamsTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('**신청 및 수정** 버튼으로', text)
         self.assertIn(f'{mmr_updater.settings.TEAM_REGISTRATION_DEADLINE_HOUR}시 전에 수정해주세요.', text)
         self.mgr.client.get_channel.assert_called_with(mmr_updater.settings.LOG_CHANNEL_ID)
-        log_text = self.log_channel.send.await_args.args[0]
+        log_text = self.log_channel.send.await_args.kwargs['view'].children[0].children[0].content
         self.assertIn('나', log_text)
         self.assertIn('<@42>', log_text)
         self.tp.fetch_team_mmr.assert_not_awaited()

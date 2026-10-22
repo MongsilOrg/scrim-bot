@@ -8,6 +8,7 @@ import discord
 from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
+from utils.layout_helpers import info_view
 from utils.helpers import build_member_lookup, effective_scrim_date, get_current_kst_time
 from utils.validators import member_name_keys, normalize_nickname_for_comparison, normalize_team_name
 
@@ -413,11 +414,14 @@ class TeamDataManager:
             emoji = ACTION_EMOJI.get(action_type, "📌")
             unix_ts = int(timestamp.timestamp())
 
-            msg = f"{emoji} <t:{unix_ts}:t> **{team_name}** - {user.mention}"
+            msg = f"<t:{unix_ts}:t> **{team_name}** - {user.mention}"
             if detail:
                 msg += f" / {detail}"
 
-            await channel.send(msg)
+            await channel.send(
+                view=info_view(msg, title=f"{emoji} 팀 {action_type}"),
+                allowed_mentions=discord.AllowedMentions(users=True),
+            )
         except Exception as e:
             logger.error(f"[팀데이터] 로그 채널 전송 실패: {e}", exc_info=True)
 

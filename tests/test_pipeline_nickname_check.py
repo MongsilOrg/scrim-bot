@@ -163,7 +163,7 @@ class ModalGuidanceTest(unittest.IsolatedAsyncioTestCase):
         labels = [c for c in components if c.get("type") == 18]
         self.assertEqual(len(labels), 2)
         for label in labels:
-            self.assertIn("서버 별명과 게임 닉네임", label["description"])
+            self.assertIn("서버 별명, 게임 닉네임", label["description"])
             self.assertLessEqual(len(label["description"]), 100)
 
     async def test_registration_input_prefers_failed_draft(self):

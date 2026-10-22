@@ -197,7 +197,7 @@ class ResumeAssignmentTest(AssignmentHarness):
         await mgr.start_team_assignment()
 
         self.assertIsNone(mgr.last_auto_assignment)
-        alert = self.log_channel.send.await_args.args[0]
+        alert = self.log_channel.send.await_args.kwargs['view'].children[0].children[0].content
         self.assertIn('<@&77>', alert)
         self.assertIn('B조', alert)
 
@@ -236,7 +236,7 @@ class AssignmentFailureTest(AssignmentHarness):
         self.assertIsNone(mgr.groups)
         self.assertEqual(service.calls, [])
         alert = self.log_channel.send.await_args
-        self.assertIn('<@&77>', alert.args[0])
+        self.assertIn('<@&77>', alert.kwargs['view'].children[0].children[0].content)
         self.assertTrue(alert.kwargs['allowed_mentions'].roles)
         self.scrim_channel.send.assert_awaited_once()
         mgr.mmr_update_loop.assert_awaited()
@@ -249,7 +249,7 @@ class AssignmentFailureTest(AssignmentHarness):
 
         await mgr.start_team_assignment()
 
-        self.assertNotIn('<@&', self.log_channel.send.await_args.args[0])
+        self.assertNotIn('<@&', self.log_channel.send.await_args.kwargs['view'].children[0].children[0].content)
 
     async def test_missing_guild_alerts_and_resumes_later(self):
         mgr = self.make_manager()

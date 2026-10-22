@@ -187,7 +187,7 @@ def _build_server_info(is_tournament: bool, broadcast: bool) -> dict:
     server_type = "Tournament" if is_tournament else "Live"
     broadcast_emoji = "📡" if broadcast else "🚫"
     broadcast_status = "송출 가능" if broadcast else "송출 불가"
-    operate = f"{server_emoji} {server_type} 서버 | {broadcast_emoji} {broadcast_status}"
+    operate = f"{server_emoji} {server_type} 서버, {broadcast_emoji} {broadcast_status}"
 
     return {
         'is_tournament': is_tournament,

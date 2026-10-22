@@ -7,7 +7,7 @@ from bot.manager import BotManager
 from commands.schedule import setup_schedule_dashboard
 from commands.ticket_cleanup import setup_ticket_cleanup
 from commands.scrim import setup_scrim_dashboard
-from utils.layout_helpers import error_view, image_response_view, custom_view, send_response
+from utils.layout_helpers import error_view, format_kr_date, image_response_view, custom_view, send_response
 from config.logging_config import get_logger
 from config.settings import settings
 from services.image_generator import ImageGenerator
@@ -135,7 +135,7 @@ async def _process_csv_attachments(message: discord.Message) -> None:
 
     group_letter = get_group_letter(channel.id)
     group_info = f"{group_letter}조" if group_letter else "알 수 없음"
-    date_str = now_kst.strftime('%m월 %d일')
+    date_str = format_kr_date(now_kst)
 
     team_data = aggregate_team_scores(csv_data_list)
     if not team_data:
@@ -160,14 +160,14 @@ async def _process_csv_attachments(message: discord.Message) -> None:
 
 
 def _build_score_view(current_round_count: int, group_info: str, date_str: str) -> 'LayoutView':
-    title = f"📊 스크림 결과 - {current_round_count}R - {group_info} {date_str}"
+    title = f"📊 {date_str} {group_info} {current_round_count}라운드 스크림 결과"
     return image_response_view(title, "", f"attachment://{SCORE_IMAGE_FILENAME}", discord.Color.blue())
 
 
 def _build_gameid_view(csv_data_list: List[CSVRow], group_info: str, date_str: str) -> 'LayoutView':
     lines = [f"**{round_num}R**: `{game_id}`" for round_num, (game_id, _, _) in enumerate(csv_data_list, 1)]
     return custom_view(
-        f"🎮 GameId 정보 - {group_info} {date_str}",
+        f"🎮 {date_str} {group_info} 게임 ID",
         "\n".join(lines),
         discord.Color.blue(),
     )

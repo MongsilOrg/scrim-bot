@@ -239,11 +239,10 @@ async def process_team_registration(
         if not has_test_account:
             submitter_name = submitter.display_name
             if not validate_discord_user_in_team(team_data, submitter):
-                error_msg = (f"신청하는 사람의 서버 별명이 선수나 스태프 칸에 없습니다.\n"
-                             f"본인이 속한 팀만 신청할 수 있습니다.\n\n"
+                error_msg = (f"본인이 속한 팀만 신청할 수 있습니다.\n\n"
                              f"**지금 서버 별명**: {submitter_name}\n"
                              f"**입력한 닉네임**: {', '.join(all_members) if all_members else '없음'}\n\n"
-                             f"본인의 서버 별명을 선수나 스태프 칸에 입력해주세요.")
+                             f"본인 서버 별명을 선수나 스태프 칸에 입력해주세요.")
                 notice = build_test_account_notice(split_test_nicknames(all_members)[1])
                 if notice:
                     error_msg = f"{error_msg}\n\n{notice}"
@@ -521,7 +520,7 @@ async def _send_edit_result(
     if is_maintenance:
         await update_temp_message(
             temp_message,
-            f"**{new_team_name}** 팀이 수정되었습니다.\n\n{MAINTENANCE_SKIP_NOTICE}",
+            f"**{new_team_name}** 팀을 수정했습니다.\n\n{MAINTENANCE_SKIP_NOTICE}",
             discord.Color.green()
         )
         return
@@ -535,7 +534,7 @@ async def _send_edit_result(
         diff_parts.append(f"추가: {', '.join(sorted(added))}")
     diff_summary = '\n'.join(diff_parts) if diff_parts else "바뀐 내용이 없습니다."
     mmr_line = build_team_mmr_line(new_team_mmr, new_team_data.players, team_processor.is_test_account)
-    body = f"**{new_team_name}** 팀이 수정되었습니다.\n\n{diff_summary}\n{mmr_line}"
+    body = f"**{new_team_name}** 팀을 수정했습니다.\n\n{diff_summary}\n{mmr_line}"
     if sanction_line:
         body += f"\n{sanction_line}"
     if roster_warnings:

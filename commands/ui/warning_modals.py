@@ -24,7 +24,7 @@ REASON_TYPE = {
 
 CAUTION_COLOR = discord.Color.from_str('#FEE75C')
 
-MASTERS_NOTE = ("안내", MASTERS_NOT_DEDUCTED)
+MASTERS_NOTE = ("마스터즈 진행일", MASTERS_NOT_DEDUCTED)
 NO_RECORD = "기록 없음"
 
 
@@ -53,7 +53,7 @@ def _restricted_until(auto_warning: dict) -> str:
 
 def _restriction_summary(auto_warning: dict) -> str:
     return (
-        f"**{_restricted_until(auto_warning)}**까지 스크림에 참여할 수 없습니다.\n"
+        f"**{_restricted_until(auto_warning)}**까지 스크림에 참가할 수 없습니다.\n"
         f"누적 경고 {_count_summary(auto_warning)}"
     )
 
@@ -70,7 +70,7 @@ async def send_sanction_dm(
         if auto_warning and converted_cautions:
             fields = [
                 ("누적 주의 내역", _caution_history(converted_cautions, detailed=True)),
-                ("참여 제한", _restriction_summary(auto_warning)),
+                ("참가 제한", _restriction_summary(auto_warning)),
                 MASTERS_NOTE,
             ]
             dm_view = custom_view(
@@ -83,7 +83,7 @@ async def send_sanction_dm(
         elif warning_type == '경고':
             fields = [
                 ("사유", reason),
-                ("참여 제한", _restriction_summary(auto_warning)),
+                ("참가 제한", _restriction_summary(auto_warning)),
                 MASTERS_NOTE,
             ]
             dm_view = custom_view("🚨 경고 알림", "**경고**가 부여되었습니다.", discord.Color.red(), fields=fields)
@@ -91,7 +91,7 @@ async def send_sanction_dm(
         else:
             fields = [
                 ("사유", reason),
-                ("안내", f"주의가 {WarningManager.CAUTION_TO_WARNING_COUNT}회 누적되면 경고로 전환되고 스크림 참여가 제한됩니다."),
+                ("경고 전환 기준", f"주의가 {WarningManager.CAUTION_TO_WARNING_COUNT}회 누적되면 경고로 전환되고 스크림 참가가 제한됩니다."),
             ]
             dm_view = custom_view("⚡ 주의 알림", "**주의**가 부여되었습니다.", CAUTION_COLOR, fields=fields)
 
@@ -131,7 +131,7 @@ def _follow_up_fields(target_user: discord.Member, dm_sent: bool, restricted: bo
     return fields
 
 
-MISSING_DETAIL_TEXT = "기타를 고르면 상세 사유를 적어야 합니다.\n다시 입력 버튼을 눌러주세요."
+MISSING_DETAIL_TEXT = "기타를 고르면 상세 사유를 적어야 합니다."
 
 
 def _missing_detail_view(target_user: discord.Member, reason_choice: str) -> TimeoutEditView:
@@ -159,7 +159,7 @@ class WarningReasonModal(Modal):
         self.target_user = target_user
 
         choices = [
-            ("지각", "지각", "경고, 참여 제한"),
+            ("지각", "지각", "경고, 참가 제한"),
             ("대타", "대타", "주의"),
             ("기타 주의", "기타주의", "사유 직접 입력"),
             ("기타 경고", "기타경고", "사유 직접 입력"),
@@ -174,16 +174,11 @@ class WarningReasonModal(Modal):
         self.add_item(Label(text="사유", component=self.reason_radio))
 
         self.detail_input = TextInput(
-            placeholder="기타 선택 시 필수, 그 외에는 추가 설명",
             max_length=200,
             required=False,
             style=discord.TextStyle.paragraph,
         )
-        self.add_item(Label(
-            text="상세 사유",
-            description="간략하게 작성해주세요.",
-            component=self.detail_input,
-        ))
+        self.add_item(Label(text="상세 사유", component=self.detail_input))
 
         self.add_item(TextDisplay(content="제재를 부여하면 대상자에게 DM으로 알립니다."))
 
@@ -233,7 +228,7 @@ class WarningReasonModal(Modal):
                 if auto_warning and converted_cautions:
                     fields = [
                         ("대상", target_line),
-                        ("참여 제한", f"{_restricted_until(auto_warning)}까지"),
+                        ("참가 제한", f"{_restricted_until(auto_warning)}까지"),
                         ("누적 경고", _count_summary(auto_warning)),
                         ("방금 부여한 주의 사유", reason),
                         ("누적 주의 내역", _caution_history(converted_cautions, detailed=False)),
@@ -249,7 +244,7 @@ class WarningReasonModal(Modal):
                 elif warning_type == '경고':
                     fields = [
                         ("대상", target_line),
-                        ("참여 제한", f"{_restricted_until(auto_warning)}까지"),
+                        ("참가 제한", f"{_restricted_until(auto_warning)}까지"),
                         ("누적 경고", _count_summary(auto_warning)),
                         ("사유", reason),
                         *follow_up,
@@ -260,7 +255,7 @@ class WarningReasonModal(Modal):
                     fields = [
                         ("대상", target_line),
                         ("사유", reason),
-                        ("참고", f"주의가 {WarningManager.CAUTION_TO_WARNING_COUNT}회 누적되면 경고로 자동 전환됩니다."),
+                        ("경고 전환 기준", f"주의가 {WarningManager.CAUTION_TO_WARNING_COUNT}회 누적되면 경고로 자동 전환됩니다."),
                         *follow_up,
                     ]
                     view_result = custom_view("⚡ 주의 부여 완료", "", CAUTION_COLOR, fields=fields)

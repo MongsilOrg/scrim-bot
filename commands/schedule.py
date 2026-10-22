@@ -10,6 +10,7 @@ from config.logging_config import get_logger
 from config.settings import settings
 from models.schedule_manager import OPEN_WEEKDAY, REMINDER_HOUR, REMINDER_WEEKDAY
 from utils.helpers import get_current_kst_time
+from utils.layout_helpers import info_view
 
 logger = get_logger('schedule')
 
@@ -78,8 +79,11 @@ async def send_schedule_reminder(client: ScrimBot) -> int:
     if not missing:
         return 0
     await channel.send(
-        f"{' '.join(m.mention for m in missing)}\n"
-        f"{schedule_mgr.week_label} 일정에 아직 응답하지 않았습니다.\n위 대시보드에서 참가 요일이나 불참을 골라주세요.",
+        view=info_view(
+            f"{' '.join(m.mention for m in missing)}\n"
+            f"{schedule_mgr.week_label} 일정에 아직 응답하지 않았습니다.\n위 대시보드에서 참가 요일이나 불참을 골라주세요.",
+            title="일정 미응답",
+        ),
         allowed_mentions=discord.AllowedMentions(users=True),
     )
     logger.info(f"[일정] 미응답 알림 - {len(missing)}명: {', '.join(m.display_name for m in missing)}")

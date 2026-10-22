@@ -224,7 +224,7 @@ def build_team_mmr_line(team_mmr: float, players: List[str], is_test_account) ->
             "팀 평균 MMR: 미등록\n"
             f"테스트 계정 MMR이 등록되지 않았습니다.\n<@{settings.TEST_ACCOUNT_CONTACT_ID}>에게 문의해주세요."
         )
-    return "팀 평균 MMR: 확인 중\n잠시 후 자동으로 갱신됩니다."
+    return "팀 평균 MMR: 확인 중\n잠시 후 팀 MMR 표에 반영됩니다."
 
 
 def compose_member_check_error(

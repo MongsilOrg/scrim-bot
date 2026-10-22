@@ -11,6 +11,7 @@ from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
 from utils.gsheet_client import create_gspread_client
+from utils.layout_helpers import success_view, warning_view
 from utils.helpers import KST, effective_scrim_date, get_current_kst_time, save_json_atomic
 from utils.validators import normalize_nickname_for_comparison
 
@@ -77,22 +78,22 @@ class WarningManager:
             if self.worksheet:
                 if self._connect_failure_notified:
                     self._connect_failure_notified = False
-                    await self._notify_log_channel("✅ 경고 시트 연결이 복구되었습니다.")
+                    await self._notify_log_channel("경고 시트 연결이 복구되었습니다.", recovered=True)
                 return True
 
             if not self._connect_failure_notified:
                 self._connect_failure_notified = True
                 await self._notify_log_channel(
-                    "⚠️ 경고 시트에 연결하지 못했습니다.\n연결될 때까지 팀 등록에서 제재 여부를 확인하지 않습니다."
+                    "경고 시트에 연결하지 못했습니다.\n연결될 때까지 팀 등록에서 제재 여부를 확인하지 않습니다."
                 )
             return False
 
-    async def _notify_log_channel(self, text: str) -> None:
+    async def _notify_log_channel(self, text: str, *, recovered: bool = False) -> None:
         try:
             client = BotManager.get_instance().get_client()
             channel = client.get_channel(settings.LOG_CHANNEL_ID) if client else None
             if channel:
-                await channel.send(text)
+                await channel.send(view=success_view(text) if recovered else warning_view(text))
         except Exception as e:
             logger.warning(f"[경고관리] 로그 채널 알림 실패: {e}")
 
@@ -570,7 +571,7 @@ class WarningManager:
             return
         self._lookup_failure_notified_at = now
         text = (
-            "⚠️ 경고 시트 조회에 실패했고 캐시도 없어 제재 여부를 확인하지 못했습니다.\n"
+            "경고 시트 조회에 실패했고 캐시도 없어 제재 여부를 확인하지 못했습니다.\n"
             "조회에 성공할 때까지 팀 등록에서 제재 여부를 확인하지 않습니다."
         )
         try:

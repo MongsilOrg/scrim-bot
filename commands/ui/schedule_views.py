@@ -256,13 +256,13 @@ class ScheduleView(LayoutView):
         back_btn.callback = do_back
 
         deploy_count = len(schedule_mgr.actual_deployments)
-        desc = "재편성하면 기존 편성을 삭제하고 다시 배정합니다."
+        heading = "## 📋 편성 관리"
         if deploy_count:
-            desc += f"\n편성을 취소하면 투입 기록 {deploy_count}건도 함께 삭제됩니다."
+            heading += f"\n편성을 취소하면 투입 기록 {deploy_count}건도 함께 삭제됩니다."
 
         menu_view = TimeoutEditView()
         menu_view.add_item(Container(
-            TextDisplay(content=f"## 📋 편성 관리\n{desc}"),
+            TextDisplay(content=heading),
             Separator(),
             TextDisplay(content=FOOTER_TEXT),
             accent_colour=Color.blue(),
@@ -350,7 +350,7 @@ class DeployView(TimeoutEditView):
             TextDisplay(
                 content=f"## ✅ 투입 기록\n"
                 f"{info_line}\n\n"
-                f"투입한 요일을 선택해주세요.\n다시 누르면 해제됩니다."
+                f"투입한 요일을 선택해주세요."
                 + (f"\n\n{notice}" if notice else "")
             ),
             Separator(),

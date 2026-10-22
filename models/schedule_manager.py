@@ -129,9 +129,6 @@ class ScheduleManager:
             lines.append(f'**미응답** {len(not_responded)}명')
             names = ', '.join(name for _, name in not_responded)
             lines.append(f'> {names}')
-        elif total > 0:
-            lines.append('')
-            lines.append('> 모든 관리자가 응답했습니다.')
         if not_responded and not self.assignments:
             lines.append(f'-# 응답하지 않은 관리자는 {WEEKDAYS[REMINDER_WEEKDAY]}요일 {REMINDER_HOUR}시에 알림을 받습니다.')
 
