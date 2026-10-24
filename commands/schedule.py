@@ -49,6 +49,7 @@ async def _weekly_reset_loop(client: ScrimBot) -> None:
             if guild:
                 channel = guild.get_channel(settings.SCHEDULE_CHANNEL_ID)
                 if channel:
+                    await delete_old_reminders(channel, schedule_mgr)
                     await refresh_dashboard(guild, channel=channel, schedule_mgr=schedule_mgr)
             logger.info(f"[일정] 자동 주차 전환 완료 - 주차: {schedule_mgr.week_label}")
         except Exception as e:
@@ -78,16 +79,34 @@ async def send_schedule_reminder(client: ScrimBot) -> int:
     missing = [m for m in schedule_members(guild) if str(m.id) not in responded]
     if not missing:
         return 0
-    await channel.send(
+    message = await channel.send(
         view=info_view(
             f"{' '.join(m.mention for m in missing)}\n"
-            f"{schedule_mgr.week_label} 일정에 아직 응답하지 않았습니다.\n위 대시보드에서 참가 요일이나 불참을 골라주세요.",
+            f"{schedule_mgr.week_label} 일정에 아직 응답하지 않았습니다.\n위 대시보드의 참가나 불참 버튼을 눌러주세요.",
             title="일정 미응답",
         ),
         allowed_mentions=discord.AllowedMentions(users=True),
     )
+    schedule_mgr.reminder_message_ids.append(message.id)
+    schedule_mgr.save_backup()
     logger.info(f"[일정] 미응답 알림 - {len(missing)}명: {', '.join(m.display_name for m in missing)}")
     return len(missing)
+
+
+async def delete_old_reminders(channel, schedule_mgr) -> None:
+    if not schedule_mgr.reminder_message_ids:
+        return
+    failed = []
+    for message_id in schedule_mgr.reminder_message_ids:
+        try:
+            await channel.get_partial_message(message_id).delete()
+        except discord.NotFound:
+            pass
+        except discord.HTTPException as e:
+            logger.warning(f"[일정] 지난 미응답 알림 삭제 실패 - 메시지 ID: {message_id}: {e}")
+            failed.append(message_id)
+    schedule_mgr.reminder_message_ids = failed
+    schedule_mgr.save_backup()
 
 
 async def _reminder_loop(client: ScrimBot) -> None:
@@ -117,10 +136,9 @@ async def setup_schedule_dashboard(client: ScrimBot) -> None:
 
     schedule_mgr = BotManager.get_instance().get_schedule_manager()
 
-    if not schedule_mgr.week_label:
+    if not schedule_mgr.week_label or _should_auto_reset(schedule_mgr):
         schedule_mgr.initialize_week()
-    elif _should_auto_reset(schedule_mgr):
-        schedule_mgr.initialize_week()
+        await delete_old_reminders(channel, schedule_mgr)
 
     schedule_mgr.status_channel_id = settings.SCHEDULE_CHANNEL_ID
     await refresh_dashboard(guild, channel=channel, schedule_mgr=schedule_mgr)

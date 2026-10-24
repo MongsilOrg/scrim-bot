@@ -49,6 +49,8 @@ class ScheduleManager:
 
         self.status_message_id: Optional[int] = None
         self.status_channel_id: Optional[int] = None
+        # 다음 주 일정이 열릴 때 지울 미응답 알림
+        self.reminder_message_ids: List[int] = []
 
     def initialize_week(self) -> str:
         now = get_current_kst_time()
@@ -329,6 +331,7 @@ class ScheduleManager:
                 },
                 'status_message_id': self.status_message_id,
                 'status_channel_id': self.status_channel_id,
+                'reminder_message_ids': self.reminder_message_ids,
             }
             save_json_atomic(BACKUP_PATH, data, indent=2)
         except Exception as e:
@@ -372,6 +375,7 @@ class ScheduleManager:
             }
             self.status_message_id = data.get('status_message_id')
             self.status_channel_id = data.get('status_channel_id')
+            self.reminder_message_ids = data.get('reminder_message_ids', [])
 
             logger.info(f"[일정] 백업 복구 완료: {self.week_label}")
             return True

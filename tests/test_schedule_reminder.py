@@ -24,15 +24,16 @@ class ScheduleReminderTest(unittest.IsolatedAsyncioTestCase):
         now = datetime(2026, 10, 11, 22, 0, tzinfo=KST)
         mgr = SimpleNamespace(
             assignments=assignments or {}, week_start=now + week_start_offset, week_label="10/12 ~ 10/17",
-            get_responded_user_ids=lambda: {"1"},
+            get_responded_user_ids=lambda: {"1"}, reminder_message_ids=[7], save_backup=MagicMock(),
         )
-        channel = SimpleNamespace(send=AsyncMock())
+        channel = SimpleNamespace(send=AsyncMock(return_value=SimpleNamespace(id=8)))
         guild = SimpleNamespace(get_channel=lambda cid: channel)
         client = SimpleNamespace(get_guild=lambda gid: guild)
         with patch.object(schedule.BotManager, "get_instance", return_value=SimpleNamespace(get_schedule_manager=lambda: mgr)), \
              patch.object(schedule, "schedule_members", return_value=[_member(1, "a"), _member(2, "b"), _member(3, "c")]), \
              patch.object(schedule, "get_current_kst_time", return_value=now):
             sent = await schedule.send_schedule_reminder(client)
+        self.mgr = mgr
         return sent, channel.send
 
     async def test_mentions_only_non_responders(self):
@@ -41,10 +42,27 @@ class ScheduleReminderTest(unittest.IsolatedAsyncioTestCase):
         text = send.await_args.kwargs['view'].children[0].children[0].content
         self.assertIn("<@2> <@3>", text)
         self.assertNotIn("<@1>", text)
+        self.assertEqual(self.mgr.reminder_message_ids, [7, 8])
+        self.mgr.save_backup.assert_called_once()
 
     async def test_skips_after_assignment_or_when_week_not_open(self):
         self.assertEqual((await self._run(assignments={0: ["1"]}))[0], 0)
         self.assertEqual((await self._run(week_start_offset=-timedelta(days=1)))[0], 0)
+
+
+class DeleteOldRemindersTest(unittest.IsolatedAsyncioTestCase):
+    async def test_skips_deleted_and_keeps_failed(self):
+        response = SimpleNamespace(status=0, reason="")
+        errors = {1: None, 2: schedule.discord.NotFound(response, "gone"), 3: schedule.discord.HTTPException(response, "fail")}
+
+        def partial(message_id):
+            return SimpleNamespace(delete=AsyncMock(side_effect=errors[message_id]))
+
+        channel = SimpleNamespace(get_partial_message=partial)
+        mgr = SimpleNamespace(reminder_message_ids=[1, 2, 3], save_backup=MagicMock())
+        await schedule.delete_old_reminders(channel, mgr)
+        self.assertEqual(mgr.reminder_message_ids, [3])
+        mgr.save_backup.assert_called_once()
 
 
 class WeekOpenTest(unittest.TestCase):
