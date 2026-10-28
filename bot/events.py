@@ -112,7 +112,11 @@ async def on_message(message: discord.Message) -> None:
         return
     if not any(is_csv_filename(att.filename) for att in message.attachments):
         return
-    if not get_group_letter(message.channel.id):
+    group_letter = get_group_letter(message.channel.id)
+    if not group_letter:
+        return
+    if group_letter.upper() in settings.SCORE_DISABLED_GROUPS:
+        logger.info(f"[이벤트] {group_letter}조 점수 계산 꺼짐 - CSV 처리 건너뜀")
         return
 
     try:

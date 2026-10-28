@@ -36,6 +36,10 @@ def _parse_group_channel_ids(value: str) -> dict:
     return result
 
 
+def _parse_letter_set(value: str) -> Set[str]:
+    return {letter.strip().upper() for letter in value.split(',') if letter.strip()}
+
+
 class Settings:
     DISCORD_TOKEN: str = os.getenv('DISCORD_TOKEN', '')
     GUILD_ID: int = _parse_int(os.getenv('GUILD_ID', ''))
@@ -52,6 +56,7 @@ class Settings:
     TICKET_CATEGORY_ID: int = _parse_int(os.getenv('TICKET_CATEGORY_ID', '1255872853107277875'))
 
     GROUP_CHANNEL_IDS: dict = _parse_group_channel_ids(os.getenv('GROUP_CHANNEL_IDS', ''))
+    SCORE_DISABLED_GROUPS: Set[str] = _parse_letter_set(os.getenv('SCORE_DISABLED_GROUPS', ''))
 
     # {letter}는 조 문자로 치환
     GROUP_CATEGORY_PATTERN: str = os.getenv('GROUP_CATEGORY_PATTERN', 'Group {letter}')
