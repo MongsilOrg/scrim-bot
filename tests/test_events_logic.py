@@ -200,5 +200,41 @@ class ComputeBanListForChannelTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, ["Hart"])
 
 
+class ScoreDisabledGroupsParseTest(unittest.TestCase):
+    def test_parse(self):
+        from config.settings import _parse_letter_set
+        self.assertEqual(_parse_letter_set(""), set())
+        self.assertEqual(_parse_letter_set("A"), {"A"})
+        self.assertEqual(_parse_letter_set(" a , B "), {"A", "B"})
+
+
+class OnMessageScoreDisabledTest(unittest.IsolatedAsyncioTestCase):
+    def _message(self, channel_id):
+        attachment = mock.MagicMock()
+        attachment.filename = "round.csv"
+        message = mock.MagicMock()
+        message.author.bot = False
+        message.attachments = [attachment]
+        message.channel.id = channel_id
+        return message
+
+    async def _on_message(self, channel_id):
+        from bot import events
+        process = mock.AsyncMock()
+        with mock.patch.object(events.settings, "GROUP_CHANNEL_IDS", {"A": 1, "B": 2}), \
+                mock.patch.object(events.settings, "SCORE_DISABLED_GROUPS", {"A"}), \
+                mock.patch.object(events, "_process_csv_attachments", process):
+            await events.on_message(self._message(channel_id))
+        return process
+
+    async def test_disabled_group_skips_csv(self):
+        process = await self._on_message(1)
+        process.assert_not_awaited()
+
+    async def test_enabled_group_processes_csv(self):
+        process = await self._on_message(2)
+        process.assert_awaited_once()
+
+
 if __name__ == "__main__":
     unittest.main()
