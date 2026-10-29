@@ -141,11 +141,17 @@ async def post_backup(client: discord.Client, group_letter: str, finished_only: 
     if not channel:
         logger.error(f"[Labs] 백업 분석 채널을 찾을 수 없음 - 채널 ID: {settings.BACKUP_ANALYSIS_CHANNEL_ID}")
         return False
-    await channel.send(view=backup_view(state['date'], group_letter, replays))
-    state = load_state()
-    if state.get('code') == code:
-        state.setdefault('posted', []).append(group_letter)
-        save_state(state)
+    # 전송 중 취소돼도 다시 보내지 않도록 먼저 기록
+    state.setdefault('posted', []).append(group_letter)
+    save_state(state)
+    try:
+        await channel.send(view=backup_view(state['date'], group_letter, replays))
+    except discord.HTTPException:
+        state = load_state()
+        if group_letter in state.get('posted', []):
+            state['posted'].remove(group_letter)
+            save_state(state)
+        raise
     logger.info(f"[Labs] {group_letter}조 게임 ID {len(replays)}개 백업 채널 전송")
     return True
 
@@ -167,6 +173,18 @@ def schedule_backup(client: discord.Client, group_letter: str) -> None:
                 return
 
     _backup_tasks[group_letter] = asyncio.create_task(run())
+
+
+def resume_backups(client: discord.Client) -> None:
+    """재시작으로 사라진 확인 작업을 오늘 보내지 않은 조마다 다시 시작"""
+    if not enabled():
+        return
+    state = load_state()
+    if state.get('date') != get_current_kst_time().date().isoformat():
+        return
+    for letter in state.get('groups', []):
+        if letter not in state.get('posted', []):
+            schedule_backup(client, letter)
 
 
 async def flush_backups(client: discord.Client) -> None:

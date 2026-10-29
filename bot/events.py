@@ -69,6 +69,7 @@ async def bootstrap_on_ready(client: "ScrimBot") -> None:
         logger.error(f"[시작] 일정 대시보드 연동 실패: {e}", exc_info=True)
 
     setup_ticket_cleanup(client)
+    labs_api.resume_backups(client)
 
     try:
         synced = await client.tree.sync(guild=discord.Object(id=settings.GUILD_ID))

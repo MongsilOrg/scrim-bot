@@ -167,6 +167,24 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual([c.args[0] for c in sleep.await_args_list], list(labs_api.BACKUP_CHECK_DELAYS))
         channel.send.assert_awaited_once()
 
+    async def test_failed_send_can_retry(self):
+        labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
+        channel = MagicMock()
+        channel.send = AsyncMock(side_effect=discord.HTTPException(MagicMock(status=500), 'boom'))
+        client = MagicMock()
+        client.get_channel.return_value = channel
+        self.request.return_value = {'played': 4, 'plannedRounds': 4, 'ended': True, 'replays': [{'roundNo': 1, 'gameId': 5}]}
+
+        with self.assertRaises(discord.HTTPException):
+            await labs_api.post_backup(client, 'A')
+        self.assertEqual(labs_api.load_state()['posted'], [])
+
+    async def test_restart_resumes_unposted_groups(self):
+        labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A', 'B'], 'posted': ['A']})
+        with patch.object(labs_api, 'schedule_backup') as schedule:
+            labs_api.resume_backups('client')
+        schedule.assert_called_once_with('client', 'B')
+
     async def test_flush_posts_unfinished_groups(self):
         labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A', 'B'], 'posted': ['A']})
         channel = MagicMock()
