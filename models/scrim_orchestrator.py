@@ -379,13 +379,22 @@ class ScrimOrchestrator:
         letters = [letter for letter in (chr(ord('A') + i) for i in range(len(groups))) if letter in settings.GROUP_CHANNEL_IDS]
         if not letters:
             return
-        result = await labs_api.create_scrim(guild, letters)
-        if not result:
-            await asyncio.sleep(5)
-            result = await labs_api.create_scrim(guild, letters)
+        result = None
+        # 같은 날 다시 불러도 Labs가 같은 대회를 돌려줘 응답을 놓친 요청도 다시 보냄
+        for wait in (0, 5, 30):
+            await asyncio.sleep(wait)
+            try:
+                result = await labs_api.create_scrim(guild, letters)
+            except Exception as e:
+                logger.error(f"[Labs] 대회 생성 중 오류: {e}", exc_info=True)
+            if result:
+                break
         if not result:
             logger.error("[Labs] 대회 생성 실패 - 스크림봇이 점수 계산")
-            await self._notify_log("Labs 대회를 만들지 못해 오늘은 스크림봇이 점수를 계산합니다.")
+            await self._notify_log(
+                "Labs 대회를 만들지 못해 오늘은 스크림봇이 점수를 계산합니다.\n"
+                "Labs에 오늘 대회가 생겼다면 지워주세요."
+            )
             return
         self._mark_stage(STAGE_LABS)
         missing = result.get('missing') or []

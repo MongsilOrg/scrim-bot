@@ -59,8 +59,19 @@ class LabsStageTest(LabsStateMixin, AssignmentHarness):
 
         await mgr.start_team_assignment()
 
-        self.assertEqual(self.create.await_count, 2)
+        self.assertEqual(self.create.await_count, 3)
         self.assertNotIn('labs', mgr.assignment_progress['done'])
+        self.assertEqual(mgr.last_auto_assignment, self.now)
+        self.log_channel.send.assert_awaited_once()
+
+    async def test_state_write_error_still_finishes(self):
+        mgr = self.make_manager()
+        self.use_groups(mgr, 1)
+        self.use_service(mgr)
+        self.create.side_effect = OSError("disk full")
+
+        await mgr.start_team_assignment()
+
         self.assertEqual(mgr.last_auto_assignment, self.now)
         self.log_channel.send.assert_awaited_once()
 
@@ -142,6 +153,19 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         channel.send.assert_awaited_once()
         self.assertIn("**1R**: `111`\n**2R**: `222`", "\n".join(texts(channel.send.await_args.kwargs['view'])))
         self.assertEqual(self.request.await_args.args[:2], ('GET', '/api/bot/t/K3PQ8M?group=A'))
+
+    async def test_last_check_posts_played_rounds(self):
+        labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
+        channel = MagicMock()
+        channel.send = AsyncMock()
+        client = MagicMock()
+        client.get_channel.return_value = channel
+        self.request.return_value = {'played': 3, 'plannedRounds': 4, 'ended': False, 'replays': [{'roundNo': 1, 'gameId': 5}]}
+        with patch.object(labs_api.asyncio, 'sleep', new=AsyncMock()) as sleep:
+            labs_api.schedule_backup(client, 'A')
+            await labs_api._backup_tasks['A']
+        self.assertEqual([c.args[0] for c in sleep.await_args_list], list(labs_api.BACKUP_CHECK_DELAYS))
+        channel.send.assert_awaited_once()
 
     async def test_flush_posts_unfinished_groups(self):
         labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A', 'B'], 'posted': ['A']})

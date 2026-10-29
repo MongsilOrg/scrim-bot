@@ -28,8 +28,8 @@ SCRIM_RULES = {
 }
 
 REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
-# 마지막 CSV를 몽실봇이 Labs에 넣을 시간을 두고 다시 확인
-BACKUP_CHECK_DELAYS = (20, 60, 180)
+# 마지막 CSV를 몽실봇이 Labs에 넣을 시간을 두고 다시 확인. 라운드 간격보다 긴 마지막 확인은 치른 라운드까지 보냄
+BACKUP_CHECK_DELAYS = (20, 60, 180, 600, 3600)
 
 _backup_tasks: Dict[str, asyncio.Task] = {}
 
@@ -157,10 +157,10 @@ def schedule_backup(client: discord.Client, group_letter: str) -> None:
         task.cancel()
 
     async def run() -> None:
-        for delay in BACKUP_CHECK_DELAYS:
+        for i, delay in enumerate(BACKUP_CHECK_DELAYS):
             await asyncio.sleep(delay)
             try:
-                if await post_backup(client, group_letter):
+                if await post_backup(client, group_letter, finished_only=i < len(BACKUP_CHECK_DELAYS) - 1):
                     return
             except Exception as e:
                 logger.error(f"[Labs] {group_letter}조 게임 ID 백업 실패: {e}", exc_info=True)
