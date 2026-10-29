@@ -376,6 +376,10 @@ class ScrimOrchestrator:
         client = self._manager.client or BotManager.get_instance().get_client()
         if client:
             await labs_api.flush_backups(client)
+        try:
+            await labs_api.delete_previous(guild)
+        except Exception as e:
+            logger.error(f"[Labs] 전날 대회 삭제 중 오류: {e}", exc_info=True)
         letters = [letter for letter in (chr(ord('A') + i) for i in range(len(groups))) if letter in settings.GROUP_CHANNEL_IDS]
         if not letters:
             return

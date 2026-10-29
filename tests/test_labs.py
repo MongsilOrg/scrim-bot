@@ -36,6 +36,7 @@ class LabsStageTest(LabsStateMixin, AssignmentHarness):
         self.use_labs()
         self.create = patch.object(labs_api, 'create_scrim', new=AsyncMock()).start()
         patch.object(labs_api, 'flush_backups', new=AsyncMock()).start()
+        patch.object(labs_api, 'delete_previous', new=AsyncMock()).start()
         patch.object(scrim_orchestrator.asyncio, 'sleep', new=AsyncMock()).start()
 
     async def test_links_labs_after_group_notices(self):
@@ -197,6 +198,29 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
 
         channel.send.assert_awaited_once()
         self.assertEqual(labs_api.load_state()['posted'], ['A', 'B'])
+
+    async def test_deletes_previous_day_after_backups(self):
+        labs_api.save_state({'date': '2026-10-28', 'code': 'OLD000', 'groups': ['A', 'B'], 'posted': ['A', 'B']})
+        self.request.return_value = {'status': 'ok'}
+
+        await labs_api.delete_previous(self.make_guild(), TODAY)
+        await labs_api.delete_previous(self.make_guild(), TODAY)
+
+        self.request.assert_awaited_once_with('DELETE', '/api/bot/t/OLD000', {'owner': '1'})
+        self.assertTrue(labs_api.load_state()['deleted'])
+
+    async def test_keeps_today_and_unsent_tournaments(self):
+        labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': ['A']})
+        await labs_api.delete_previous(self.make_guild(), TODAY)
+        labs_api.save_state({'date': '2026-10-28', 'code': 'OLD000', 'groups': ['A', 'B'], 'posted': ['A']})
+        await labs_api.delete_previous(self.make_guild(), TODAY)
+        self.request.assert_not_awaited()
+
+    async def test_failed_delete_is_left_to_retention(self):
+        labs_api.save_state({'date': '2026-10-28', 'code': 'OLD000', 'groups': ['A'], 'posted': ['A']})
+        self.request.return_value = None
+        await labs_api.delete_previous(self.make_guild(), TODAY)
+        self.assertNotIn('deleted', labs_api.load_state())
 
     async def test_new_day_keeps_no_posted_groups(self):
         labs_api.save_state({'date': '2026-10-28', 'code': 'OLD000', 'groups': ['A'], 'posted': ['A']})

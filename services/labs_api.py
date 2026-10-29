@@ -116,6 +116,24 @@ async def create_scrim(guild: discord.Guild, letters: List[str], today: Optional
     return result
 
 
+async def delete_previous(guild: discord.Guild, today: Optional[date] = None) -> None:
+    """전날 스크림봇이 만든 대회를 지움. 게임 ID를 다 보내지 못한 조가 있으면 Labs 보관 기간에 맡김"""
+    today = today or get_current_kst_time().date()
+    state = load_state()
+    code = state.get('code')
+    if not code or state.get('deleted') or state.get('date') == today.isoformat():
+        return
+    if any(letter not in state.get('posted', []) for letter in state.get('groups', [])):
+        logger.warning(f"[Labs] 게임 ID를 보내지 못한 조가 있어 {code} 대회를 남김")
+        return
+    result = await _request('DELETE', f"/api/bot/t/{code}", {'owner': str(guild.owner_id)})
+    if not result:
+        return
+    state['deleted'] = True
+    save_state(state)
+    logger.info(f"[Labs] 전날 대회 {code} 삭제 - {result.get('status')}")
+
+
 async def fetch_board(code: str, group_letter: str) -> Optional[dict]:
     return await _request('GET', f"/api/bot/t/{code}?group={group_letter}")
 
