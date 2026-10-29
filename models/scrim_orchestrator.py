@@ -9,6 +9,7 @@ from commands.ui.roster_views import GroupRosterView
 from utils.layout_helpers import custom_view, format_kr_date, warning_view
 from config.logging_config import get_logger
 from config.settings import settings
+from services import labs_api
 from services.holidays_api import get_rest_day_info
 from services.notion_api import get_server_info
 from utils.helpers import get_current_kst_time, get_next_scrim_date, is_assignment_window
@@ -24,6 +25,7 @@ STAGE_GLOBAL_NOTICE = 'global_notice'
 STAGE_ROLES = 'roles'
 STAGE_GROUP_NOTICES = 'group_notices'
 STAGE_VOICE = 'voice'
+STAGE_LABS = 'labs'
 
 DELAY_NOTICE = "조편성이 늦어지고 있습니다.\n운영진이 확인하고 있습니다."
 
@@ -359,10 +361,45 @@ class ScrimOrchestrator:
             await self._report_assignment_failure(f"{letters} 공지를 보내지 못했습니다.")
             return
 
+        if STAGE_LABS not in done:
+            await self._link_labs(guild, groups)
+
         mgr.last_auto_assignment = get_current_kst_time()
         mgr.save_backup()
         mgr.request_dashboard_refresh()
         logger.info("[조편성] 공지와 역할 처리 완료")
+
+    async def _link_labs(self, guild, groups) -> None:
+        """조 공지가 조 채널을 비운 뒤에 연결해야 몽실봇 안내가 남음. 실패하면 그날은 스크림봇이 점수를 계산함"""
+        if not labs_api.enabled():
+            return
+        client = self._manager.client or BotManager.get_instance().get_client()
+        if client:
+            await labs_api.flush_backups(client)
+        letters = [letter for letter in (chr(ord('A') + i) for i in range(len(groups))) if letter in settings.GROUP_CHANNEL_IDS]
+        if not letters:
+            return
+        result = await labs_api.create_scrim(guild, letters)
+        if not result:
+            await asyncio.sleep(5)
+            result = await labs_api.create_scrim(guild, letters)
+        if not result:
+            logger.error("[Labs] 대회 생성 실패 - 스크림봇이 점수 계산")
+            await self._notify_log("Labs 대회를 만들지 못해 오늘은 스크림봇이 점수를 계산합니다.")
+            return
+        self._mark_stage(STAGE_LABS)
+        missing = result.get('missing') or []
+        logger.info(f"[Labs] 대회 {result['code']} 연결 - 조: {', '.join(letters)}, Labs 계정 없는 운영진 {len(missing)}명")
+
+    async def _notify_log(self, text: str) -> None:
+        client = self._manager.client or BotManager.get_instance().get_client()
+        channel = client.get_channel(settings.LOG_CHANNEL_ID) if client else None
+        if not channel:
+            return
+        try:
+            await channel.send(view=warning_view(text, title="⚠️ Labs 연결 확인 필요"))
+        except discord.HTTPException as e:
+            logger.error(f"[Labs] 로그 채널 알림 실패: {e}")
 
     async def _send_group_notices(self, guild, service, groups) -> List[str]:
         """조별 공지는 채널을 비운 뒤 보내 다시 보내도 중복이 남지 않음. 반환은 못 보낸 조."""

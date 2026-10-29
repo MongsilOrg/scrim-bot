@@ -58,6 +58,14 @@ class Settings:
     GROUP_CHANNEL_IDS: dict = _parse_group_channel_ids(os.getenv('GROUP_CHANNEL_IDS', ''))
     SCORE_DISABLED_GROUPS: Set[str] = _parse_letter_set(os.getenv('SCORE_DISABLED_GROUPS', ''))
 
+    LABS_URL: str = os.getenv('LABS_URL', 'https://labs.mongsil.dev')
+    LABS_SCRIM_TOKEN: str = os.getenv('LABS_SCRIM_TOKEN', '')
+    LABS_STATE_PATH: str = os.getenv('LABS_STATE_PATH', 'data/labs_scrim.json')
+    # 스크림 서버에서 이 역할을 가진 사람을 Labs 대회 운영자로 넣음
+    LABS_OPERATOR_ROLES: Set[str] = {
+        name.strip() for name in os.getenv('LABS_OPERATOR_ROLES', 'Head,Mod,Lead,Staff').split(',') if name.strip()
+    }
+
     # {letter}는 조 문자로 치환
     GROUP_CATEGORY_PATTERN: str = os.getenv('GROUP_CATEGORY_PATTERN', 'Group {letter}')
 

@@ -9,6 +9,7 @@ from discord.ui import ActionRow, Button, Container, DynamicItem, LayoutView, Se
 
 from config.logging_config import get_logger
 from config.settings import settings
+from services import labs_api
 from services.holidays_api import get_rest_day_info
 from services.score_aggregation import compute_ban_list_for_channel
 from utils.layout_helpers import error_view, permission_error_view, warning_view, send_response, FOOTER_TEXT
@@ -370,7 +371,9 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
             weather_options = available
 
         ban_display = None
-        ban_list = await compute_ban_list_for_channel(interaction.channel)
+        # Labs에 연결된 조는 몽실봇 순위 이미지 아래에 금지 실험체가 나옴
+        linked = group_letter.upper() in settings.SCORE_DISABLED_GROUPS or labs_api.linked_today(group_letter)
+        ban_list = [] if linked else await compute_ban_list_for_channel(interaction.channel)
         if ban_list:
             ban_display = " ".join(f"`{char}`" for char in ban_list)
 

@@ -10,6 +10,7 @@ from commands.scrim import setup_scrim_dashboard
 from utils.layout_helpers import error_view, format_kr_date, image_response_view, custom_view, send_response
 from config.logging_config import get_logger
 from config.settings import settings
+from services import labs_api
 from services.image_generator import ImageGenerator
 from services.score_aggregation import (
     CSVRow,
@@ -114,6 +115,12 @@ async def on_message(message: discord.Message) -> None:
         return
     group_letter = get_group_letter(message.channel.id)
     if not group_letter:
+        return
+    if labs_api.linked_today(group_letter):
+        logger.info(f"[이벤트] {group_letter}조 Labs 연결 - CSV 처리 건너뜀")
+        client = BotManager.get_instance().get_client()
+        if client:
+            labs_api.schedule_backup(client, group_letter.upper())
         return
     if group_letter.upper() in settings.SCORE_DISABLED_GROUPS:
         logger.info(f"[이벤트] {group_letter}조 점수 계산 꺼짐 - CSV 처리 건너뜀")
