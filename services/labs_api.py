@@ -143,7 +143,7 @@ def backup_view(day: str, group_letter: str, replays: list) -> discord.ui.Layout
     return custom_view(f"🎮 {format_kr_date(day)} {group_letter}조 게임 ID", "\n".join(lines), discord.Color.blue())
 
 
-async def post_backup(client: discord.Client, group_letter: str, finished_only: bool = True) -> bool:
+async def post_backup(client: discord.Client, group_letter: str, finished_only: bool = True, last: bool = False) -> bool:
     """백업 분석 채널에 그 조의 게임 ID를 한 번만 보냄. finished_only면 계획한 라운드를 다 치른 뒤에만"""
     state = load_state()
     code = state.get('code')
@@ -151,7 +151,12 @@ async def post_backup(client: discord.Client, group_letter: str, finished_only: 
         return False
     board = await fetch_board(code, group_letter)
     replays = [r for r in (board or {}).get('replays') or [] if isinstance(r, dict) and r.get('gameId')]
-    if not board or not replays:
+    if not board:
+        return False
+    if not replays:
+        if last:
+            # 다음 대회를 만들기 직전까지 치른 판이 없어 보낼 게임 ID가 없음
+            _mark_posted(code, group_letter)
         return False
     if finished_only and not board.get('ended') and board.get('played', 0) < board.get('plannedRounds', settings.TOTAL_ROUNDS):
         return False
@@ -175,6 +180,13 @@ async def post_backup(client: discord.Client, group_letter: str, finished_only: 
         raise
     logger.info(f"[Labs] {group_letter}조 게임 ID {len(replays)}개 백업 채널 전송")
     return True
+
+
+def _mark_posted(code: str, group_letter: str) -> None:
+    state = load_state()
+    if state.get('code') == code and group_letter not in state.get('posted', []):
+        state.setdefault('posted', []).append(group_letter)
+        save_state(state)
 
 
 def schedule_backup(client: discord.Client, group_letter: str) -> None:
@@ -212,6 +224,6 @@ async def flush_backups(client: discord.Client) -> None:
     state = load_state()
     for letter in state.get('groups', []):
         try:
-            await post_backup(client, letter, finished_only=False)
+            await post_backup(client, letter, finished_only=False, last=True)
         except Exception as e:
             logger.error(f"[Labs] {letter}조 남은 게임 ID 백업 실패: {e}", exc_info=True)

@@ -222,6 +222,14 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         await labs_api.delete_previous(self.make_guild(), TODAY)
         self.assertNotIn('deleted', labs_api.load_state())
 
+    async def test_flush_marks_group_without_games(self):
+        labs_api.save_state({'date': '2026-10-28', 'code': 'OLD000', 'groups': ['A'], 'posted': []})
+        client = MagicMock()
+        self.request.return_value = {'played': 0, 'plannedRounds': 4, 'ended': False, 'replays': []}
+        await labs_api.flush_backups(client)
+        client.get_channel.return_value.send.assert_not_called()
+        self.assertEqual(labs_api.load_state()['posted'], ['A'])
+
     async def test_new_day_keeps_no_posted_groups(self):
         labs_api.save_state({'date': '2026-10-28', 'code': 'OLD000', 'groups': ['A'], 'posted': ['A']})
         self.request.return_value = {'status': 'ok', 'code': 'K3PQ8M', 'missing': []}
