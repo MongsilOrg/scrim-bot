@@ -187,7 +187,7 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         schedule.assert_called_once_with('client', 'B')
 
     async def test_flush_posts_unfinished_groups(self):
-        labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A', 'B'], 'posted': ['A']})
+        labs_api.save_state({'date': '2026-10-28', 'code': 'K3PQ8M', 'groups': ['A', 'B'], 'posted': ['A']})
         channel = MagicMock()
         channel.send = AsyncMock()
         client = MagicMock()
@@ -229,6 +229,12 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         await labs_api.flush_backups(client)
         client.get_channel.return_value.send.assert_not_called()
         self.assertEqual(labs_api.load_state()['posted'], ['A'])
+
+    async def test_flush_skips_today(self):
+        labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
+        await labs_api.flush_backups(MagicMock())
+        self.request.assert_not_awaited()
+        self.assertEqual(labs_api.load_state()['posted'], [])
 
     async def test_new_day_keeps_no_posted_groups(self):
         labs_api.save_state({'date': '2026-10-28', 'code': 'OLD000', 'groups': ['A'], 'posted': ['A']})

@@ -222,6 +222,9 @@ def resume_backups(client: discord.Client) -> None:
 async def flush_backups(client: discord.Client) -> None:
     """라운드를 다 치르지 못해 남은 조는 다음 대회를 만들기 전에 치른 라운드까지 보냄"""
     state = load_state()
+    # 같은 날 조편성을 이어서 할 때는 오늘 대회라 아직 보내지 않음
+    if state.get('date') == get_current_kst_time().date().isoformat():
+        return
     for letter in state.get('groups', []):
         try:
             await post_backup(client, letter, finished_only=False, last=True)
