@@ -216,48 +216,24 @@ class OnMessageScoreDisabledTest(unittest.IsolatedAsyncioTestCase):
         message.author.bot = False
         message.attachments = [attachment]
         message.channel.id = channel_id
-        message.channel.send = mock.AsyncMock()
         return message
 
-    async def _on_message(self, channel_id, rounds):
+    async def _on_message(self, channel_id):
         from bot import events
-        rows = [(1000 + i, pd.DataFrame(), f"r{i}.csv") for i in range(1, rounds + 1)]
-        message = self._message(channel_id)
-        backup = mock.AsyncMock()
-        image = mock.AsyncMock(return_value=b"png")
+        process = mock.AsyncMock()
         with mock.patch.object(events.settings, "GROUP_CHANNEL_IDS", {"A": 1, "B": 2}), \
                 mock.patch.object(events.settings, "SCORE_DISABLED_GROUPS", {"A"}), \
-                mock.patch.object(events.settings, "TOTAL_ROUNDS", 4), \
-                mock.patch.object(events, "collect_today_csv_data", mock.AsyncMock(return_value=rows)), \
-                mock.patch.object(events, "aggregate_team_scores", return_value=[{"teamName": "DM"}]), \
-                mock.patch.object(events.ImageGenerator, "generate_score_table_image_async", image), \
-                mock.patch.object(events.discord, "File"), \
-                mock.patch.object(events, "_send_gameid_to_backup_channel", backup):
-            await events.on_message(message)
-        return message.channel.send, backup, image
+                mock.patch.object(events, "_process_csv_attachments", process):
+            await events.on_message(self._message(channel_id))
+        return process
 
-    async def test_disabled_group_sends_only_gameid_on_last_round(self):
-        send, backup, image = await self._on_message(1, 4)
-        image.assert_not_awaited()
-        send.assert_awaited_once()
-        self.assertNotIn("file", send.await_args.kwargs)
-        backup.assert_awaited_once()
-        self.assertIsNot(send.await_args.kwargs["view"], backup.await_args.args[0])
+    async def test_disabled_group_skips_csv(self):
+        process = await self._on_message(1)
+        process.assert_not_awaited()
 
-    async def test_disabled_group_sends_nothing_before_last_round(self):
-        for rounds in range(1, 4):
-            send, backup, image = await self._on_message(1, rounds)
-            image.assert_not_awaited()
-            send.assert_not_awaited()
-            backup.assert_not_awaited()
-
-    async def test_enabled_group_sends_score_and_gameid(self):
-        send, backup, image = await self._on_message(2, 4)
-        image.assert_awaited_once()
-        self.assertEqual(send.await_count, 2)
-        self.assertIn("file", send.await_args_list[0].kwargs)
-        self.assertNotIn("file", send.await_args_list[1].kwargs)
-        backup.assert_awaited_once()
+    async def test_enabled_group_processes_csv(self):
+        process = await self._on_message(2)
+        process.assert_awaited_once()
 
 
 if __name__ == "__main__":

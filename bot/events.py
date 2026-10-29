@@ -115,6 +115,9 @@ async def on_message(message: discord.Message) -> None:
     group_letter = get_group_letter(message.channel.id)
     if not group_letter:
         return
+    if group_letter.upper() in settings.SCORE_DISABLED_GROUPS:
+        logger.info(f"[이벤트] {group_letter}조 점수 계산 꺼짐 - CSV 처리 건너뜀")
+        return
 
     try:
         await _process_csv_attachments(message)
@@ -138,10 +141,19 @@ async def _process_csv_attachments(message: discord.Message) -> None:
     group_info = f"{group_letter}조" if group_letter else "알 수 없음"
     date_str = format_kr_date(now_kst)
 
-    if group_letter and group_letter.upper() in settings.SCORE_DISABLED_GROUPS:
-        logger.info(f"[이벤트] {group_letter}조 점수 계산 꺼짐 - 점수표 건너뛰고 게임 ID만 처리")
-    elif not await _send_score_table(channel, csv_data_list, current_round_count, group_info, date_str):
+    team_data = aggregate_team_scores(csv_data_list)
+    if not team_data:
+        logger.warning("[이벤트] 처리할 팀 데이터 없음")
         return
+
+    img_buf = await ImageGenerator.generate_score_table_image_async(team_data)
+    if not img_buf:
+        logger.error("[이벤트] 점수표 이미지 생성 실패")
+        return
+
+    score_view = _build_score_view(current_round_count, group_info, date_str)
+    score_file = discord.File(img_buf, filename=SCORE_IMAGE_FILENAME)
+    await channel.send(view=score_view, file=score_file)
 
     if current_round_count == settings.TOTAL_ROUNDS:
         gameid_view = _build_gameid_view(csv_data_list, group_info, date_str)
@@ -149,29 +161,6 @@ async def _process_csv_attachments(message: discord.Message) -> None:
         # View 인스턴스는 채널 간 재사용 불가
         backup_gameid_view = _build_gameid_view(csv_data_list, group_info, date_str)
         await _send_gameid_to_backup_channel(backup_gameid_view)
-
-
-async def _send_score_table(
-    channel,
-    csv_data_list: List[CSVRow],
-    current_round_count: int,
-    group_info: str,
-    date_str: str,
-) -> bool:
-    team_data = aggregate_team_scores(csv_data_list)
-    if not team_data:
-        logger.warning("[이벤트] 처리할 팀 데이터 없음")
-        return False
-
-    img_buf = await ImageGenerator.generate_score_table_image_async(team_data)
-    if not img_buf:
-        logger.error("[이벤트] 점수표 이미지 생성 실패")
-        return False
-
-    score_view = _build_score_view(current_round_count, group_info, date_str)
-    score_file = discord.File(img_buf, filename=SCORE_IMAGE_FILENAME)
-    await channel.send(view=score_view, file=score_file)
-    return True
 
 
 def _build_score_view(current_round_count: int, group_info: str, date_str: str) -> 'LayoutView':
