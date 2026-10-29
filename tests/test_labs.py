@@ -170,12 +170,12 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
     async def test_failed_send_can_retry(self):
         labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
         channel = MagicMock()
-        channel.send = AsyncMock(side_effect=discord.HTTPException(MagicMock(status=500), 'boom'))
+        channel.send = AsyncMock(side_effect=ConnectionResetError())
         client = MagicMock()
         client.get_channel.return_value = channel
         self.request.return_value = {'played': 4, 'plannedRounds': 4, 'ended': True, 'replays': [{'roundNo': 1, 'gameId': 5}]}
 
-        with self.assertRaises(discord.HTTPException):
+        with self.assertRaises(ConnectionResetError):
             await labs_api.post_backup(client, 'A')
         self.assertEqual(labs_api.load_state()['posted'], [])
 

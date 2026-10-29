@@ -141,12 +141,15 @@ async def post_backup(client: discord.Client, group_letter: str, finished_only: 
     if not channel:
         logger.error(f"[Labs] 백업 분석 채널을 찾을 수 없음 - 채널 ID: {settings.BACKUP_ANALYSIS_CHANNEL_ID}")
         return False
-    # 전송 중 취소돼도 다시 보내지 않도록 먼저 기록
+    # 보드를 읽는 동안 다른 조가 기록했을 수 있어 다시 읽음. 전송 중 취소돼도 다시 보내지 않도록 먼저 기록
+    state = load_state()
+    if state.get('code') != code or group_letter in state.get('posted', []):
+        return False
     state.setdefault('posted', []).append(group_letter)
     save_state(state)
     try:
         await channel.send(view=backup_view(state['date'], group_letter, replays))
-    except discord.HTTPException:
+    except Exception:
         state = load_state()
         if group_letter in state.get('posted', []):
             state['posted'].remove(group_letter)
@@ -170,7 +173,6 @@ def schedule_backup(client: discord.Client, group_letter: str) -> None:
                     return
             except Exception as e:
                 logger.error(f"[Labs] {group_letter}조 게임 ID 백업 실패: {e}", exc_info=True)
-                return
 
     _backup_tasks[group_letter] = asyncio.create_task(run())
 
