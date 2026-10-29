@@ -206,7 +206,9 @@ class ScrimOrchestrator:
             if mentions:
                 description = f"{mentions}\n{description}"
             view = custom_view(f"📢 {date_str} 스크림 취소 안내", description, discord.Color.orange())
-            await channel.send(view=view, allowed_mentions=discord.AllowedMentions(users=True))
+            message = await channel.send(view=view, allowed_mentions=discord.AllowedMentions(users=True))
+            team_data_manager.cancel_message_id = message.id
+            team_data_manager.save_backup()
             logger.info(f"[조편성] 팀 부족 취소 공지 전송 - {team_count}팀")
         except Exception as e:
             logger.error(f"[조편성] 취소 공지 전송 실패: {e}", exc_info=True)
@@ -494,6 +496,14 @@ async def transition_to_next_scrim(client: "ScrimBot", channel: discord.TextChan
             pass
         except Exception as e:
             logger.warning(f"[스크림] 이전 MMR 메시지 삭제 실패: {e}")
+
+    if old_tdm.cancel_message_id:
+        try:
+            await channel.get_partial_message(old_tdm.cancel_message_id).delete()
+        except discord.NotFound:
+            pass
+        except Exception as e:
+            logger.warning(f"[스크림] 이전 취소 안내 삭제 실패: {e}")
 
     team_data_manager = await bot_manager.reset_team_data_manager(client)
     team_data_manager.assignment_progress = {}

@@ -15,7 +15,7 @@ def _kst(hour, minute=0, second=0):
 class TransitionDashboardFailureTest(unittest.IsolatedAsyncioTestCase):
     async def test_background_tasks_start_even_if_dashboard_fails(self):
         calls = MagicMock()
-        old_tdm = MagicMock(mmr_message=None, mmr_message_id=None, dashboard_message_id=55)
+        old_tdm = MagicMock(mmr_message=None, mmr_message_id=None, cancel_message_id=None, dashboard_message_id=55)
         new_tdm = MagicMock(teams={})
         new_tdm.initialize_new_scrim = AsyncMock()
         new_tdm.start_background_tasks = calls.start
@@ -35,6 +35,71 @@ class TransitionDashboardFailureTest(unittest.IsolatedAsyncioTestCase):
         names = [c[0] for c in calls.mock_calls]
         self.assertEqual(names[:3], ['start', 'refresh', 'save'])
         self.assertEqual(new_tdm.dashboard_message_id, 55)
+
+
+class CancellationNoticeCleanupTest(unittest.IsolatedAsyncioTestCase):
+    async def _transition(self, channel, cancel_message_id=777):
+        old_tdm = MagicMock(mmr_message=None, mmr_message_id=None, cancel_message_id=cancel_message_id)
+        new_tdm = MagicMock(teams={})
+        new_tdm.initialize_new_scrim = AsyncMock()
+        with patch.object(scrim_orchestrator, 'BotManager') as BM:
+            manager = BM.get_instance.return_value
+            manager.get_team_data_manager.return_value = old_tdm
+            manager.reset_team_data_manager = AsyncMock(return_value=new_tdm)
+            await scrim_orchestrator.transition_to_next_scrim(MagicMock(), channel, AsyncMock())
+        return manager
+
+    async def test_notice_sends_and_stores_message_id(self):
+        channel = MagicMock()
+        channel.send = AsyncMock(return_value=MagicMock(id=777))
+        tdm = MagicMock(scrim_month=10, scrim_day=6, scrim_channel_id=1, teams={}, cancel_message_id=None)
+        tdm.client.get_channel.return_value = channel
+        await scrim_orchestrator.ScrimOrchestrator(tdm)._send_cancellation_notice(tdm, 3)
+        channel.send.assert_awaited_once()
+        self.assertEqual(tdm.cancel_message_id, 777)
+        tdm.save_backup.assert_called_once()
+
+    async def test_transition_deletes_cancel_notice_before_reset(self):
+        order = []
+        channel = MagicMock()
+        channel.get_partial_message.return_value.delete = AsyncMock(side_effect=lambda: order.append('delete'))
+        new_tdm = MagicMock(teams={})
+        new_tdm.initialize_new_scrim = AsyncMock()
+
+        async def _reset(client):
+            order.append('reset')
+            return new_tdm
+
+        old_tdm = MagicMock(mmr_message=None, mmr_message_id=None, cancel_message_id=777)
+        with patch.object(scrim_orchestrator, 'BotManager') as BM:
+            manager = BM.get_instance.return_value
+            manager.get_team_data_manager.return_value = old_tdm
+            manager.reset_team_data_manager = _reset
+            await scrim_orchestrator.transition_to_next_scrim(MagicMock(), channel, AsyncMock())
+        channel.get_partial_message.assert_called_once_with(777)
+        self.assertEqual(order, ['delete', 'reset'])
+
+    async def test_already_deleted_notice_is_ignored(self):
+        import discord
+        channel = MagicMock()
+        not_found = discord.NotFound(MagicMock(status=404), 'Unknown Message')
+        channel.get_partial_message.return_value.delete = AsyncMock(side_effect=not_found)
+        with self.assertNoLogs('scrim-bot.scrim_orchestrator', level='WARNING'):
+            manager = await self._transition(channel)
+        manager.reset_team_data_manager.assert_awaited_once()
+
+    async def test_other_delete_error_logs_warning(self):
+        channel = MagicMock()
+        channel.get_partial_message.return_value.delete = AsyncMock(side_effect=RuntimeError("boom"))
+        with self.assertLogs('scrim-bot.scrim_orchestrator', level='WARNING') as logs:
+            manager = await self._transition(channel)
+        self.assertTrue(any('이전 취소 안내 삭제 실패' in r.getMessage() for r in logs.records))
+        manager.reset_team_data_manager.assert_awaited_once()
+
+    async def test_no_cancel_notice_skips_delete(self):
+        channel = MagicMock()
+        await self._transition(channel, cancel_message_id=None)
+        channel.get_partial_message.assert_not_called()
 
 
 class DailyResetLoopTest(unittest.IsolatedAsyncioTestCase):

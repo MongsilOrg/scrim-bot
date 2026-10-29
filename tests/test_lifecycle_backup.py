@@ -53,6 +53,20 @@ class BackupQuarantineTest(unittest.TestCase):
         self.assertFalse(os.path.exists(self.path))
         self.assertEqual(len(self._corrupt_files()), 1)
 
+    def test_cancel_message_id_survives_backup_round_trip(self):
+        from models.team_data_manager import TeamDataManager
+
+        mgr = TeamDataManager()
+        mgr.BACKUP_FILE = self.path
+        mgr.scrim_day, mgr.scrim_month = 6, 10
+        mgr.cancel_message_id = 777
+        mgr.save_backup()
+
+        restored = TeamDataManager()
+        restored.BACKUP_FILE = self.path
+        self.assertTrue(restored.load_backup())
+        self.assertEqual(restored.cancel_message_id, 777)
+
     def test_missing_backup_is_not_an_error(self):
         self.assertFalse(self.backup.should_restore())
         self.assertEqual(self._corrupt_files(), [])

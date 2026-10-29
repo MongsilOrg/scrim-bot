@@ -36,6 +36,7 @@ _TOP_FIELDS = [
     ('group_message_texts', 'group_message_texts', None, None, dict),
     ('dashboard_message_id', 'dashboard_message_id', None, None, None),
     ('mmr_message_id', 'mmr_message_id', None, None, None),
+    ('cancel_message_id', 'cancel_message_id', None, None, None),
     ('selected_weathers', '_selected_weathers', None, None, dict),
     ('unverified_teams', 'unverified_teams', list, set, set),
     ('assignment_progress', 'assignment_progress', None, None, dict),

@@ -71,6 +71,7 @@ class TeamDataManager:
         self.is_team_assignment_started: bool = False
         self.mmr_message: Optional[discord.Message] = None
         self.mmr_message_id: Optional[int] = None
+        self.cancel_message_id: Optional[int] = None
         self.scrim_channel_id: Optional[int] = None
         self._pending_tasks: set = set()
         self.groups: Optional[List[List[Tuple[str, TeamData, float]]]] = None
@@ -206,6 +207,7 @@ class TeamDataManager:
 
             self.mmr_message = None
             self.mmr_message_id = None
+            self.cancel_message_id = None
             self.is_team_assignment_started = False
             self.scrim_channel_id = None
             self.scrim_day = None
