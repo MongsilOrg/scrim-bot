@@ -15,12 +15,9 @@ from utils.layout_helpers import custom_view, format_kr_date
 
 logger = get_logger('labs_api')
 
-# 어제 F7XV3V 규칙에 금지 실험체만 3-PICK-BAN
+# 공식 점수에 금지 실험체만 3-PICK-BAN
 SCRIM_RULES = {
-    'preset': 'custom',
-    'scoreSource': 'table',
-    'placementPoints': [10, 7, 5, 4, 3, 2, 1, 0],
-    'killMultiplier': 1,
+    'preset': 'masters',
     'tiebreak': 'killScore',
     'deathPenalty': True,
     'subWeather': True,
