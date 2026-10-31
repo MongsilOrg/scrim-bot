@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 import discord
 from discord import app_commands
@@ -7,26 +7,16 @@ from bot.manager import BotManager
 from commands.schedule import setup_schedule_dashboard
 from commands.ticket_cleanup import setup_ticket_cleanup
 from commands.scrim import setup_scrim_dashboard
-from utils.layout_helpers import error_view, format_kr_date, image_response_view, custom_view, send_response
+from utils.layout_helpers import error_view, send_response
 from config.logging_config import get_logger
 from config.settings import settings
 from services import labs_api
-from services.image_generator import ImageGenerator
-from services.score_aggregation import (
-    CSVRow,
-    aggregate_team_scores,
-    collect_today_csv_data,
-    is_csv_filename,
-)
-from utils.helpers import get_current_kst_time, get_group_letter, get_start_of_day_utc, is_assignment_window
+from utils.helpers import get_current_kst_time, get_group_letter, is_assignment_window, is_csv_filename
 
 if TYPE_CHECKING:
     from bot.client import ScrimBot
-    from discord.ui import LayoutView
 
 logger = get_logger('events')
-
-SCORE_IMAGE_FILENAME = 'score_table.png'
 
 # on_ready는 재-IDENTIFY 때 재발화
 _bootstrap_done = False
@@ -118,80 +108,6 @@ async def on_message(message: discord.Message) -> None:
     if not group_letter:
         return
     if labs_api.linked_today(group_letter):
-        logger.info(f"[이벤트] {group_letter}조 Labs 연결 - CSV 처리 건너뜀")
         client = BotManager.get_instance().get_client()
         if client:
             labs_api.schedule_backup(client, group_letter.upper())
-        return
-    if group_letter.upper() in settings.SCORE_DISABLED_GROUPS:
-        logger.info(f"[이벤트] {group_letter}조 점수 계산 꺼짐 - CSV 처리 건너뜀")
-        return
-
-    try:
-        await _process_csv_attachments(message)
-    except Exception as e:
-        logger.error(f"[이벤트] CSV 처리 실패: {e}", exc_info=True)
-
-
-async def _process_csv_attachments(message: discord.Message) -> None:
-    channel = message.channel
-    now_kst = get_current_kst_time()
-    start_utc = get_start_of_day_utc(now_kst)
-
-    csv_data_list = await collect_today_csv_data(channel, start_utc)
-    if not csv_data_list:
-        return
-
-    csv_data_list.sort(key=lambda x: x[0])
-    current_round_count = len(csv_data_list)
-
-    group_letter = get_group_letter(channel.id)
-    group_info = f"{group_letter}조" if group_letter else "알 수 없음"
-    date_str = format_kr_date(now_kst)
-
-    team_data = aggregate_team_scores(csv_data_list)
-    if not team_data:
-        logger.warning("[이벤트] 처리할 팀 데이터 없음")
-        return
-
-    img_buf = await ImageGenerator.generate_score_table_image_async(team_data)
-    if not img_buf:
-        logger.error("[이벤트] 점수표 이미지 생성 실패")
-        return
-
-    score_view = _build_score_view(current_round_count, group_info, date_str)
-    score_file = discord.File(img_buf, filename=SCORE_IMAGE_FILENAME)
-    await channel.send(view=score_view, file=score_file)
-
-    if current_round_count == settings.TOTAL_ROUNDS:
-        gameid_view = _build_gameid_view(csv_data_list, group_info, date_str)
-        await channel.send(view=gameid_view)
-        # View 인스턴스는 채널 간 재사용 불가
-        backup_gameid_view = _build_gameid_view(csv_data_list, group_info, date_str)
-        await _send_gameid_to_backup_channel(backup_gameid_view)
-
-
-def _build_score_view(current_round_count: int, group_info: str, date_str: str) -> 'LayoutView':
-    title = f"📊 {date_str} {group_info} {current_round_count}라운드 스크림 결과"
-    return image_response_view(title, "", f"attachment://{SCORE_IMAGE_FILENAME}", discord.Color.blue())
-
-
-def _build_gameid_view(csv_data_list: List[CSVRow], group_info: str, date_str: str) -> 'LayoutView':
-    lines = [f"**{round_num}R**: `{game_id}`" for round_num, (game_id, _, _) in enumerate(csv_data_list, 1)]
-    return custom_view(
-        f"🎮 {date_str} {group_info} 게임 ID",
-        "\n".join(lines),
-        discord.Color.blue(),
-    )
-
-
-async def _send_gameid_to_backup_channel(gameid_view) -> None:
-    try:
-        client = BotManager.get_instance().get_client()
-        if not client:
-            return
-        backup_channel = client.get_channel(settings.BACKUP_ANALYSIS_CHANNEL_ID)
-        if backup_channel:
-            await backup_channel.send(view=gameid_view)
-    except Exception as e:
-        logger.error(f"[이벤트] 백업 채널 전송 실패: {e}", exc_info=True)

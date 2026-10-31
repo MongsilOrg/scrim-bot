@@ -1,10 +1,8 @@
 import re
 import unittest
 from datetime import date, datetime
-from types import SimpleNamespace
 from unittest.mock import patch
 
-from commands import room_code
 from commands.ui import warning_modals
 from models.schedule_manager import ScheduleManager
 from utils.helpers import KST
@@ -22,16 +20,6 @@ class FormatDateTest(unittest.TestCase):
 
     def test_unparsed_string_kept(self):
         self.assertEqual(format_kr_date("기록 없음"), "기록 없음")
-
-
-class BanLineTest(unittest.TestCase):
-    def _message(self, line):
-        child = SimpleNamespace(content=line)
-        return SimpleNamespace(components=[SimpleNamespace(children=[child])])
-
-    def test_new_and_legacy_prefix(self):
-        self.assertEqual(room_code._find_ban_display(self._message("밴: `A` `B`")), "`A` `B`")
-        self.assertEqual(room_code._find_ban_display(self._message("🚫 밴: `A`")), "`A`")
 
 
 class ScheduleStatusTextTest(unittest.TestCase):

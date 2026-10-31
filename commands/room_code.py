@@ -9,9 +9,7 @@ from discord.ui import ActionRow, Button, Container, DynamicItem, LayoutView, Se
 
 from config.logging_config import get_logger
 from config.settings import settings
-from services import labs_api
 from services.holidays_api import get_rest_day_info
-from services.score_aggregation import compute_ban_list_for_channel
 from utils.layout_helpers import error_view, permission_error_view, warning_view, send_response, FOOTER_TEXT
 from utils.helpers import (
     get_current_kst_time,
@@ -112,7 +110,6 @@ class RoomCodeView(LayoutView):
         cleaned_room_code: str,
         weather_value: str,
         round_start_str: str,
-        ban_display: str | None = None,
         role_mention: str = "",
         group_letter: str | None = None,
         weather_options: list[str] | None = None,
@@ -122,7 +119,6 @@ class RoomCodeView(LayoutView):
         self.cleaned_room_code = cleaned_room_code
         self.weather_value = weather_value
         self.round_start_str = round_start_str
-        self.ban_display = ban_display
         self.role_mention = role_mention
         self.group_letter = group_letter
 
@@ -137,9 +133,6 @@ class RoomCodeView(LayoutView):
             TextDisplay(content=f"날씨: {weather_value}\n시작: `{round_start_str}`"),
         ]
 
-        if ban_display:
-            children.append(TextDisplay(content=f"{BAN_PREFIX}{ban_display}"))
-
         children.append(Separator())
         children.append(TextDisplay(content=FOOTER_TEXT))
 
@@ -151,21 +144,6 @@ class RoomCodeView(LayoutView):
                 for name in weather_options
             ]
             self.add_item(ActionRow(*buttons))
-
-
-BAN_PREFIX = "밴: "
-# 배포 전에 게시된 공지의 밴 줄
-LEGACY_BAN_PREFIX = "🚫 밴: "
-
-
-def _find_ban_display(message: discord.Message | None) -> str | None:
-    for component in getattr(message, 'components', None) or []:
-        for child in getattr(component, 'children', None) or []:
-            content = getattr(child, 'content', '') or ''
-            for prefix in (LEGACY_BAN_PREFIX, BAN_PREFIX):
-                if content.startswith(prefix):
-                    return content[len(prefix):]
-    return None
 
 
 class WeatherButton(
@@ -212,7 +190,6 @@ class WeatherButton(
             cleaned_room_code=self.room_code,
             weather_value=f"`{main_weather}`, `{weather_name}`",
             round_start_str=self.round_start_str,
-            ban_display=_find_ban_display(interaction.message),
             role_mention=role_mention,
             group_letter=self.group_letter,
         )
@@ -332,7 +309,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
             await send_response(interaction, permission_error_view(f"관리자와 {group_letter}조 참가자만 방 코드를 공지할 수 있습니다."))
             return
 
-        # 채널 기록 스캔과 CSV 집계가 3초 응답 제한을 넘김
+        # 채널 기록 스캔이 3초 응답 제한을 넘김
         try:
             await interaction.response.defer()
         except discord.NotFound:
@@ -370,13 +347,6 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
             weather_value = f"`{main_weather}`, 서브 날씨는 아래 버튼으로 골라주세요"
             weather_options = available
 
-        ban_display = None
-        # Labs에 연결된 조는 몽실봇 순위 이미지 아래에 금지 실험체가 나옴
-        linked = group_letter.upper() in settings.SCORE_DISABLED_GROUPS or labs_api.linked_today(group_letter)
-        ban_list = [] if linked else await compute_ban_list_for_channel(interaction.channel)
-        if ban_list:
-            ban_display = " ".join(f"`{char}`" for char in ban_list)
-
         role_mention = get_group_role_mention(interaction.guild, group_letter)
         if not role_mention:
             logger.warning(f"[명령어] 조별 역할을 찾을 수 없음 - 역할: {group_letter}조")
@@ -386,7 +356,6 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
             cleaned_room_code=cleaned_room_code,
             weather_value=weather_value,
             round_start_str=round_start_time.strftime('%H:%M'),
-            ban_display=ban_display,
             role_mention=role_mention,
             group_letter=group_letter,
             weather_options=weather_options,

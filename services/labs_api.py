@@ -54,7 +54,7 @@ def save_state(state: dict) -> None:
 
 
 def linked_today(group_letter: str, today: Optional[date] = None) -> bool:
-    """오늘 Labs 대회에 연결된 조. 이 조는 스크림봇이 점수와 금지 실험체를 계산하지 않음"""
+    """오늘 Labs 대회에 연결된 조"""
     if not enabled():
         return False
     state = load_state()

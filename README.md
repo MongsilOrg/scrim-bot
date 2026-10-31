@@ -12,7 +12,8 @@
   시드팀 명단은 Google Sheets에서 읽음
 - `/방코드`: 조별 채널에 방 코드와 라운드별 날씨를 공지.\
   서브 날씨는 관리자가 버튼으로 고름
-- 경기 결과 CSV를 올리면 팀별 누적 점수를 집계해 점수표 이미지로 응답
+- 조 편성 뒤 Labs 대회를 만들어 조 채널과 연결.\
+  점수 집계와 순위표는 Labs가 맡고, 라운드별 게임 ID는 백업 채널에 남김
 - 제재 부여 컨텍스트 메뉴로 주의와 경고를 관리.\
   주의 2회는 경고 1회로 바뀌고, 경고로 제한된 인원이 있는 팀은 등록이 막힘.\
   기록은 Google Sheets에 남음
@@ -27,7 +28,7 @@
 
 ## 실행
 
-점수표와 MMR 표 이미지는 wkhtmltoimage로 그리므로 시스템에 설치되어 있어야 합니다.\
+MMR 표 이미지는 wkhtmltoimage로 그리므로 시스템에 설치되어 있어야 합니다.\
 Google Sheets 서비스 계정 인증 파일은 `credentials/google_sheets_credentials.json`에 둡니다.
 
 ```bash
@@ -45,6 +46,7 @@ python main.py
 | ADMIN_ROLE_IDS | 필수 | 관리자 역할 ID, 쉼표 구분 |
 | NOTICE_CHANNEL_ID | 필수 | 스크림 공지 채널 ID |
 | BACKUP_ANALYSIS_CHANNEL_ID | 필수 | 전적 백업 채널 ID |
+| LABS_SCRIM_TOKEN | 필수 | Labs 대회 생성과 조회에 쓰는 토큰 |
 | GROUP_CHANNEL_IDS | 필수 | 조별 채널 ID, `A:채널ID,B:채널ID` 형식 |
 | BSER_API_KEY | 필수 | 이터널 리턴 Open API 키 |
 | GOOGLE_SHEETS_MAIN_SPREADSHEET_ID | 필수 | 시드팀, 테스트 계정, 패널티 공용 스프레드시트 ID |

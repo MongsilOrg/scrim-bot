@@ -6,15 +6,9 @@ import shutil
 import tempfile
 from io import BytesIO
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Optional
 
 from services.notion_api import get_server_info
-from services.score_aggregation import (
-    COL_KILL_SCORE,
-    COL_TEAM_NAME,
-    COL_TOTAL_SCORE,
-    KEY_RANK,
-)
 
 import imgkit
 
@@ -208,59 +202,3 @@ class ImageGenerator:
     <td>{members_cell}</td>
 </tr>
 """
-
-    @staticmethod
-    async def generate_score_table_image_async(team_data: List[Dict]) -> Optional[BytesIO]:
-        return await asyncio.to_thread(ImageGenerator.generate_score_table_image, team_data)
-
-    @staticmethod
-    def generate_score_table_image(team_data: List[Dict]) -> Optional[BytesIO]:
-        if not team_data:
-            return ImageGenerator._create_empty_score_image()
-
-        html_str = ImageGenerator._build_score_html(team_data)
-        return _render_html_to_image(html_str, width=900)
-
-    @staticmethod
-    def _build_score_html(team_data: List[Dict]) -> str:
-        is_tournament = get_server_info()['is_tournament']
-        accent_color = TOURNAMENT_COLOR if is_tournament else '#4a9eff'
-
-        rows_html = ''
-        for team in team_data:
-            rank = team.get(KEY_RANK, 0)
-            team_name = team.get(COL_TEAM_NAME, 'Unknown')
-            kill_score = team.get(COL_KILL_SCORE, 0)
-            total_score = team.get(COL_TOTAL_SCORE, 0)
-
-            rank_class = ''
-            if rank == 1:
-                rank_class = 'rank-gold'
-            elif rank == 2:
-                rank_class = 'rank-silver'
-            elif rank == 3:
-                rank_class = 'rank-bronze'
-
-            row_class = 'row-even' if rank % 2 == 0 else 'row-odd'
-
-            safe_name = team_name.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-
-            ks_display = int(kill_score) if kill_score == int(kill_score) else kill_score
-            ts_display = int(total_score) if total_score == int(total_score) else total_score
-
-            rows_html += f"""
-            <tr class="{row_class}">
-                <td class="col-rank {rank_class}">{rank}</td>
-                <td class="col-team">{safe_name}</td>
-                <td class="col-ks">{ks_display}</td>
-                <td class="col-ts accent">{ts_display}</td>
-            </tr>
-            """
-
-        template = _load_template('score_table.html')
-        return template.format(accent_color=accent_color, rows_html=rows_html)
-
-    @staticmethod
-    def _create_empty_score_image() -> Optional[BytesIO]:
-        html = _load_template('empty_score.html')
-        return _render_html_to_image(html, width=900)

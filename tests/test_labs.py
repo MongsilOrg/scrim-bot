@@ -244,7 +244,7 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
 
 
 class LinkedCsvTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
-    async def test_linked_group_skips_scoring_and_checks_backup(self):
+    async def test_linked_group_checks_backup(self):
         self.use_labs()
         message = MagicMock()
         message.author.bot = False
@@ -252,10 +252,8 @@ class LinkedCsvTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         with patch.object(events, 'get_group_letter', return_value='A'), \
                 patch.object(events.labs_api, 'linked_today', return_value=True), \
                 patch.object(events.labs_api, 'schedule_backup') as schedule, \
-                patch.object(events, '_process_csv_attachments', new=AsyncMock()) as process, \
                 patch.object(events, 'BotManager') as bm:
             await events.on_message(message)
-        process.assert_not_awaited()
         schedule.assert_called_once_with(bm.get_instance.return_value.get_client.return_value, 'A')
 
 

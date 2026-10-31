@@ -6,7 +6,6 @@ aiohttp>=3.9.0
 requests>=2.31.0
 
 # 데이터 처리
-pandas>=2.0.0
 
 # 이미지 처리
 imgkit>=1.2.0

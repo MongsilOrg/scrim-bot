@@ -370,7 +370,7 @@ class ScrimOrchestrator:
         logger.info("[조편성] 공지와 역할 처리 완료")
 
     async def _link_labs(self, guild, groups) -> None:
-        """조 공지가 조 채널을 비운 뒤에 연결해야 몽실봇 안내가 남음. 실패하면 그날은 스크림봇이 점수를 계산함"""
+        """조 공지가 조 채널을 비운 뒤에 연결해야 몽실봇 안내가 남음"""
         if not labs_api.enabled():
             return
         client = self._manager.client or BotManager.get_instance().get_client()
@@ -394,10 +394,11 @@ class ScrimOrchestrator:
             if result:
                 break
         if not result:
-            logger.error("[Labs] 대회 생성 실패 - 스크림봇이 점수 계산")
+            logger.error("[Labs] 대회 생성 실패")
             await self._notify_log(
-                "Labs 대회를 만들지 못해 오늘은 스크림봇이 점수를 계산합니다.\n"
-                "Labs에 오늘 대회가 생겼다면 지워주세요."
+                "Labs 대회를 만들지 못했습니다.\n"
+                "Labs에서 오늘 대회를 직접 만들고 조 채널을 연결해주세요.\n"
+                "게임 ID는 경기 뒤 백업 채널에 직접 남겨주세요."
             )
             return
         self._mark_stage(STAGE_LABS)

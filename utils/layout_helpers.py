@@ -5,7 +5,6 @@ import discord
 from discord.ui import (
     Container,
     LayoutView,
-    MediaGallery,
     Separator,
     TextDisplay,
 )
@@ -102,31 +101,6 @@ def custom_view(
         for name, value in fields:
             children.append(TextDisplay(content=f"**{name}**\n{value}"))
 
-    children.append(Separator())
-    children.append(TextDisplay(content=FOOTER_TEXT))
-
-    view = LayoutView()
-    view.add_item(Container(*children, accent_colour=accent_color))
-    return view
-
-
-def image_response_view(
-    title: str,
-    description: str,
-    image_url: str,
-    accent_color: discord.Color,
-    *,
-    fields: list[tuple[str, str]] | None = None,
-) -> LayoutView:
-    children: list = [TextDisplay(content=f"## {title}\n{description}")]
-
-    if fields:
-        for name, value in fields:
-            children.append(TextDisplay(content=f"**{name}**\n{value}"))
-
-    children.append(
-        MediaGallery(discord.MediaGalleryItem(media=image_url))
-    )
     children.append(Separator())
     children.append(TextDisplay(content=FOOTER_TEXT))
 

@@ -64,6 +64,10 @@ def get_start_of_day_utc(now_kst: datetime = None) -> datetime:
     return start_of_day_kst.astimezone(timezone.utc)
 
 
+def is_csv_filename(filename: str) -> bool:
+    return filename.lower().endswith('.csv')
+
+
 def get_group_letter(channel_id: int) -> str | None:
     for letter, ch_id in settings.GROUP_CHANNEL_IDS.items():
         if ch_id == channel_id:
