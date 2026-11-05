@@ -100,6 +100,7 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         member = lambda i, bot=False: SimpleNamespace(id=i, bot=bot)
         guild = MagicMock()
         guild.owner_id = 1
+        guild.owner = SimpleNamespace(global_name='몽실', name='mongsil')
         guild.name = '스크림'
         guild.roles = [
             SimpleNamespace(name='Mod', members=[member(1), member(2)]),
@@ -118,6 +119,7 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         method, path, body = self.request.await_args.args
         self.assertEqual((method, path), ('POST', '/api/bot/t'))
         self.assertEqual(body['owner'], '1')
+        self.assertEqual(body['ownerName'], '몽실')
         self.assertEqual(body['operators'], ['1', '2', '3'])
         self.assertEqual(body['name'], '10월 29일 목요일 스크림')
         self.assertEqual(body['rules']['bans'], 'basic')
@@ -125,6 +127,16 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         self.assertTrue(labs_api.linked_today('a', TODAY))
         self.assertFalse(labs_api.linked_today('C', TODAY))
         self.assertFalse(labs_api.linked_today('A', date(2026, 10, 30)))
+
+    async def test_owner_name_falls_back_to_username_or_none(self):
+        self.request.return_value = {'status': 'ok', 'code': 'K3PQ8M'}
+        guild = self.make_guild()
+        guild.owner = SimpleNamespace(global_name=None, name='mongsil')
+        await labs_api.create_scrim(guild, ['A'])
+        self.assertEqual(self.request.await_args.args[2]['ownerName'], 'mongsil')
+        guild.owner = None
+        await labs_api.create_scrim(guild, ['A'])
+        self.assertIsNone(self.request.await_args.args[2]['ownerName'])
 
     async def test_failed_create_keeps_scrimbot_scoring(self):
         self.request.return_value = None

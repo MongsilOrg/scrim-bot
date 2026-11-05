@@ -95,8 +95,11 @@ async def create_scrim(guild: discord.Guild, letters: List[str], today: Optional
             'guild': guild.name,
             'channel': channel.name if channel else f"{letter}조",
         })
+    owner = guild.owner
     body = {
         'owner': str(guild.owner_id),
+        # Labs 로그인과 같은 이름. cleanup이 지운 개최자 행을 다시 만들 때 씀
+        'ownerName': (owner.global_name or owner.name) if owner else None,
         'operators': operator_ids(guild),
         'name': f"{format_kr_date(today)} 스크림",
         'preset': SCRIM_RULES['preset'],
