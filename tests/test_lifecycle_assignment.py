@@ -41,7 +41,7 @@ class FakeService:
     def create_group_announcement_message(self, letter, group, info):
         return f"{letter} {info['operate']}"
 
-    async def send_group_announcement_with_image(self, channel, message, group, is_rest_day=False):
+    async def send_group_announcement_with_image(self, channel, message, group, is_rest_day=False, is_preseason=False):
         self.calls.append(('announce', channel.letter))
         if channel.letter not in self.fail_letters:
             self.mgr.group_message_ids[channel.letter] = 1000 + ord(channel.letter)

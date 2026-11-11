@@ -429,10 +429,11 @@ class ScrimOrchestrator:
         pending = [letter for letter, _, group in targets if group]
 
         try:
-            is_rest_day = (await get_rest_day_info())["is_rest_day"]
+            rest = await get_rest_day_info()
+            is_rest_day, is_preseason = rest["is_rest_day"], rest.get("is_preseason", False)
         except Exception as e:
             logger.error(f"[Discord] 휴무일 정보 조회 실패, 자율 진행 안내 생략: {e}", exc_info=True)
-            is_rest_day = False
+            is_rest_day = is_preseason = False
 
         try:
             info = await asyncio.to_thread(get_server_info)
@@ -450,7 +451,9 @@ class ScrimOrchestrator:
                 await service.clear_channel_messages(channel)
                 if group:
                     message = service.create_group_announcement_message(group_letter, group, info)
-                    await service.send_group_announcement_with_image(channel, message, group, is_rest_day=is_rest_day)
+                    await service.send_group_announcement_with_image(
+                        channel, message, group, is_rest_day=is_rest_day, is_preseason=is_preseason,
+                    )
             except Exception as e:
                 logger.error(f"[Discord] 조별 공지 전송 실패 - 조: {group_letter}조: {e}", exc_info=True)
 

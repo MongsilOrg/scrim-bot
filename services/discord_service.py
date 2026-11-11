@@ -105,7 +105,7 @@ class DiscordService:
         )
         return full_message, roster_view
 
-    async def send_group_announcement_with_image(self, channel: discord.TextChannel, message: str, group: List[Tuple[str, "TeamData", float]], is_rest_day: bool = False) -> None:
+    async def send_group_announcement_with_image(self, channel: discord.TextChannel, message: str, group: List[Tuple[str, "TeamData", float]], is_rest_day: bool = False, is_preseason: bool = False) -> None:
         try:
             group_letter = get_group_letter(channel.id)
             if not group_letter:
@@ -142,7 +142,7 @@ class DiscordService:
                     top_team_name, top_team_data, _ = group[0]
                     top_user_id = top_team_data.user_id
 
-                    guide_view = build_rest_day_guide_view(top_team_name, top_user_id)
+                    guide_view = build_rest_day_guide_view(top_team_name, top_user_id, preseason=is_preseason)
                     await channel.send(
                         view=guide_view,
                         allowed_mentions=discord.AllowedMentions(users=True),

@@ -95,16 +95,16 @@ class GroupRosterView(LayoutView):
             logger.error(f"[뷰] View 재생성 실패: {e}", exc_info=True)
 
 
-def build_rest_day_guide_view(team_name: str, user_id: Optional[str] = None) -> LayoutView:
+def build_rest_day_guide_view(team_name: str, user_id: Optional[str] = None, *, preseason: bool = False) -> LayoutView:
     mention = f"<@{user_id}>\n" if user_id else ""
+    title, subject = ("프리시즌", "프리시즌") if preseason else ("공휴일, 주말", "공휴일과 주말")
     notice = (
         f"{mention}"
-        "📢 **공휴일, 주말 스크림 자율 진행 안내**\n"
-        "공휴일과 주말 스크림은 레이팅컷 기준 조편성까지만 진행합니다.\n"
+        f"**{title} 스크림 자율 진행 안내**\n"
+        f"{subject} 스크림은 레이팅컷 기준 조편성까지만 진행합니다.\n"
         "아래 링크를 확인한 뒤 참여해주세요.\n\n"
         f"`{team_name}` 팀은 사설방을 만든 뒤 양식에 맞춰 경기 결과 CSV를 올려주세요.\n"
-        f"{settings.CUSTOM_GAME_GUIDE_LINK}\n\n"
-        "공휴일, 주말 스크림 중 발생한 문제는 당일 안에 문의해주세요."
+        f"{settings.CUSTOM_GAME_GUIDE_LINK}"
     )
     view = LayoutView(timeout=None)
     view.add_item(Container(
