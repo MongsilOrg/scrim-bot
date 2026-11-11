@@ -139,6 +139,23 @@ class TestPreseason(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(holidays_api._season_at(seasons, at("2026-11-12 20:00")), "Pre-Season22")
         self.assertEqual(holidays_api._season_at(seasons, at("2027-01-01 20:00")), "Pre-Season22")
 
+    async def test_open_ended_season_keeps_refetching(self):
+        open_rows = holidays_api._parse_seasons([
+            {"seasonName": "Season21", "seasonStart": "2026-08-13 12:00:00", "seasonEnd": None}])
+        both = holidays_api._parse_seasons([
+            {"seasonName": "Season21", "seasonStart": "2026-08-13 12:00:00", "seasonEnd": None},
+            {"seasonName": "Pre-Season22", "seasonStart": "2026-11-12 12:00:00", "seasonEnd": None}])
+        fetch = AsyncMock(side_effect=[open_rows, both])
+        with patch("services.holidays_api._fetch_seasons", new=fetch):
+            with self._now("2026-11-12 09:30"):
+                self.assertFalse(await holidays_api.is_preseason(date(2026, 11, 12)))
+            with self._now("2026-11-12 09:35"):
+                self.assertFalse(await holidays_api.is_preseason(date(2026, 11, 12)))
+            self.assertEqual(fetch.await_count, 1)
+            with self._now("2026-11-12 12:01"):
+                self.assertTrue(await holidays_api.is_preseason(date(2026, 11, 12)))
+        self.assertEqual(fetch.await_count, 2)
+
     def test_guide_text_names_preseason(self):
         from commands.ui.roster_views import build_rest_day_guide_view
         text = build_rest_day_guide_view("팀", "1", preseason=True).children[0].children[0].content

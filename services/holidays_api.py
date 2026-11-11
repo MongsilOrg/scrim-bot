@@ -109,11 +109,17 @@ def _parse_seasons(rows: list) -> list:
             for i, (name, start, end) in enumerate(seasons)]
 
 
-def _season_at(seasons: list, at: datetime) -> Optional[str]:
-    for name, start, end in seasons:
+def _season_match(seasons: list, at: datetime) -> Optional[tuple]:
+    for season in seasons:
+        _, start, end = season
         if start <= at and (end is None or at < end):
-            return name
+            return season
     return None
+
+
+def _season_at(seasons: list, at: datetime) -> Optional[str]:
+    match = _season_match(seasons, at)
+    return match[0] if match else None
 
 
 async def is_preseason(target_date: Optional[Union[date, datetime]] = None) -> bool:
@@ -125,7 +131,9 @@ async def is_preseason(target_date: Optional[Union[date, datetime]] = None) -> b
     # 조회 중에 들어온 호출은 빈 캐시 대신 조회 결과를 기다림
     async with _season_lock:
         now = get_current_kst_time()
-        stale = cache['day'] != now.date() or _season_at(cache['seasons'], at) is None
+        match = _season_match(cache['seasons'], at)
+        # 끝 시각이 없는 구간은 다음 시즌 행이 늦게 생길 수 있어 확정으로 보지 않음
+        stale = cache['day'] != now.date() or match is None or match[2] is None
         if stale and (cache['tried_at'] is None or now - cache['tried_at'] >= SEASON_RETRY):
             cache['tried_at'] = now
             seasons = await _fetch_seasons()
