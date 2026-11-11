@@ -37,13 +37,14 @@ class LabsStageTest(LabsStateMixin, AssignmentHarness):
         self.create = patch.object(labs_api, 'create_scrim', new=AsyncMock()).start()
         patch.object(labs_api, 'flush_backups', new=AsyncMock()).start()
         patch.object(labs_api, 'delete_previous', new=AsyncMock()).start()
+        self.poll = patch.object(labs_api, 'start_backup_poll').start()
         patch.object(scrim_orchestrator.asyncio, 'sleep', new=AsyncMock()).start()
 
     async def test_links_labs_after_group_notices(self):
         mgr = self.make_manager()
         self.use_groups(mgr, 2)
         service = self.use_service(mgr)
-        self.create.side_effect = lambda guild, letters: service.calls.append(('labs', letters)) or {'status': 'ok', 'code': 'K3PQ8M', 'missing': []}
+        self.create.side_effect = lambda guild, letters, rosters: service.calls.append(('labs', letters)) or {'status': 'ok', 'code': 'K3PQ8M', 'missing': []}
 
         await mgr.start_team_assignment()
 
@@ -51,6 +52,20 @@ class LabsStageTest(LabsStateMixin, AssignmentHarness):
         self.assertEqual(service.calls[-1], ('labs', ['A', 'B']))
         self.assertIn('labs', mgr.assignment_progress['done'])
         self.log_channel.send.assert_not_awaited()
+        rosters = self.create.await_args.kwargs['rosters']
+        self.assertEqual(sorted(rosters), ['A', 'B'])
+        self.assertTrue(all(rosters[k] for k in rosters))
+        self.poll.assert_called_once()
+
+    async def test_roster_error_still_creates(self):
+        mgr = self.make_manager()
+        self.use_groups(mgr, 1)
+        self.use_service(mgr)
+        self.create.return_value = {'status': 'ok', 'code': 'K3PQ8M', 'missing': []}
+        with patch.object(labs_api, 'group_rosters', side_effect=ValueError('bad')):
+            await mgr.start_team_assignment()
+        self.assertEqual(self.create.await_args.kwargs['rosters'], {})
+        self.assertIn('labs', mgr.assignment_progress['done'])
 
     async def test_failure_reports_once_and_still_finishes(self):
         mgr = self.make_manager()
@@ -128,6 +143,21 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         self.assertFalse(labs_api.linked_today('C', TODAY))
         self.assertFalse(labs_api.linked_today('A', date(2026, 10, 30)))
 
+    async def test_create_sends_rosters_and_auto_upload(self):
+        self.request.return_value = {'status': 'ok', 'code': 'K3PQ8M', 'missing': []}
+        await labs_api.create_scrim(self.make_guild(), ['A', 'B'], rosters={'A': ['가1', '가2']})
+        body = self.request.await_args.args[2]
+        self.assertEqual([l['roster'] for l in body['links']], [['가1', '가2'], []])
+        self.assertIs(body['autoUpload'], True)
+        with patch.object(settings, 'LABS_AUTO_UPLOAD', False):
+            await labs_api.create_scrim(self.make_guild(), ['A'])
+        self.assertIs(self.request.await_args.args[2]['autoUpload'], False)
+
+    async def test_group_rosters_joins_players_and_staff(self):
+        team = lambda players, staff=(): SimpleNamespace(players=list(players), staff=list(staff))
+        groups = [[('팀1', team(['가1', '가2 '], ['가3']), 1.0), ('팀2', team(['나1', '가1']), 1.0)], [('팀3', team([' ', '다1']), 1.0)]]
+        self.assertEqual(labs_api.group_rosters(groups), {'A': ['가1', '가2', '가3', '나1'], 'B': ['다1']})
+
     async def test_owner_name_falls_back_to_username_or_none(self):
         self.request.return_value = {'status': 'ok', 'code': 'K3PQ8M'}
         guild = self.make_guild()
@@ -194,9 +224,38 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
 
     async def test_restart_resumes_unposted_groups(self):
         labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A', 'B'], 'posted': ['A']})
-        with patch.object(labs_api, 'schedule_backup') as schedule:
+        with patch.object(labs_api, 'schedule_backup') as schedule, patch.object(labs_api, 'start_backup_poll') as poll:
             labs_api.resume_backups('client')
         schedule.assert_called_once_with('client', 'B')
+        poll.assert_called_once_with('client')
+
+    async def test_poll_posts_finished_groups_until_all_sent(self):
+        labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A', 'B'], 'posted': []})
+        channel = MagicMock()
+        channel.send = AsyncMock()
+        client = MagicMock()
+        client.get_channel.return_value = channel
+        boards = {
+            'A': [{'played': 2, 'plannedRounds': 4, 'ended': False, 'replays': [{'roundNo': 1, 'gameId': 5}]},
+                  {'played': 4, 'plannedRounds': 4, 'ended': True, 'replays': [{'roundNo': 1, 'gameId': 5}]}],
+            'B': [{'played': 4, 'plannedRounds': 4, 'ended': True, 'replays': [{'roundNo': 1, 'gameId': 6}]}],
+        }
+        self.request.side_effect = lambda method, path, body=None: boards[path[-1]].pop(0)
+        with patch.object(labs_api.asyncio, 'sleep', new=AsyncMock()) as sleep:
+            labs_api._poll_task = None
+            labs_api.start_backup_poll(client)
+            await labs_api._poll_task
+        self.assertEqual(channel.send.await_count, 2)
+        self.assertEqual(sorted(labs_api.load_state()['posted']), ['A', 'B'])
+        self.assertEqual(sleep.await_count, 3)
+
+    async def test_poll_stops_when_day_changes(self):
+        labs_api.save_state({'date': '2026-10-28', 'code': 'OLD000', 'groups': ['A'], 'posted': []})
+        with patch.object(labs_api.asyncio, 'sleep', new=AsyncMock()):
+            labs_api._poll_task = None
+            labs_api.start_backup_poll(MagicMock())
+            await labs_api._poll_task
+        self.request.assert_not_awaited()
 
     async def test_flush_posts_unfinished_groups(self):
         labs_api.save_state({'date': '2026-10-28', 'code': 'K3PQ8M', 'groups': ['A', 'B'], 'posted': ['A']})

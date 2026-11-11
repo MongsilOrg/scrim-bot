@@ -383,12 +383,18 @@ class ScrimOrchestrator:
         letters = [letter for letter in (chr(ord('A') + i) for i in range(len(groups))) if letter in settings.GROUP_CHANNEL_IDS]
         if not letters:
             return
+        try:
+            rosters = labs_api.group_rosters(groups)
+        except Exception as e:
+            # 명단은 자동 업로드의 조 판정에만 쓰여 없어도 대회는 만듦
+            logger.error(f"[Labs] 조 명단 정리 실패: {e}", exc_info=True)
+            rosters = {}
         result = None
         # 같은 날 다시 불러도 Labs가 같은 대회를 돌려줘 응답을 놓친 요청도 다시 보냄
         for wait in (0, 5, 30):
             await asyncio.sleep(wait)
             try:
-                result = await labs_api.create_scrim(guild, letters)
+                result = await labs_api.create_scrim(guild, letters, rosters=rosters)
             except Exception as e:
                 logger.error(f"[Labs] 대회 생성 중 오류: {e}", exc_info=True)
             if result:
@@ -402,6 +408,8 @@ class ScrimOrchestrator:
             )
             return
         self._mark_stage(STAGE_LABS)
+        if client:
+            labs_api.start_backup_poll(client)
         missing = result.get('missing') or []
         logger.info(f"[Labs] 대회 {result['code']} 연결 - 조: {', '.join(letters)}, Labs 계정 없는 운영진 {len(missing)}명")
 

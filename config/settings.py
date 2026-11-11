@@ -56,6 +56,8 @@ class Settings:
     LABS_URL: str = os.getenv('LABS_URL', 'https://labs.mongsil.dev')
     LABS_SCRIM_TOKEN: str = os.getenv('LABS_SCRIM_TOKEN', '')
     LABS_STATE_PATH: str = os.getenv('LABS_STATE_PATH', 'data/labs_scrim.json')
+    # 운영자 PC 감시 창이 보낸 결과 CSV를 이 대회에 받을지. 끄면 디스코드 업로드만 씀
+    LABS_AUTO_UPLOAD: bool = os.getenv('LABS_AUTO_UPLOAD', 'true').lower() in ('1', 'true', 'yes')
     # 스크림 서버에서 이 역할을 가진 사람을 Labs 대회 운영자로 넣음
     LABS_OPERATOR_ROLES: Set[str] = {
         name.strip() for name in os.getenv('LABS_OPERATOR_ROLES', 'Head,Mod,Lead,Staff').split(',') if name.strip()

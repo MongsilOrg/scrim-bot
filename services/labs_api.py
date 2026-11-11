@@ -27,8 +27,11 @@ SCRIM_RULES = {
 REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
 # 마지막 CSV를 몽실봇이 Labs에 넣을 시간을 두고 다시 확인. 라운드 간격보다 긴 마지막 확인은 치른 라운드까지 보냄
 BACKUP_CHECK_DELAYS = (20, 60, 180, 600, 3600)
+# 감시 창으로 올라온 결과는 디스코드 메시지가 없어 주기적으로 확인함
+BACKUP_POLL_SECONDS = 600
 
 _backup_tasks: Dict[str, asyncio.Task] = {}
+_poll_task: Optional[asyncio.Task] = None
 
 
 def enabled() -> bool:
@@ -83,7 +86,20 @@ async def _request(method: str, path: str, body: Optional[dict] = None) -> Optio
         return None
 
 
-async def create_scrim(guild: discord.Guild, letters: List[str], today: Optional[date] = None) -> Optional[dict]:
+def group_rosters(groups: list) -> Dict[str, List[str]]:
+    """조별 게임 닉네임. Labs가 감시 창으로 온 결과의 조를 고를 때만 씀"""
+    rosters: Dict[str, List[str]] = {}
+    for i, group in enumerate(groups):
+        names: List[str] = []
+        for entry in group:
+            team = entry[1] if isinstance(entry, (tuple, list)) and len(entry) > 1 else entry
+            names.extend(str(n).strip() for n in (getattr(team, 'players', None) or []) + (getattr(team, 'staff', None) or []) if str(n).strip())
+        rosters[chr(ord('A') + i)] = list(dict.fromkeys(names))
+    return rosters
+
+
+async def create_scrim(guild: discord.Guild, letters: List[str], today: Optional[date] = None,
+                       rosters: Optional[Dict[str, List[str]]] = None) -> Optional[dict]:
     """같은 날 다시 불러도 Labs가 같은 대회를 돌려줌. 실패하면 None"""
     today = today or get_current_kst_time().date()
     links = []
@@ -94,6 +110,7 @@ async def create_scrim(guild: discord.Guild, letters: List[str], today: Optional
             'channelId': str(settings.GROUP_CHANNEL_IDS[letter]),
             'guild': guild.name,
             'channel': channel.name if channel else f"{letter}조",
+            'roster': (rosters or {}).get(letter, []),
         })
     owner = guild.owner
     body = {
@@ -106,6 +123,7 @@ async def create_scrim(guild: discord.Guild, letters: List[str], today: Optional
         'plannedRounds': settings.TOTAL_ROUNDS,
         'rules': SCRIM_RULES,
         'links': links,
+        'autoUpload': settings.LABS_AUTO_UPLOAD,
     }
     result = await _request('POST', '/api/bot/t', body)
     if not result or result.get('status') != 'ok' or not isinstance(result.get('code'), str):
@@ -207,6 +225,32 @@ def schedule_backup(client: discord.Client, group_letter: str) -> None:
     _backup_tasks[group_letter] = asyncio.create_task(run())
 
 
+def start_backup_poll(client: discord.Client) -> None:
+    """오늘 대회의 조가 계획한 라운드를 다 치르면 게임 ID를 보냄. 날짜가 바뀌거나 모든 조를 보내면 끝남"""
+    global _poll_task
+    if _poll_task and not _poll_task.done():
+        return
+
+    async def run() -> None:
+        day = get_current_kst_time().date().isoformat()
+        while True:
+            await asyncio.sleep(BACKUP_POLL_SECONDS)
+            state = load_state()
+            pending = [g for g in state.get('groups', []) if g not in state.get('posted', [])]
+            if state.get('date') != day or not pending:
+                return
+            for letter in pending:
+                task = _backup_tasks.get(letter)
+                if task and not task.done():
+                    continue
+                try:
+                    await post_backup(client, letter)
+                except Exception as e:
+                    logger.error(f"[Labs] {letter}조 게임 ID 주기 확인 실패: {e}", exc_info=True)
+
+    _poll_task = asyncio.create_task(run())
+
+
 def resume_backups(client: discord.Client) -> None:
     """재시작으로 사라진 확인 작업을 오늘 보내지 않은 조마다 다시 시작"""
     if not enabled():
@@ -217,6 +261,7 @@ def resume_backups(client: discord.Client) -> None:
     for letter in state.get('groups', []):
         if letter not in state.get('posted', []):
             schedule_backup(client, letter)
+    start_backup_poll(client)
 
 
 async def flush_backups(client: discord.Client) -> None:
