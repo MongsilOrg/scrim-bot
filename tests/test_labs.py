@@ -250,26 +250,36 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sorted(labs_api.load_state()['posted']), ['A', 'B'])
         self.assertEqual(sleep.await_count, 3)
 
-    async def test_new_poll_replaces_running_one(self):
+    async def test_poll_keeps_same_day_task_and_replaces_old_day(self):
         labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
         labs_api._poll_task = None
         labs_api.start_backup_poll(MagicMock())
-        old = labs_api._poll_task
+        first = labs_api._poll_task
         labs_api.start_backup_poll(MagicMock())
-        self.assertIsNot(labs_api._poll_task, old)
+        self.assertIs(labs_api._poll_task, first)
+        labs_api._poll_day = '2026-10-28'
+        labs_api.start_backup_poll(MagicMock())
+        self.assertIsNot(labs_api._poll_task, first)
         await asyncio.sleep(0)
-        self.assertTrue(old.cancelled())
+        self.assertTrue(first.cancelled())
         labs_api._poll_task.cancel()
 
-    async def test_poll_stops_after_midnight(self):
+    async def test_poll_sends_played_rounds_at_midnight_then_stops(self):
         labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
-        days = iter([TODAY, date(2026, 10, 30)])
+        channel = MagicMock()
+        channel.send = AsyncMock()
+        client = MagicMock()
+        client.get_channel.return_value = channel
+        self.request.return_value = {'played': 3, 'plannedRounds': 4, 'ended': False, 'replays': [{'roundNo': 1, 'gameId': 5}]}
+        days = iter([TODAY, TODAY, date(2026, 10, 30)])
         with patch.object(labs_api, 'get_current_kst_time', side_effect=lambda: SimpleNamespace(date=lambda d=next(days): d)), \
-                patch.object(labs_api.asyncio, 'sleep', new=AsyncMock()):
+                patch.object(labs_api.asyncio, 'sleep', new=AsyncMock()) as sleep:
             labs_api._poll_task = None
-            labs_api.start_backup_poll(MagicMock())
+            labs_api.start_backup_poll(client)
             await labs_api._poll_task
-        self.request.assert_not_awaited()
+        self.assertEqual(sleep.await_count, 2)
+        channel.send.assert_awaited_once()
+        self.assertEqual(labs_api.load_state()['posted'], ['A'])
 
     async def test_poll_stops_when_day_changes(self):
         labs_api.save_state({'date': '2026-10-28', 'code': 'OLD000', 'groups': ['A'], 'posted': []})

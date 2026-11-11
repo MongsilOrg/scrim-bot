@@ -32,6 +32,7 @@ BACKUP_POLL_SECONDS = 600
 
 _backup_tasks: Dict[str, asyncio.Task] = {}
 _poll_task: Optional[asyncio.Task] = None
+_poll_day: Optional[str] = None
 
 
 def enabled() -> bool:
@@ -227,18 +228,28 @@ def schedule_backup(client: discord.Client, group_letter: str) -> None:
 
 def start_backup_poll(client: discord.Client) -> None:
     """오늘 대회의 조가 계획한 라운드를 다 치르면 게임 ID를 보냄. 날짜가 바뀌거나 모든 조를 보내면 끝남"""
-    global _poll_task
-    # 전날 조가 끝나지 않아 남은 확인 작업은 오늘 대회를 보지 않으므로 새로 시작함
+    global _poll_task, _poll_day
+    day = get_current_kst_time().date().isoformat()
+    # 같은 날 재연결로 다시 불리면 전송 중인 작업을 끊지 않음. 전날 작업은 오늘 대회를 보지 않으므로 새로 시작함
     if _poll_task and not _poll_task.done():
+        if _poll_day == day:
+            return
         _poll_task.cancel()
 
     async def run() -> None:
-        day = get_current_kst_time().date().isoformat()
         while True:
             await asyncio.sleep(BACKUP_POLL_SECONDS)
             state = load_state()
             pending = [g for g in state.get('groups', []) if g not in state.get('posted', [])]
-            if state.get('date') != day or get_current_kst_time().date().isoformat() != day or not pending:
+            if state.get('date') != day or not pending:
+                return
+            if get_current_kst_time().date().isoformat() != day:
+                # 자정까지 라운드를 다 치르지 못한 조도 치른 라운드까지 보냄
+                for letter in pending:
+                    try:
+                        await post_backup(client, letter, finished_only=False)
+                    except Exception as e:
+                        logger.error(f"[Labs] {letter}조 남은 게임 ID 백업 실패: {e}", exc_info=True)
                 return
             for letter in pending:
                 task = _backup_tasks.get(letter)
@@ -249,6 +260,7 @@ def start_backup_poll(client: discord.Client) -> None:
                 except Exception as e:
                     logger.error(f"[Labs] {letter}조 게임 ID 주기 확인 실패: {e}", exc_info=True)
 
+    _poll_day = day
     _poll_task = asyncio.create_task(run())
 
 
