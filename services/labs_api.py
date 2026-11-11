@@ -238,7 +238,7 @@ def start_backup_poll(client: discord.Client) -> None:
             await asyncio.sleep(BACKUP_POLL_SECONDS)
             state = load_state()
             pending = [g for g in state.get('groups', []) if g not in state.get('posted', [])]
-            if state.get('date') != day or not pending:
+            if state.get('date') != day or get_current_kst_time().date().isoformat() != day or not pending:
                 return
             for letter in pending:
                 task = _backup_tasks.get(letter)

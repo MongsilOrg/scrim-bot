@@ -261,6 +261,16 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         self.assertTrue(old.cancelled())
         labs_api._poll_task.cancel()
 
+    async def test_poll_stops_after_midnight(self):
+        labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
+        days = iter([TODAY, date(2026, 10, 30)])
+        with patch.object(labs_api, 'get_current_kst_time', side_effect=lambda: SimpleNamespace(date=lambda d=next(days): d)), \
+                patch.object(labs_api.asyncio, 'sleep', new=AsyncMock()):
+            labs_api._poll_task = None
+            labs_api.start_backup_poll(MagicMock())
+            await labs_api._poll_task
+        self.request.assert_not_awaited()
+
     async def test_poll_stops_when_day_changes(self):
         labs_api.save_state({'date': '2026-10-28', 'code': 'OLD000', 'groups': ['A'], 'posted': []})
         with patch.object(labs_api.asyncio, 'sleep', new=AsyncMock()):
