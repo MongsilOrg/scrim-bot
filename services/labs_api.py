@@ -159,7 +159,7 @@ async def fetch_board(code: str, group_letter: str) -> Optional[dict]:
 
 def backup_view(day: str, group_letter: str, replays: list) -> discord.ui.LayoutView:
     lines = [f"**{r['roundNo']}R**: `{r['gameId']}`" for r in replays]
-    return custom_view(f"🎮 {format_kr_date(day)} {group_letter}조 게임 ID", "\n".join(lines), discord.Color.blue())
+    return custom_view(f"{format_kr_date(day)} {group_letter}조 게임 ID", "\n".join(lines), discord.Color.blue())
 
 
 async def post_backup(client: discord.Client, group_letter: str, finished_only: bool = True, last: bool = False) -> bool:
