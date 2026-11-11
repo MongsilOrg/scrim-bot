@@ -109,6 +109,13 @@ class TestPreseason(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(await holidays_api.is_preseason(date(2026, 11, 18)))
             self.assertFalse(await holidays_api.is_preseason(date(2026, 11, 19)))
 
+    async def test_gap_with_next_regular_row_only_is_preseason(self):
+        rows = [SEASONS[0], _season("Season22", "2026-11-19 12:00", "2027-02-18 09:00")]
+        fetch = AsyncMock(return_value=rows)
+        with self._now("2026-11-12 13:00"), patch("services.holidays_api._fetch_seasons", new=fetch):
+            self.assertTrue(await holidays_api.is_preseason(date(2026, 11, 12)))
+            self.assertFalse(await holidays_api.is_preseason(date(2026, 11, 19)))
+
     async def test_gap_after_preseason_is_regular(self):
         fetch = AsyncMock(return_value=[_season("Pre-Season22", "2026-11-12 12:00", "2026-11-19 12:00")])
         with self._now("2026-11-19 13:00"), patch("services.holidays_api._fetch_seasons", new=fetch):

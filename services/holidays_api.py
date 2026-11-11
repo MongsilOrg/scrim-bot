@@ -123,8 +123,8 @@ def _season_at(seasons: list, at: datetime) -> Optional[str]:
     match = _season_match(seasons, at)
     if match:
         return match[0]
-    last = seasons[-1] if seasons else None
-    if last and last[0].lower().startswith('season') and last[2] and last[2] <= at < last[2] + PRESEASON_GAP:
+    prev = max((s for s in seasons if s[2] and s[2] <= at), key=lambda s: s[2], default=None)
+    if prev and prev[0].lower().startswith('season') and at < prev[2] + PRESEASON_GAP:
         return "Pre-Season"
     return None
 
