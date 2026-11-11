@@ -91,14 +91,28 @@ class TestPreseason(unittest.IsolatedAsyncioTestCase):
     async def test_next_season_missing_refetches_after_retry_gap(self):
         fetch = AsyncMock(side_effect=[SEASONS[:1], SEASONS])
         with patch("services.holidays_api._fetch_seasons", new=fetch):
+            # 다음 행이 없어도 정규 시즌이 끝난 뒤 1주는 프리시즌으로 보고, 행은 계속 다시 받음
             with self._now("2026-11-12 09:30"):
-                self.assertFalse(await holidays_api.is_preseason(date(2026, 11, 12)))
+                self.assertTrue(await holidays_api.is_preseason(date(2026, 11, 12)))
             with self._now("2026-11-12 09:35"):
-                self.assertFalse(await holidays_api.is_preseason(date(2026, 11, 12)))
+                self.assertTrue(await holidays_api.is_preseason(date(2026, 11, 12)))
             self.assertEqual(fetch.await_count, 1)
             with self._now("2026-11-12 12:01"):
                 self.assertTrue(await holidays_api.is_preseason(date(2026, 11, 12)))
         self.assertEqual(fetch.await_count, 2)
+
+    async def test_gap_after_regular_season_is_preseason_for_a_week(self):
+        fetch = AsyncMock(return_value=SEASONS[:1])
+        with self._now("2026-11-12 13:00"), patch("services.holidays_api._fetch_seasons", new=fetch):
+            self.assertFalse(await holidays_api.is_preseason(date(2026, 11, 11)))
+            self.assertTrue(await holidays_api.is_preseason(date(2026, 11, 12)))
+            self.assertTrue(await holidays_api.is_preseason(date(2026, 11, 18)))
+            self.assertFalse(await holidays_api.is_preseason(date(2026, 11, 19)))
+
+    async def test_gap_after_preseason_is_regular(self):
+        fetch = AsyncMock(return_value=[_season("Pre-Season22", "2026-11-12 12:00", "2026-11-19 12:00")])
+        with self._now("2026-11-19 13:00"), patch("services.holidays_api._fetch_seasons", new=fetch):
+            self.assertFalse(await holidays_api.is_preseason(date(2026, 11, 19)))
 
     async def test_concurrent_calls_share_one_fetch(self):
         import asyncio

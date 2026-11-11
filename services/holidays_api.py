@@ -17,6 +17,8 @@ _holiday_cache: Dict[int, Dict[str, List[str]]] = {}
 
 SEASON_URL = "https://open-api.bser.io/v2/data/Season"
 SEASON_RETRY = timedelta(minutes=10)
+# 정규 시즌 뒤에는 늘 1주 프리시즌이 왔음. 다음 행이 늦게 생겨도 이 기간은 프리시즌으로 봄
+PRESEASON_GAP = timedelta(days=7)
 # 시즌 목록은 하루 한 번만 받음. 목록이 그 시각을 덮지 못하면(새 시즌 행이 아직 없음) 10분 간격으로 다시 받음
 _season_cache: dict = {'day': None, 'tried_at': None, 'seasons': []}
 _season_lock = asyncio.Lock()
@@ -119,7 +121,12 @@ def _season_match(seasons: list, at: datetime) -> Optional[tuple]:
 
 def _season_at(seasons: list, at: datetime) -> Optional[str]:
     match = _season_match(seasons, at)
-    return match[0] if match else None
+    if match:
+        return match[0]
+    last = seasons[-1] if seasons else None
+    if last and last[0].lower().startswith('season') and last[2] and last[2] <= at < last[2] + PRESEASON_GAP:
+        return "Pre-Season"
+    return None
 
 
 async def is_preseason(target_date: Optional[Union[date, datetime]] = None) -> bool:
