@@ -126,6 +126,19 @@ class TestPreseason(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(await holidays_api.is_preseason(date(2026, 11, 12)))
         fetch.assert_not_awaited()
 
+    def test_missing_end_runs_until_next_start(self):
+        rows = [
+            {"seasonName": "Season21", "seasonStart": "2026-08-13 12:00:00", "seasonEnd": None},
+            {"seasonName": "Pre-Season22", "seasonStart": "2026-11-12 12:00:00", "seasonEnd": ""},
+            {"seasonName": "broken", "seasonStart": None, "seasonEnd": "2026-01-01 00:00:00"},
+        ]
+        seasons = holidays_api._parse_seasons(rows)
+        self.assertEqual([s[0] for s in seasons], ["Season21", "Pre-Season22"])
+        at = lambda d: datetime.fromisoformat(d).replace(tzinfo=KST)
+        self.assertEqual(holidays_api._season_at(seasons, at("2026-11-11 20:00")), "Season21")
+        self.assertEqual(holidays_api._season_at(seasons, at("2026-11-12 20:00")), "Pre-Season22")
+        self.assertEqual(holidays_api._season_at(seasons, at("2027-01-01 20:00")), "Pre-Season22")
+
     def test_guide_text_names_preseason(self):
         from commands.ui.roster_views import build_rest_day_guide_view
         text = build_rest_day_guide_view("팀", "1", preseason=True).children[0].children[0].content

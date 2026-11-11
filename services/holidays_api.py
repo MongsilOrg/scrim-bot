@@ -92,20 +92,26 @@ async def _fetch_seasons() -> Optional[list]:
     if not isinstance(rows, list):
         logger.warning("[시즌] 시즌 목록 응답 형식이 다름, 프리시즌 판정 생략")
         return None
+    return _parse_seasons(rows)
+
+
+def _parse_seasons(rows: list) -> list:
     seasons = []
     for row in rows:
         if not isinstance(row, dict):
             continue
         start = _parse_season_time(row.get('seasonStart'))
-        end = _parse_season_time(row.get('seasonEnd'))
-        if start and end:
-            seasons.append((str(row.get('seasonName', '')), start, end))
-    return seasons
+        if start:
+            seasons.append((str(row.get('seasonName', '')), start, _parse_season_time(row.get('seasonEnd'))))
+    seasons.sort(key=lambda s: s[1])
+    # 끝 시각이 비어 온 행은 다음 행의 시작까지, 마지막 행이면 끝 없이 다룸
+    return [(name, start, end or (seasons[i + 1][1] if i + 1 < len(seasons) else None))
+            for i, (name, start, end) in enumerate(seasons)]
 
 
 def _season_at(seasons: list, at: datetime) -> Optional[str]:
     for name, start, end in seasons:
-        if start <= at < end:
+        if start <= at and (end is None or at < end):
             return name
     return None
 
