@@ -19,6 +19,7 @@ SEASON_URL = "https://open-api.bser.io/v2/data/Season"
 SEASON_RETRY = timedelta(minutes=10)
 # 시즌 목록은 하루 한 번만 받음. 목록이 그 시각을 덮지 못하면(새 시즌 행이 아직 없음) 10분 간격으로 다시 받음
 _season_cache: dict = {'day': None, 'tried_at': None, 'seasons': []}
+_season_lock = asyncio.Lock()
 
 
 def _to_date(value: Optional[Union[date, datetime]]) -> date:
@@ -114,15 +115,17 @@ async def is_preseason(target_date: Optional[Union[date, datetime]] = None) -> b
     if not settings.BSER_API_KEY:
         return False
     at = datetime.combine(_to_date(target_date), time(settings.SCRIM_START_HOUR), tzinfo=KST)
-    now = get_current_kst_time()
     cache = _season_cache
-    stale = cache['day'] != now.date() or _season_at(cache['seasons'], at) is None
-    if stale and (cache['tried_at'] is None or now - cache['tried_at'] >= SEASON_RETRY):
-        cache['tried_at'] = now
-        seasons = await _fetch_seasons()
-        if seasons is not None:
-            cache['day'] = now.date()
-            cache['seasons'] = seasons
+    # 조회 중에 들어온 호출은 빈 캐시 대신 조회 결과를 기다림
+    async with _season_lock:
+        now = get_current_kst_time()
+        stale = cache['day'] != now.date() or _season_at(cache['seasons'], at) is None
+        if stale and (cache['tried_at'] is None or now - cache['tried_at'] >= SEASON_RETRY):
+            cache['tried_at'] = now
+            seasons = await _fetch_seasons()
+            if seasons is not None:
+                cache['day'] = now.date()
+                cache['seasons'] = seasons
     name = _season_at(cache['seasons'], at)
     return bool(name and name.lower().startswith('pre-season'))
 

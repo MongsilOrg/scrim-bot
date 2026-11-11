@@ -100,6 +100,18 @@ class TestPreseason(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(await holidays_api.is_preseason(date(2026, 11, 12)))
         self.assertEqual(fetch.await_count, 2)
 
+    async def test_concurrent_calls_share_one_fetch(self):
+        import asyncio
+
+        async def slow():
+            await asyncio.sleep(0.01)
+            return SEASONS
+        fetch = AsyncMock(side_effect=slow)
+        with self._now("2026-11-12 13:00"), patch("services.holidays_api._fetch_seasons", new=fetch):
+            results = await asyncio.gather(*(holidays_api.is_preseason(date(2026, 11, 12)) for _ in range(3)))
+        self.assertEqual(results, [True, True, True])
+        self.assertEqual(fetch.await_count, 1)
+
     async def test_fetch_failure_counts_as_regular(self):
         fetch = AsyncMock(return_value=None)
         with self._now("2026-11-12 13:00"), patch("services.holidays_api._fetch_seasons", new=fetch):
