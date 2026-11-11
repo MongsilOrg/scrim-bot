@@ -93,6 +93,8 @@ async def _fetch_seasons() -> Optional[list]:
         return None
     seasons = []
     for row in rows:
+        if not isinstance(row, dict):
+            continue
         start = _parse_season_time(row.get('seasonStart'))
         end = _parse_season_time(row.get('seasonEnd'))
         if start and end:
@@ -132,7 +134,12 @@ async def get_rest_day_info(target_date: Optional[Union[date, datetime]] = None)
     is_sunday = target.weekday() == 6
     holiday_names = await get_holiday_names(target)
     is_holiday = bool(holiday_names)
-    preseason = await is_preseason(target)
+    try:
+        preseason = await is_preseason(target)
+    except Exception as e:
+        # 프리시즌 판정이 깨져도 주말과 공휴일 판정은 유지
+        logger.warning(f"[시즌] 프리시즌 판정 실패, 평일 방식 사용: {type(e).__name__}")
+        preseason = False
 
     labels = (
         (["프리시즌"] if preseason else [])

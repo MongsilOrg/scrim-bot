@@ -59,6 +59,13 @@ class TestRestDayInfo(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(info["is_preseason"])
             self.assertEqual(info["labels"], ["프리시즌"])
 
+    async def test_preseason_error_keeps_weekend(self):
+        with patch("services.holidays_api.get_holiday_names", new=AsyncMock(return_value=[])), \
+                patch("services.holidays_api.is_preseason", new=AsyncMock(side_effect=AttributeError)):
+            info = await holidays_api.get_rest_day_info(date(2026, 8, 22))
+            self.assertTrue(info["is_rest_day"])
+            self.assertFalse(info["is_preseason"])
+
 
 class TestPreseason(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
