@@ -1,3 +1,4 @@
+import asyncio
 import os
 import tempfile
 import unittest
@@ -248,6 +249,17 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(channel.send.await_count, 2)
         self.assertEqual(sorted(labs_api.load_state()['posted']), ['A', 'B'])
         self.assertEqual(sleep.await_count, 3)
+
+    async def test_new_poll_replaces_running_one(self):
+        labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
+        labs_api._poll_task = None
+        labs_api.start_backup_poll(MagicMock())
+        old = labs_api._poll_task
+        labs_api.start_backup_poll(MagicMock())
+        self.assertIsNot(labs_api._poll_task, old)
+        await asyncio.sleep(0)
+        self.assertTrue(old.cancelled())
+        labs_api._poll_task.cancel()
 
     async def test_poll_stops_when_day_changes(self):
         labs_api.save_state({'date': '2026-10-28', 'code': 'OLD000', 'groups': ['A'], 'posted': []})

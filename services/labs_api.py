@@ -228,8 +228,9 @@ def schedule_backup(client: discord.Client, group_letter: str) -> None:
 def start_backup_poll(client: discord.Client) -> None:
     """오늘 대회의 조가 계획한 라운드를 다 치르면 게임 ID를 보냄. 날짜가 바뀌거나 모든 조를 보내면 끝남"""
     global _poll_task
+    # 전날 조가 끝나지 않아 남은 확인 작업은 오늘 대회를 보지 않으므로 새로 시작함
     if _poll_task and not _poll_task.done():
-        return
+        _poll_task.cancel()
 
     async def run() -> None:
         day = get_current_kst_time().date().isoformat()
