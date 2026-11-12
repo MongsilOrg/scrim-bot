@@ -244,12 +244,7 @@ def start_backup_poll(client: discord.Client) -> None:
             if state.get('date') != day or not pending:
                 return
             if get_current_kst_time().date().isoformat() != day:
-                # 자정까지 라운드를 다 치르지 못한 조도 치른 라운드까지 보냄
-                for letter in pending:
-                    try:
-                        await post_backup(client, letter, finished_only=False)
-                    except Exception as e:
-                        logger.error(f"[Labs] {letter}조 남은 게임 ID 백업 실패: {e}", exc_info=True)
+                # 자정 뒤에도 라운드가 이어질 수 있어 남은 조는 다음 대회를 만들기 전 flush_backups가 보냄
                 return
             for letter in pending:
                 task = _backup_tasks.get(letter)

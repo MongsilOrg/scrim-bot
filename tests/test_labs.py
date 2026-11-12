@@ -264,7 +264,7 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         self.assertTrue(first.cancelled())
         labs_api._poll_task.cancel()
 
-    async def test_poll_sends_played_rounds_at_midnight_then_stops(self):
+    async def test_poll_stops_at_midnight_without_posting_unfinished(self):
         labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
         channel = MagicMock()
         channel.send = AsyncMock()
@@ -278,8 +278,8 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
             labs_api.start_backup_poll(client)
             await labs_api._poll_task
         self.assertEqual(sleep.await_count, 2)
-        channel.send.assert_awaited_once()
-        self.assertEqual(labs_api.load_state()['posted'], ['A'])
+        channel.send.assert_not_awaited()
+        self.assertEqual(labs_api.load_state()['posted'], [])
 
     async def test_poll_stops_when_day_changes(self):
         labs_api.save_state({'date': '2026-10-28', 'code': 'OLD000', 'groups': ['A'], 'posted': []})
