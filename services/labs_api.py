@@ -2,7 +2,7 @@
 import asyncio
 import json
 import os
-from datetime import date
+from datetime import date, timedelta
 from typing import Dict, List, Optional
 
 import aiohttp
@@ -227,7 +227,7 @@ def schedule_backup(client: discord.Client, group_letter: str) -> None:
 
 
 def start_backup_poll(client: discord.Client) -> None:
-    """오늘 대회의 조가 계획한 라운드를 다 치르면 게임 ID를 보냄. 날짜가 바뀌거나 모든 조를 보내면 끝남"""
+    """오늘 대회의 조가 계획한 라운드를 다 치르면 게임 ID를 보냄. 다음 날이 지나거나, 새 대회가 생기거나, 모든 조를 보내면 끝남"""
     global _poll_task, _poll_day
     day = get_current_kst_time().date().isoformat()
     # 같은 날 재연결로 다시 불리면 전송 중인 작업을 끊지 않음. 전날 작업은 오늘 대회를 보지 않으므로 새로 시작함
@@ -243,8 +243,8 @@ def start_backup_poll(client: discord.Client) -> None:
             pending = [g for g in state.get('groups', []) if g not in state.get('posted', [])]
             if state.get('date') != day or not pending:
                 return
-            if get_current_kst_time().date().isoformat() != day:
-                # 자정 뒤에도 라운드가 이어질 수 있어 남은 조는 다음 대회를 만들기 전 flush_backups가 보냄
+            if get_current_kst_time().date() > date.fromisoformat(day) + timedelta(days=1):
+                # 자정 뒤에 끝난 조도 보내고, 다음 날까지 끝나지 않은 조는 다음 대회를 만들기 전 flush_backups가 보냄
                 return
             for letter in pending:
                 task = _backup_tasks.get(letter)

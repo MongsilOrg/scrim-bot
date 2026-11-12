@@ -264,14 +264,33 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         self.assertTrue(first.cancelled())
         labs_api._poll_task.cancel()
 
-    async def test_poll_stops_at_midnight_without_posting_unfinished(self):
+    async def test_poll_posts_group_finished_after_midnight(self):
+        labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
+        channel = MagicMock()
+        channel.send = AsyncMock()
+        client = MagicMock()
+        client.get_channel.return_value = channel
+        self.request.side_effect = [
+            {'played': 3, 'plannedRounds': 4, 'ended': False, 'replays': [{'roundNo': 1, 'gameId': 5}]},
+            {'played': 4, 'plannedRounds': 4, 'ended': False, 'replays': [{'roundNo': 1, 'gameId': 5}]},
+        ]
+        days = iter([TODAY, TODAY, date(2026, 10, 30), date(2026, 10, 30)])
+        with patch.object(labs_api, 'get_current_kst_time', side_effect=lambda: SimpleNamespace(date=lambda d=next(days): d)), \
+                patch.object(labs_api.asyncio, 'sleep', new=AsyncMock()):
+            labs_api._poll_task = None
+            labs_api.start_backup_poll(client)
+            await labs_api._poll_task
+        channel.send.assert_awaited_once()
+        self.assertEqual(labs_api.load_state()['posted'], ['A'])
+
+    async def test_poll_leaves_unfinished_group_to_flush_after_next_day(self):
         labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
         channel = MagicMock()
         channel.send = AsyncMock()
         client = MagicMock()
         client.get_channel.return_value = channel
         self.request.return_value = {'played': 3, 'plannedRounds': 4, 'ended': False, 'replays': [{'roundNo': 1, 'gameId': 5}]}
-        days = iter([TODAY, TODAY, date(2026, 10, 30)])
+        days = iter([TODAY, date(2026, 10, 30), date(2026, 10, 31)])
         with patch.object(labs_api, 'get_current_kst_time', side_effect=lambda: SimpleNamespace(date=lambda d=next(days): d)), \
                 patch.object(labs_api.asyncio, 'sleep', new=AsyncMock()) as sleep:
             labs_api._poll_task = None
