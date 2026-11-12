@@ -230,11 +230,9 @@ def start_backup_poll(client: discord.Client) -> None:
     """오늘 대회의 조가 계획한 라운드를 다 치르면 게임 ID를 보냄. 다음 날이 지나거나, 새 대회가 생기거나, 모든 조를 보내면 끝남"""
     global _poll_task, _poll_day
     day = get_current_kst_time().date().isoformat()
-    # 같은 날 재연결로 다시 불리면 전송 중인 작업을 끊지 않음. 전날 작업은 오늘 대회를 보지 않으므로 새로 시작함
-    if _poll_task and not _poll_task.done():
-        if _poll_day == day:
-            return
-        _poll_task.cancel()
+    # 같은 날 재연결로 다시 불리면 전송 중인 작업을 끊지 않음. 전날 작업은 전송 도중 끊기면 보냄으로만 기록되므로 취소하지 않고, 새 대회를 보면 스스로 끝남
+    if _poll_task and not _poll_task.done() and _poll_day == day:
+        return
 
     async def run() -> None:
         while True:

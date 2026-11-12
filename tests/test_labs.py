@@ -250,7 +250,7 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sorted(labs_api.load_state()['posted']), ['A', 'B'])
         self.assertEqual(sleep.await_count, 3)
 
-    async def test_poll_keeps_same_day_task_and_replaces_old_day(self):
+    async def test_poll_keeps_same_day_task_and_leaves_old_day_running(self):
         labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
         labs_api._poll_task = None
         labs_api.start_backup_poll(MagicMock())
@@ -261,7 +261,8 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         labs_api.start_backup_poll(MagicMock())
         self.assertIsNot(labs_api._poll_task, first)
         await asyncio.sleep(0)
-        self.assertTrue(first.cancelled())
+        self.assertFalse(first.done())
+        first.cancel()
         labs_api._poll_task.cancel()
 
     async def test_poll_posts_group_finished_after_midnight(self):
