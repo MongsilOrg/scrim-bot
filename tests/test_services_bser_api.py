@@ -121,6 +121,11 @@ class MaintenanceCheckTest(BSERTestCase):
         client = make_client([FakeResponse(404, {'code': 404, 'message': 'Not Found'}) for _ in range(2)])
         self.assertTrue(await client.check_server_maintenance())
 
+    async def test_ranking_request_failure_skips_previous_season(self):
+        client = make_client([FakeResponse(503, raw='') for _ in range(BSERAPIClient.MAX_RETRIES + 1)])
+        self.assertTrue(await client.check_server_maintenance())
+        self.assertFalse(any('/rank/top/39/' in url for url in client.session.urls))
+
     async def test_without_season_list_uses_default_season(self):
         with mock.patch.object(holidays_api, 'rank_season_ids', new=mock.AsyncMock(return_value=None)):
             client = make_client([FakeResponse(200, {'code': 200, 'topRanks': []})])

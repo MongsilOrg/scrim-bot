@@ -212,7 +212,10 @@ class BSERAPIClient:
                 if season_id is None:
                     continue
                 top = await self._request("GET", f"{self.base_url}/rank/top/{season_id}/3/10")
-                ranks = (top or {}).get("topRanks") or []
+                # 재시도까지 실패했으면 직전 시즌도 같으므로 다시 묻지 않음
+                if top is None:
+                    break
+                ranks = top.get("topRanks") or []
                 if ranks:
                     break
             if not ranks:
