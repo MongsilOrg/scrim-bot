@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest import mock
 
-from services import bser_api
+from services import bser_api, holidays_api
 from services.bser_api import UID_ERROR, UID_FOUND, UID_NOT_FOUND, BSERAPIClient
 
 
@@ -53,6 +53,10 @@ class BSERTestCase(unittest.IsolatedAsyncioTestCase):
         patcher = mock.patch.object(bser_api.asyncio, 'sleep', new=mock.AsyncMock())
         patcher.start()
         self.addCleanup(patcher.stop)
+        seasons = mock.patch.object(holidays_api, 'rank_season_ids',
+                                    new=mock.AsyncMock(return_value=(41, 39)))
+        seasons.start()
+        self.addCleanup(seasons.stop)
 
 
 class RequestStatusTest(BSERTestCase):
@@ -92,22 +96,37 @@ class RequestStatusTest(BSERTestCase):
 
 
 class MaintenanceCheckTest(BSERTestCase):
-    async def test_uses_fixed_season(self):
+    async def test_uses_rank_season(self):
         client = make_client([
             FakeResponse(200, {'code': 200, 'topRanks': [{'nickname': '백수'}]}),
             FakeResponse(200, {'code': 200, 'user': {'userId': 'u1'}}),
         ])
         self.assertFalse(await client.check_server_maintenance())
-        self.assertIn(f'/rank/top/{BSERAPIClient.RANK_SEASON_ID}/', client.session.urls[0])
-        self.assertFalse(any('Season' in url for url in client.session.urls))
+        self.assertIn('/rank/top/41/', client.session.urls[0])
+
+    async def test_empty_rank_season_falls_back_to_previous_ranking(self):
+        client = make_client([
+            FakeResponse(200, {'code': 200, 'topRanks': []}),
+            FakeResponse(200, {'code': 200, 'topRanks': [{'nickname': '백수'}]}),
+            FakeResponse(200, {'code': 200, 'user': {'userId': 'u1'}}),
+        ])
+        self.assertFalse(await client.check_server_maintenance())
+        self.assertIn('/rank/top/39/', client.session.urls[1])
 
     async def test_empty_ranking_is_maintenance(self):
-        client = make_client([FakeResponse(200, {'code': 200, 'topRanks': []})])
+        client = make_client([FakeResponse(200, {'code': 200, 'topRanks': []}) for _ in range(2)])
         self.assertTrue(await client.check_server_maintenance())
 
     async def test_ranking_failure_is_maintenance(self):
-        client = make_client([FakeResponse(404, {'code': 404, 'message': 'Not Found'})])
+        client = make_client([FakeResponse(404, {'code': 404, 'message': 'Not Found'}) for _ in range(2)])
         self.assertTrue(await client.check_server_maintenance())
+
+    async def test_without_season_list_uses_default_season(self):
+        with mock.patch.object(holidays_api, 'rank_season_ids', new=mock.AsyncMock(return_value=None)):
+            client = make_client([FakeResponse(200, {'code': 200, 'topRanks': []})])
+            self.assertTrue(await client.check_server_maintenance())
+        self.assertEqual(len(client.session.urls), 1)
+        self.assertIn(f'/rank/top/{BSERAPIClient.RANK_SEASON_ID}/', client.session.urls[0])
 
     async def test_top_nickname_404_is_maintenance(self):
         client = make_client([
@@ -145,10 +164,26 @@ class UidLookupTest(BSERTestCase):
         self.assertIsNone(await client.get_user_mmr('old-uid'))
         self.assertEqual(await client.get_user_uid('개명닉'), 'new-uid')
 
-    async def test_mmr_uses_fixed_season(self):
+    async def test_mmr_uses_rank_season(self):
         client = make_client([FakeResponse(200, {'code': 200, 'userRank': {'mmr': 7000}})])
         self.assertEqual(await client.get_user_mmr('uid-s'), 7000)
-        self.assertIn(f'/rank/uid/uid-s/{BSERAPIClient.RANK_SEASON_ID}/3', client.session.urls[0])
+        self.assertEqual(len(client.session.urls), 1)
+        self.assertIn('/rank/uid/uid-s/41/3', client.session.urls[0])
+
+    async def test_mmr_without_rank_season_record_uses_previous_season(self):
+        client = make_client([
+            FakeResponse(200, {'code': 200, 'userRank': {'mmr': 0, 'rank': 0}}),
+            FakeResponse(200, {'code': 200, 'userRank': {'mmr': 6500, 'rank': 900}}),
+        ])
+        self.assertEqual(await client.get_user_mmr('uid-p'), 6500)
+        self.assertIn('/rank/uid/uid-p/39/3', client.session.urls[1])
+
+    async def test_mmr_zero_in_both_seasons_stays_zero(self):
+        client = make_client([
+            FakeResponse(200, {'code': 200, 'userRank': {'mmr': 0}}),
+            FakeResponse(200, {'code': 200, 'userRank': {'mmr': 0}}),
+        ])
+        self.assertEqual(await client.get_user_mmr('uid-z'), 0)
 
     async def test_quiet_client_logs_404_at_debug(self):
         client = make_client([FakeResponse(200, {'code': 404})], quiet=True)

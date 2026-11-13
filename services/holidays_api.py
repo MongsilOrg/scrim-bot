@@ -1,6 +1,6 @@
 import asyncio
 from datetime import date, datetime, time, timedelta
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import aiohttp
 
@@ -19,6 +19,8 @@ SEASON_URL = "https://open-api.bser.io/v2/data/Season"
 SEASON_RETRY = timedelta(minutes=10)
 # 정규 시즌 뒤에는 늘 1주 프리시즌이 왔음. 다음 행이 늦게 생겨도 이 기간은 프리시즌으로 봄
 PRESEASON_GAP = timedelta(days=7)
+# 새 정규 시즌은 시작 직후 랭크 기록이 적어 1주가 지난 뒤부터 랭크 MMR 기준으로 씀
+RANK_SWITCH_DELAY = timedelta(days=7)
 # 시즌 목록은 하루 한 번만 받음. 목록이 그 시각을 덮지 못하면(새 시즌 행이 아직 없음) 10분 간격으로 다시 받음
 _season_cache: dict = {'day': None, 'tried_at': None, 'seasons': []}
 _season_lock = asyncio.Lock()
@@ -104,16 +106,17 @@ def _parse_seasons(rows: list) -> list:
             continue
         start = _parse_season_time(row.get('seasonStart'))
         if start:
-            seasons.append((str(row.get('seasonName', '')), start, _parse_season_time(row.get('seasonEnd'))))
+            seasons.append((str(row.get('seasonName', '')), start, _parse_season_time(row.get('seasonEnd')),
+                            row.get('seasonID')))
     seasons.sort(key=lambda s: s[1])
     # 끝 시각이 비어 온 행은 다음 행의 시작까지, 마지막 행이면 끝 없이 다룸
-    return [(name, start, end or (seasons[i + 1][1] if i + 1 < len(seasons) else None))
-            for i, (name, start, end) in enumerate(seasons)]
+    return [(name, start, end or (seasons[i + 1][1] if i + 1 < len(seasons) else None), season_id)
+            for i, (name, start, end, season_id) in enumerate(seasons)]
 
 
 def _season_match(seasons: list, at: datetime) -> Optional[tuple]:
     for season in seasons:
-        _, start, end = season
+        start, end = season[1], season[2]
         if start <= at and (end is None or at < end):
             return season
     return None
@@ -129,11 +132,7 @@ def _season_at(seasons: list, at: datetime) -> Optional[str]:
     return None
 
 
-async def is_preseason(target_date: Optional[Union[date, datetime]] = None) -> bool:
-    """그날 스크림 시작 시각이 프리시즌 기간이면 True. 조회가 안 되면 False(평일 방식)"""
-    if not settings.BSER_API_KEY:
-        return False
-    at = datetime.combine(_to_date(target_date), time(settings.SCRIM_START_HOUR), tzinfo=KST)
+async def _load_seasons(at: datetime) -> list:
     cache = _season_cache
     # 조회 중에 들어온 호출은 빈 캐시 대신 조회 결과를 기다림
     async with _season_lock:
@@ -147,8 +146,30 @@ async def is_preseason(target_date: Optional[Union[date, datetime]] = None) -> b
             if seasons is not None:
                 cache['day'] = now.date()
                 cache['seasons'] = seasons
-    name = _season_at(cache['seasons'], at)
+    return cache['seasons']
+
+
+async def is_preseason(target_date: Optional[Union[date, datetime]] = None) -> bool:
+    """그날 스크림 시작 시각이 프리시즌 기간이면 True. 조회가 안 되면 False(평일 방식)"""
+    if not settings.BSER_API_KEY:
+        return False
+    at = datetime.combine(_to_date(target_date), time(settings.SCRIM_START_HOUR), tzinfo=KST)
+    name = _season_at(await _load_seasons(at), at)
     return bool(name and name.lower().startswith('pre-season'))
+
+
+async def rank_season_ids() -> Optional[Tuple[int, Optional[int]]]:
+    """(랭크 MMR에 쓸 정규 시즌 ID, 그 직전 정규 시즌 ID). 시즌 목록을 받은 적이 없으면 None"""
+    if not settings.BSER_API_KEY:
+        return None
+    now = get_current_kst_time()
+    seasons = await _load_seasons(now)
+    ids = [s[3] for s in seasons
+           if len(s) > 3 and isinstance(s[3], int) and s[0].lower().startswith('season')
+           and s[1] + RANK_SWITCH_DELAY <= now]
+    if not ids:
+        return None
+    return ids[-1], (ids[-2] if len(ids) > 1 else None)
 
 
 async def get_rest_day_info(target_date: Optional[Union[date, datetime]] = None) -> dict:

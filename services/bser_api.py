@@ -17,7 +17,7 @@ UID_ERROR = "error"
 
 
 class BSERAPIClient:
-    # 시즌 API의 isCurrent가 실제 랭크 시즌과 어긋날 때가 있어 직접 지정
+    # 시즌 목록을 받지 못했을 때만 씀. 평소에는 holidays_api.rank_season_ids가 정함
     RANK_SEASON_ID = 41
 
     MAX_RETRIES = 4
@@ -187,14 +187,37 @@ class BSERAPIClient:
         for key in [k for k, v in cls._nickname_cache.items() if v.get('data') == uid]:
             del cls._nickname_cache[key]
 
+    async def rank_seasons(self) -> Tuple[int, Optional[int]]:
+        """(랭크 MMR에 쓸 정규 시즌 ID, 그 직전 정규 시즌 ID)"""
+        # utils.helpers가 이 모듈을 불러서 위에서 불러오면 순환 import가 됨
+        from services import holidays_api
+        try:
+            ids = await holidays_api.rank_season_ids()
+        except Exception as e:
+            logger.warning(f"[API] 랭크 시즌 판정 실패, 기본 시즌 사용: {type(e).__name__}")
+            ids = None
+        if ids is None:
+            if log_once("rank-season-default", 3600):
+                logger.warning(f"[API] 시즌 목록 없음, 기본 랭크 시즌 사용 - 시즌: {self.RANK_SEASON_ID}")
+            return self.RANK_SEASON_ID, None
+        return ids
+
     async def check_server_maintenance(self) -> bool:
         # 패치 점검 중에는 닉네임 검색과 rank/uid가 결과를 돌려주지 않음. 랭킹 1위 닉네임 검색으로 판정하고 판정할 수 없으면 점검으로 간주
         try:
-            top = await self._request("GET", f"{self.base_url}/rank/top/{self.RANK_SEASON_ID}/3/10")
-            ranks = (top or {}).get("topRanks") or []
+            ranks = []
+            seasons = await self.rank_seasons()
+            # 랭킹은 닉네임 하나만 얻으면 되므로 랭크 시즌 랭킹이 비면 직전 시즌 랭킹을 씀
+            for season_id in seasons:
+                if season_id is None:
+                    continue
+                top = await self._request("GET", f"{self.base_url}/rank/top/{season_id}/3/10")
+                ranks = (top or {}).get("topRanks") or []
+                if ranks:
+                    break
             if not ranks:
                 if log_once("maintenance-rank-empty", 600):
-                    logger.info(f"[API] 랭킹 조회 실패, 점검으로 간주 - 시즌: {self.RANK_SEASON_ID}")
+                    logger.info(f"[API] 랭킹 조회 실패, 점검으로 간주 - 시즌: {seasons}")
                 return True
             probe = await self._request("GET", f"{self.base_url}/user/nickname",
                                         params={"query": ranks[0]["nickname"]})
@@ -238,14 +261,20 @@ class BSERAPIClient:
         return uid
 
     async def get_user_rank(self, uid: str) -> Optional[Dict]:
-        url = f"{self.base_url}/rank/uid/{uid}/{self.RANK_SEASON_ID}/3"
-        data = await self._request("GET", url)
+        season_id, previous_id = await self.rank_seasons()
+        data = await self._request("GET", f"{self.base_url}/rank/uid/{uid}/{season_id}/3")
         if not data:
             return None
 
         code = data.get("code")
         if code == 200:
             user_rank = data.get("userRank")
+            # 랭크 시즌 기록이 없으면 API가 MMR 0으로 답함. 그 시즌을 아직 하지 않은 선수는 직전 정규 시즌 MMR을 씀
+            if not (user_rank or {}).get("mmr") and previous_id is not None:
+                previous = await self._request("GET", f"{self.base_url}/rank/uid/{uid}/{previous_id}/3")
+                previous_rank = (previous or {}).get("userRank") if (previous or {}).get("code") == 200 else None
+                if (previous_rank or {}).get("mmr"):
+                    return {"userRank": previous_rank}
             if user_rank:
                 return {"userRank": user_rank}
             logger.warning(f"[API] userRank 데이터 없음 - UID: {uid}")

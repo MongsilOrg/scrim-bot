@@ -177,6 +177,25 @@ class TestPreseason(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(await holidays_api.is_preseason(date(2026, 11, 12)))
         self.assertEqual(fetch.await_count, 2)
 
+    async def test_rank_season_switches_a_week_after_regular_start(self):
+        rows = holidays_api._parse_seasons([
+            {"seasonID": 39, "seasonName": "Season20", "seasonStart": "2026-05-07 12:00:00", "seasonEnd": "2026-08-06 09:00:00"},
+            {"seasonID": 40, "seasonName": "Pre-Season21", "seasonStart": "2026-08-06 12:00:00", "seasonEnd": "2026-08-13 12:00:00"},
+            {"seasonID": 41, "seasonName": "Season21", "seasonStart": "2026-08-13 12:00:00", "seasonEnd": "2026-11-12 09:00:00"},
+            {"seasonID": 42, "seasonName": "Pre-Season22", "seasonStart": "2026-11-12 12:00:00", "seasonEnd": "2026-11-19 12:00:00"},
+            {"seasonID": 43, "seasonName": "Season22", "seasonStart": "2026-11-19 12:00:00", "seasonEnd": "2027-02-18 09:00:00"},
+        ])
+        with patch("services.holidays_api._fetch_seasons", new=AsyncMock(return_value=rows)):
+            for now, expected in (("2026-11-13 12:00", (41, 39)), ("2026-11-19 13:00", (41, 39)),
+                                  ("2026-11-26 11:59", (41, 39)), ("2026-11-26 12:00", (43, 41))):
+                with self._now(now):
+                    self.assertEqual(await holidays_api.rank_season_ids(), expected, now)
+
+    async def test_rank_season_none_without_list(self):
+        with self._now("2026-11-13 12:00"), \
+                patch("services.holidays_api._fetch_seasons", new=AsyncMock(return_value=None)):
+            self.assertIsNone(await holidays_api.rank_season_ids())
+
     def test_guide_text_names_preseason(self):
         from commands.ui.roster_views import build_rest_day_guide_view
         text = build_rest_day_guide_view("팀", "1", preseason=True).children[0].children[0].content
