@@ -272,6 +272,8 @@ class BSERAPIClient:
             # 랭크 시즌 기록이 없으면 API가 MMR 0으로 답함. 그 시즌을 아직 하지 않은 선수는 직전 정규 시즌 MMR을 씀
             if not (user_rank or {}).get("mmr") and previous_id is not None:
                 previous = await self._request("GET", f"{self.base_url}/rank/uid/{uid}/{previous_id}/3")
+                if previous is None:
+                    return None
                 previous_rank = (previous or {}).get("userRank") if (previous or {}).get("code") == 200 else None
                 if (previous_rank or {}).get("mmr"):
                     return {"userRank": previous_rank}

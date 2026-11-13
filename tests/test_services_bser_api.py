@@ -178,6 +178,11 @@ class UidLookupTest(BSERTestCase):
         self.assertEqual(await client.get_user_mmr('uid-p'), 6500)
         self.assertIn('/rank/uid/uid-p/39/3', client.session.urls[1])
 
+    async def test_previous_season_failure_is_lookup_failure(self):
+        client = make_client([FakeResponse(200, {'code': 200, 'userRank': {'mmr': 0}})]
+                             + [FakeResponse(503, raw='') for _ in range(BSERAPIClient.MAX_RETRIES + 1)])
+        self.assertIsNone(await client.get_user_mmr('uid-f'))
+
     async def test_mmr_zero_in_both_seasons_stays_zero(self):
         client = make_client([
             FakeResponse(200, {'code': 200, 'userRank': {'mmr': 0}}),
