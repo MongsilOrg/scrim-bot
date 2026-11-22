@@ -19,8 +19,11 @@ SEASON_URL = "https://open-api.bser.io/v2/data/Season"
 SEASON_RETRY = timedelta(minutes=10)
 # 정규 시즌 뒤에는 늘 1주 프리시즌이 왔음. 다음 행이 늦게 생겨도 이 기간은 프리시즌으로 봄
 PRESEASON_GAP = timedelta(days=7)
-# 새 정규 시즌은 시작 직후 랭크 기록이 적어 1주가 지난 뒤부터 랭크 MMR 기준으로 씀
-RANK_SWITCH_DELAY = timedelta(days=7)
+
+def _rank_switch_at(start: datetime) -> datetime:
+    # 새 정규 시즌은 시작 뒤 첫 월요일 스크림 신청(일요일 밤에 열림) 전, 그 일요일 12시부터 랭크 MMR 기준으로 씀
+    sunday = (start + timedelta(days=(6 - start.weekday()) % 7)).replace(hour=12, minute=0, second=0, microsecond=0)
+    return sunday if sunday > start else sunday + timedelta(days=7)
 # 시즌 목록은 하루 한 번만 받음. 목록이 그 시각을 덮지 못하면(새 시즌 행이 아직 없음) 10분 간격으로 다시 받음
 _season_cache: dict = {'day': None, 'tried_at': None, 'seasons': []}
 _season_lock = asyncio.Lock()
@@ -166,7 +169,7 @@ async def rank_season_ids() -> Optional[Tuple[int, Optional[int]]]:
     seasons = await _load_seasons(now)
     ids = [s[3] for s in seasons
            if len(s) > 3 and isinstance(s[3], int) and s[0].lower().startswith('season')
-           and s[1] + RANK_SWITCH_DELAY <= now]
+           and _rank_switch_at(s[1]) <= now]
     if not ids:
         return None
     return ids[-1], (ids[-2] if len(ids) > 1 else None)

@@ -177,7 +177,7 @@ class TestPreseason(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(await holidays_api.is_preseason(date(2026, 11, 12)))
         self.assertEqual(fetch.await_count, 2)
 
-    async def test_rank_season_switches_a_week_after_regular_start(self):
+    async def test_rank_season_switches_on_first_sunday_noon_after_regular_start(self):
         rows = holidays_api._parse_seasons([
             {"seasonID": 39, "seasonName": "Season20", "seasonStart": "2026-05-07 12:00:00", "seasonEnd": "2026-08-06 09:00:00"},
             {"seasonID": 40, "seasonName": "Pre-Season21", "seasonStart": "2026-08-06 12:00:00", "seasonEnd": "2026-08-13 12:00:00"},
@@ -187,9 +187,16 @@ class TestPreseason(unittest.IsolatedAsyncioTestCase):
         ])
         with patch("services.holidays_api._fetch_seasons", new=AsyncMock(return_value=rows)):
             for now, expected in (("2026-11-13 12:00", (41, 39)), ("2026-11-19 13:00", (41, 39)),
-                                  ("2026-11-26 11:59", (41, 39)), ("2026-11-26 12:00", (43, 41))):
+                                  ("2026-11-22 11:59", (41, 39)), ("2026-11-22 12:00", (43, 41))):
                 with self._now(now):
                     self.assertEqual(await holidays_api.rank_season_ids(), expected, now)
+
+    def test_rank_switch_time_for_other_start_days(self):
+        at = lambda d: datetime.fromisoformat(d).replace(tzinfo=KST)
+        self.assertEqual(holidays_api._rank_switch_at(at("2027-02-18 12:00")), at("2027-02-21 12:00"))
+        self.assertEqual(holidays_api._rank_switch_at(at("2027-02-20 12:00")), at("2027-02-21 12:00"))
+        # 일요일 12시나 그 뒤에 시작하면 다음 일요일에 넘어감
+        self.assertEqual(holidays_api._rank_switch_at(at("2027-02-21 12:00")), at("2027-02-28 12:00"))
 
     async def test_rank_season_none_without_list(self):
         with self._now("2026-11-13 12:00"), \
