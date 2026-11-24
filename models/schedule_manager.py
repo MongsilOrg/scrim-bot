@@ -165,13 +165,10 @@ class ScheduleManager:
                 name_parts = []
                 for uid in all_uids:
                     name = self.admin_names.get(uid, '알 수 없음')
-                    if uid in deployed:
-                        name_parts.append(f'**{name}** 진행')
-                    else:
-                        name_parts.append(name)
+                    name_parts.append(f'**{name}**' if uid in deployed else name)
                 for uid in extra_deployed:
                     name = self.admin_names.get(uid, '알 수 없음')
-                    name_parts.append(f'**{name}** 진행')
+                    name_parts.append(f'**{name}**')
 
                 total_for_day = len(all_uids) + len(extra_deployed)
                 if name_parts:
