@@ -150,6 +150,20 @@ class RankingTest(unittest.TestCase):
         self.assertNotIn("2026-11-24", mgr.deploy_history)
         self.assertNotIn(1, mgr.actual_deployments)
 
+    def test_operator_dropped_on_labs_is_not_added_back_by_later_confirm(self, _save):
+        mgr = _manager()
+        mgr.toggle_self_deployment(1, "a")
+
+        with patch.object(schedule_manager, "get_current_kst_time", return_value=datetime(2026, 11, 24, 21, tzinfo=KST)):
+            mgr.set_deployment(TUESDAY, ["b"])
+        mgr.confirm_deployment(TUESDAY, "A", ["a", "c"])
+        self.assertEqual(mgr.deploy_history["2026-11-24"], ["b", "c"])
+
+        # 화면에서 다시 넣으면 뺀 기록을 지움
+        with patch.object(schedule_manager, "get_current_kst_time", return_value=datetime(2026, 11, 24, 22, tzinfo=KST)):
+            mgr.set_deployment(TUESDAY, ["a", "b", "c"])
+        self.assertEqual(mgr.dropped, {})
+
     def test_set_deployment_outside_the_week_keeps_history_only(self, _save):
         mgr = _manager()
 

@@ -61,6 +61,8 @@ class ScheduleManager:
         self.deploy_history: Dict[str, List[str]] = {}
         # 기록으로 확정한 '날짜:조'. 투입 버튼으로 뺀 사람이 다시 들어가지 않게 한 번만 확정
         self.confirmed: List[str] = []
+        # 운영 화면에서 그날 명단에서 뺀 사람. 뒤에 오는 조 확정이 다시 넣지 않음
+        self.dropped: Dict[str, List[str]] = {}
         # 지금 정규 시즌이 시작한 날. 시즌 목록을 받지 못하면 None이고 전부 셈
         self.count_since: Optional[str] = None
         self.pick: Optional[dict] = None
@@ -294,6 +296,7 @@ class ScheduleManager:
             return False
         oldest = (day - timedelta(days=CONFIRMED_KEEP_DAYS)).isoformat()
         self.confirmed = [k for k in self.confirmed if k >= oldest] + [key]
+        user_ids = [uid for uid in user_ids if uid not in self.dropped.get(day.isoformat(), [])]
         history = self.deploy_history.setdefault(day.isoformat(), [])
         history.extend(uid for uid in user_ids if uid not in history)
         if not history:
@@ -311,8 +314,14 @@ class ScheduleManager:
     def set_deployment(self, day: date, user_ids: List[str]) -> bool:
         """운영 화면에서 고친 그날의 명단으로 바꿈. 바뀌었으면 True"""
         key = day.isoformat()
-        if sorted(self.deploy_history.get(key, [])) == sorted(user_ids):
+        before = self.deploy_history.get(key, [])
+        if sorted(before) == sorted(user_ids):
             return False
+        oldest = (get_current_kst_time().date() - timedelta(days=CONFIRMED_KEEP_DAYS)).isoformat()
+        dropped = [uid for uid in dict.fromkeys([*self.dropped.get(key, []), *before]) if uid not in user_ids]
+        self.dropped = {k: v for k, v in self.dropped.items() if k >= oldest and k != key}
+        if dropped and key >= oldest:
+            self.dropped[key] = dropped
         if user_ids:
             self.deploy_history[key] = list(user_ids)
         else:
@@ -497,6 +506,7 @@ class ScheduleManager:
                 'reminder_message_ids': self.reminder_message_ids,
                 'deploy_history': self.deploy_history,
                 'confirmed': self.confirmed,
+                'dropped': self.dropped,
                 'count_since': self.count_since,
                 'pick': self.pick,
             }
@@ -549,6 +559,7 @@ class ScheduleManager:
                 for day_index in self.actual_deployments:
                     self._sync_history(day_index)
             self.confirmed = data.get('confirmed') or []
+            self.dropped = data.get('dropped') or {}
             self.count_since = data.get('count_since')
             self.pick = data.get('pick')
             if self.pick and 'order' not in self.pick:

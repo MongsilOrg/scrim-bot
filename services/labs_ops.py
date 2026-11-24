@@ -37,6 +37,8 @@ _unanswered: Dict[tuple, tuple] = {}
 UNANSWERED_SECONDS = 600
 # rev를 올리지 못한 주기에 이미 게시한 변경의 id. 다음 주기에 다시 받아도 건너뜀
 _posted: set = set()
+# 날짜별로 마지막에 반영한 화면 수정의 변경 번호
+_applied: Dict[date, int] = {}
 
 
 def copy() -> Optional[dict]:
@@ -86,9 +88,14 @@ def _apply_days(days) -> bool:
     for item in days if isinstance(days, list) else []:
         try:
             day = date.fromisoformat(item['day'])
-            ids = [uid for uid in item['ids'] if isinstance(uid, str) and uid.isdigit()]
-        except (KeyError, TypeError, ValueError):
+            ids = list(dict.fromkeys(uid for uid in item['ids'] if isinstance(uid, str) and uid.isdigit()))
+            rev = item.get('rev')
+        except (AttributeError, KeyError, TypeError, ValueError):
             continue
+        # 게시 실패로 번호를 올리지 못한 주기에 같은 수정을 다시 받으면 그 사이의 조 확정을 지우지 않음
+        if rev is not None and _applied.get(day) == rev:
+            continue
+        _applied[day] = rev
         if schedule_mgr.set_deployment(day, ids):
             logger.info(f"[운영툴] {day.isoformat()} 진행 명단 반영: {len(ids)}명")
             changed = True
