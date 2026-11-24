@@ -6,12 +6,11 @@ from bot.manager import BotManager
 import discord
 
 from commands.operator_pick import refresh_count_since, start_close_task
-from commands.ui.schedule_views import delete_old_reminders, refresh_dashboard, schedule_members
+from commands.ui.schedule_views import delete_old_reminders, refresh_dashboard, reminder_view, schedule_members
 from config.logging_config import get_logger
 from config.settings import settings
 from models.schedule_manager import OPEN_WEEKDAY, REMINDER_HOUR, REMINDER_WEEKDAY
 from utils.helpers import get_current_kst_time
-from utils.layout_helpers import info_view
 
 logger = get_logger('schedule')
 
@@ -66,10 +65,12 @@ def _next_reminder(now):
 
 
 async def send_schedule_reminder(client: ScrimBot) -> int:
-    """다음 주 일정에 응답하지 않은 관리자를 일정 채널에서 멘션. 보낸 인원 수"""
+    """다음 주 일정에 응답하지 않은 운영진을 일정 채널에서 멘션. 보낸 인원 수"""
     schedule_mgr = BotManager.get_instance().get_schedule_manager()
-    # 편성을 마쳤거나 다음 주 일정이 아직 열리지 않았으면 보내지 않음
-    if schedule_mgr.assignments or not schedule_mgr.week_start or schedule_mgr.week_start <= get_current_kst_time():
+    # 다음 주 일정이 아직 열리지 않았으면 보내지 않음
+    if not schedule_mgr.week_start or schedule_mgr.week_start <= get_current_kst_time():
+        return 0
+    if schedule_mgr.all_rest:
         return 0
     guild = client.get_guild(settings.GUILD_ID)
     channel = guild.get_channel(settings.SCHEDULE_CHANNEL_ID) if guild else None
@@ -80,15 +81,13 @@ async def send_schedule_reminder(client: ScrimBot) -> int:
     missing = [m for m in schedule_members(guild) if str(m.id) not in responded]
     if not missing:
         return 0
+    missing_ids = [str(m.id) for m in missing]
     message = await channel.send(
-        view=info_view(
-            f"{' '.join(m.mention for m in missing)}\n"
-            f"{schedule_mgr.week_label} 일정에 아직 응답하지 않았습니다.\n위 대시보드에서 참가나 불참을 선택해주세요.",
-            title="일정 미응답",
-        ),
+        view=reminder_view(missing_ids),
         allowed_mentions=discord.AllowedMentions(users=True),
     )
     schedule_mgr.reminder_message_ids.append(message.id)
+    schedule_mgr.reminder_shown = missing_ids
     schedule_mgr.save_backup()
     logger.info(f"[일정] 미응답 알림 - {len(missing)}명: {', '.join(m.display_name for m in missing)}")
     return len(missing)

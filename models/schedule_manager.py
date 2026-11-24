@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from config.logging_config import get_logger
 from config.settings import settings
 from utils.helpers import KST, get_current_kst_time, save_json_atomic
-from utils.layout_helpers import format_kr_date
+from utils.operator_log import scrim_day
 
 logger = get_logger('schedule_manager')
 
@@ -35,7 +35,9 @@ BACKUP_PATH = os.path.join(
 
 
 def _week_label(monday: datetime) -> str:
-    return f"{format_kr_date(monday)}부터 {format_kr_date(monday + timedelta(days=ACTIVE_DAYS[-1]))}까지"
+    last = monday + timedelta(days=ACTIVE_DAYS[-1])
+    end = f"{last.day}일" if last.month == monday.month else f"{last.month}월 {last.day}일"
+    return f"{monday.month}월 {monday.day}일부터 {end}까지"
 
 
 class ScheduleManager:
@@ -49,13 +51,16 @@ class ScheduleManager:
         self.absence_reasons: Dict[str, Dict[int, str]] = {}
         self.admin_names: Dict[str, str] = {}
 
-        self.assignments: Dict[int, List[str]] = {}
         self.actual_deployments: Dict[int, List[str]] = {}
+        # 이번 주 근무 요일 가운데 자율 진행일. 「주간 일정」을 갱신할 때 채움
+        self.rest_days: Set[int] = set()
 
         self.status_message_id: Optional[int] = None
         self.status_channel_id: Optional[int] = None
         # 다음 주 일정이 열릴 때 지울 미응답 알림
         self.reminder_message_ids: List[int] = []
+        # 미응답 알림에 지금 멘션된 사람. 재시작하면 비어 알림을 한 번 다시 편집
+        self.reminder_shown: Optional[List[str]] = None
 
         # 날짜별 투입자. 순위를 시즌 누적으로 세므로 주가 바뀌어도 지우지 않음
         self.deploy_history: Dict[str, List[str]] = {}
@@ -83,8 +88,8 @@ class ScheduleManager:
         self.availability.clear()
         self.absence_reasons.clear()
         self.admin_names.clear()
-        self.assignments.clear()
         self.actual_deployments.clear()
+        self.rest_days = set()
 
         self.save_backup()
         return self.week_label
@@ -109,83 +114,66 @@ class ScheduleManager:
         answer = ', '.join(WEEKDAYS[d] for d in sorted(available_days)) if available_days else '불참'
         logger.info(f"[일정] 응답 - {display_name}: {answer}, 주차: {self.week_label}")
 
+    @property
+    def all_rest(self) -> bool:
+        return set(ACTIVE_DAYS) <= self.rest_days
+
     def get_responded_user_ids(self) -> Set[str]:
         responded = set(self.availability.keys())
         responded.update(self.absence_reasons.keys())
         return responded
 
-    def get_status_text(self, all_admin_ids: List[Tuple[str, str]]) -> str:
-        """all_admin_ids 항목은 user_id, display_name 쌍."""
+    def get_status_text(
+        self,
+        all_admin_ids: List[Tuple[str, str]],
+        groups: Optional[Dict[int, Dict[str, List[str]]]] = None,
+    ) -> str:
+        """all_admin_ids 항목은 user_id, display_name 쌍. groups는 요일마다 조와 그 조를 진행한 사람"""
+        lines = [f"## 주간 일정\n{self.week_label}"]
+        today = scrim_day()
+        done, upcoming = [], []
+        for day_index in ACTIVE_DAYS:
+            day = self._day_date(day_index)
+            past = day is not None and day < today
+            deployed = self.actual_deployments.get(day_index)
+            if deployed:
+                names = self._deployed_names(deployed, (groups or {}).get(day_index, {}))
+                done.append(f"{WEEKDAYS[day_index]} {names}")
+            elif day_index in self.rest_days:
+                (done if past else upcoming).append(f"{WEEKDAYS[day_index]} 자율 진행")
+            elif not past:
+                names = ', '.join(self._name(uid) for uid in self.ranked_for_day(day_index))
+                upcoming.append(f"{WEEKDAYS[day_index]} {names or '없음'}")
+        for title, rows in (('진행', done), ('참가', upcoming)):
+            if rows:
+                lines += ['', f'**{title}**', *rows]
+
+        tail = []
+        absent = [uid for uid, days in self.availability.items() if not days]
+        for uid in sorted(absent, key=self._name):
+            reason = self.absence_reasons.get(uid, {}).get(-1)
+            tail.append(f"**불참** {self._name(uid)}: {reason}" if reason else f"**불참** {self._name(uid)}")
         responded = self.get_responded_user_ids()
-        total = len(all_admin_ids)
-        resp_count = len(responded)
-
-        lines = [f"## 📅 주간 일정\n{self.week_label}"]
-
-        lines.append('')
-        lines.append(f'**응답 현황** {total}명 중 {resp_count}명 응답')
-        if not responded:
-            lines.append('> 아직 응답한 관리자가 없습니다.')
-        else:
-            for uid in sorted(responded, key=lambda u: self.admin_names.get(u, '')):
-                name = self.admin_names.get(uid, '알 수 없음')
-                avail = self.availability.get(uid, set())
-                reasons = self.absence_reasons.get(uid, {})
-
-                if -1 in reasons:
-                    lines.append(f'> {name}: 불참, 사유 {reasons[-1]}')
-                elif avail:
-                    day_labels = ', '.join(WEEKDAYS[d] for d in sorted(avail))
-                    lines.append(f'> {name}: {day_labels}')
-                else:
-                    lines.append(f'> {name}: 가능한 요일 없음')
-
-        not_responded = [
-            (uid, name) for uid, name in all_admin_ids if uid not in responded
-        ]
-        if not_responded:
-            lines.append('')
-            lines.append(f'**미응답** {len(not_responded)}명')
-            names = ', '.join(name for _, name in not_responded)
-            lines.append(f'> {names}')
-        if not_responded and not self.assignments:
-            lines.append(f'-# 응답하지 않은 관리자는 {WEEKDAYS[REMINDER_WEEKDAY]}요일 {REMINDER_HOUR}시에 알림을 받습니다.')
-
-        if self.assignments:
-            total_assigned = sum(len(v) for v in self.assignments.values())
-            lines.append('')
-            lines.append(f'**주간 편성** {total_assigned}건')
-            for day_idx in ACTIVE_DAYS:
-                members = self.assignments.get(day_idx, [])
-                deployed = self.actual_deployments.get(day_idx, [])
-
-                all_uids = list(members)
-                extra_deployed = [uid for uid in deployed if uid not in members]
-
-                name_parts = []
-                for uid in all_uids:
-                    name = self.admin_names.get(uid, '알 수 없음')
-                    name_parts.append(f'**{name}**' if uid in deployed else name)
-                for uid in extra_deployed:
-                    name = self.admin_names.get(uid, '알 수 없음')
-                    name_parts.append(f'**{name}**')
-
-                total_for_day = len(all_uids) + len(extra_deployed)
-                if name_parts:
-                    lines.append(
-                        f'> **{WEEKDAYS[day_idx]}** {total_for_day}명: '
-                        f'{", ".join(name_parts)}'
-                    )
-                else:
-                    lines.append(f'> **{WEEKDAYS[day_idx]}** 배정 없음')
-
-        counts = self.season_counts()
-        if counts:
-            ordered = sorted(all_admin_ids, key=lambda item: (counts.get(item[0], 0), item[1]))
-            lines.append('')
-            lines.append('**시즌 진행** ' + ', '.join(f'{name} {counts.get(uid, 0)}회' for uid, name in ordered))
-
+        not_responded = [name for uid, name in all_admin_ids if uid not in responded]
+        # 모든 요일이 자율 진행이면 응답할 것이 없음
+        if not_responded and not self.all_rest:
+            tail.append(f"**미응답** {', '.join(not_responded)}")
+        if tail:
+            lines += ['', *tail]
         return '\n'.join(lines)
+
+    def _name(self, user_id: str) -> str:
+        return self.admin_names.get(user_id, '알 수 없음')
+
+    def _deployed_names(self, deployed: List[str], groups: Dict[str, List[str]]) -> str:
+        # 조 기록이 없는 날과 운영 화면에서 넣은 사람은 이름만 적음
+        parts = [
+            f"{letter}조 {self._name(uid)}"
+            for letter in sorted(groups) for uid in groups[letter] if uid in deployed
+        ]
+        grouped = {uid for uids in groups.values() for uid in uids}
+        parts += [self._name(uid) for uid in deployed if uid not in grouped]
+        return ', '.join(parts)
 
     def _day_date(self, day_index: int) -> Optional[date]:
         return (self.week_start + timedelta(days=day_index)).date() if self.week_start else None
@@ -207,76 +195,22 @@ class ScheduleManager:
                     last[uid] = day
         return last
 
-    def ranked_for_day(self, day_index: int, planned: Optional[Dict[str, int]] = None) -> List[str]:
-        """그날 가능하다고 응답한 사람을 투입 순위대로. planned는 같은 주 앞 요일에 편성한 횟수"""
+    def ranked_for_day(self, day_index: int) -> List[str]:
+        """그날 가능하다고 응답한 사람을 투입 순위대로"""
         counts = self.season_counts()
-        planned = planned or {}
         last = self._last_deployed()
         week = self.week_start.date().isoformat() if self.week_start else ''
         candidates = [uid for uid, days in self.availability.items() if day_index in days]
         return sorted(
             candidates,
             key=lambda uid: (
-                counts.get(uid, 0) + planned.get(uid, 0),
+                counts.get(uid, 0),
                 last.get(uid, ''),
                 len(self.availability[uid]),
                 # ID 순이면 동점일 때 늘 같은 사람이 앞에 와서 주마다 순서를 바꿈
                 hashlib.sha1(f"{week}:{uid}".encode()).hexdigest(),
             ),
         )
-
-    def _plan(self, days) -> Dict[int, List[str]]:
-        # 앞 요일에 편성한 사람은 그만큼 투입된 것으로 보고 뒤 요일 순위를 매겨, 같은 6명이 한 주 내내 편성되지 않게 함
-        planned: Dict[str, int] = defaultdict(int)
-        result: Dict[int, List[str]] = {}
-        for day in sorted(days):
-            result[day] = self.ranked_for_day(day, planned)[:POOL_SIZE]
-            for uid in result[day]:
-                planned[uid] += 1
-        return result
-
-    def generate_assignments(self) -> Dict[int, List[str]]:
-        days = set(ACTIVE_DAYS)
-        for available in self.availability.values():
-            days |= available
-        self.assignments = self._plan(days)
-        # 지난 요일의 편성을 횟수에 넣지 않고 남은 요일을 다시 매김. 가장 가까운 요일이 조 고르기 순위와 같아짐
-        self._readjust_remaining()
-        self.save_backup()
-        logger.info("[일정] 편성 완료")
-        return self.assignments
-
-    def toggle_self_deployment(self, day_index: int, user_id: str) -> Tuple[bool, List[Tuple[int, List[str], List[str]]]]:
-        """반환은 등록 여부와 재배정으로 바뀐 요일별 추가, 제외 목록."""
-        if day_index not in self.actual_deployments:
-            self.actual_deployments[day_index] = []
-
-        deployed = self.actual_deployments[day_index]
-        if user_id in deployed:
-            deployed.remove(user_id)
-            if not deployed:
-                del self.actual_deployments[day_index]
-        else:
-            deployed.append(user_id)
-            self.admin_names.setdefault(user_id, user_id)
-        self._sync_history(day_index)
-
-        changes = self._readjust_remaining()
-        self.save_backup()
-        return user_id in self.actual_deployments.get(day_index, []), changes
-
-    def _locked_days(self) -> Set[int]:
-        # 지난 요일과 시작 시각이 지난 오늘은 이미 진행되어 다시 배정하지 않음
-        if self.week_start is None:
-            return set()
-        now = get_current_kst_time()
-        today = now.date()
-        locked = set()
-        for day in ACTIVE_DAYS:
-            day_date = (self.week_start + timedelta(days=day)).date()
-            if day_date < today or (day_date == today and now.hour >= settings.SCRIM_START_HOUR):
-                locked.add(day)
-        return locked
 
     def _sync_history(self, day_index: int) -> None:
         day = self._day_date(day_index)
@@ -306,7 +240,6 @@ class ScheduleManager:
             deployed.extend(uid for uid in user_ids if uid not in deployed)
             for uid in user_ids:
                 self.admin_names.setdefault(uid, uid)
-        self._readjust_remaining()
         self.save_backup()
         return True
 
@@ -336,7 +269,6 @@ class ScheduleManager:
                         self.admin_names.setdefault(uid, uid)
                 else:
                     self.actual_deployments.pop(day_index, None)
-                self._readjust_remaining()
         noted = rev is not None and key >= oldest
         if noted:
             self.applied = {k: v for k, v in self.applied.items() if k >= oldest}
@@ -345,30 +277,9 @@ class ScheduleManager:
             self.save_backup()
         return changed
 
-    def _readjust_remaining(self) -> List[Tuple[int, List[str], List[str]]]:
-        locked = self._locked_days()
-        remaining_days = sorted(
-            d for d in self.assignments
-            if not self.actual_deployments.get(d) and d not in locked
-        )
-        changes = []
-        plan = self._plan(remaining_days)
-        for day in remaining_days:
-            before = self.assignments.get(day, [])
-            after = plan[day]
-            self.assignments[day] = after
-            added = [uid for uid in after if uid not in before]
-            removed = [uid for uid in before if uid not in after]
-            if added or removed:
-                changes.append((day, added, removed))
-        return changes
-
     def open_pick(self, day: date, letters: List[str]) -> dict:
         """그날 조 선택을 시작. 같은 날 다시 열면 남아 있는 조의 선택을 그대로 둠"""
         day_index = (day - self.week_start.date()).days if self.week_start else -1
-        if self.assignments:
-            # 주간 편성에 보이는 오늘 명단을 조 선택 순위와 맞춤
-            self._readjust_remaining()
         old = self.pick if self.pick and self.pick.get('date') == day.isoformat() else None
         self.pick = {
             'date': day.isoformat(),
@@ -495,9 +406,6 @@ class ScheduleManager:
                     for uid, reasons in self.absence_reasons.items()
                 },
                 'admin_names': self.admin_names,
-                'assignments': {
-                    str(k): v for k, v in self.assignments.items()
-                },
                 'actual_deployments': {
                     str(k): v for k, v in self.actual_deployments.items()
                 },
@@ -543,9 +451,6 @@ class ScheduleManager:
                 for uid, reasons in data.get('absence_reasons', {}).items()
             }
             self.admin_names = data.get('admin_names', {})
-            self.assignments = {
-                int(k): v for k, v in data.get('assignments', {}).items()
-            }
             self.actual_deployments = {
                 int(k): v
                 for k, v in data.get('actual_deployments', {}).items()

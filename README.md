@@ -17,7 +17,7 @@
 - 제재 부여 컨텍스트 메뉴로 주의와 경고를 관리.\
   주의 2회는 경고 1회로 바뀌고, 경고로 제한된 인원이 있는 팀은 등록이 막힘.\
   기록과 기간 계산은 Labs가 맡음
-- 운영진 주간 편성 일정 대시보드.\
+- 운영진 주간 일정 대시보드.\
   매주 금요일 22시에 다음 주로 넘어감
 
 ## 동작 방식
@@ -50,7 +50,7 @@ python main.py
 | BSER_API_KEY | 필수 | 이터널 리턴 Open API 키 |
 | SCRIM_CHANNEL_ID | 선택 | 스크림 대시보드 채널 ID |
 | LOG_CHANNEL_ID | 선택 | 운영 로그 채널 ID |
-| SCHEDULE_CHANNEL_ID | 선택 | 주간 편성 일정 대시보드 채널 ID |
+| SCHEDULE_CHANNEL_ID | 선택 | 주간 일정 대시보드 채널 ID |
 | TEST_ACCOUNT_CONTACT_ID | 선택 | 테스트 계정 문의 안내에 표시할 사용자 ID |
 | GROUP_CATEGORY_PATTERN | 선택 | 조별 음성채널 카테고리 이름 패턴.<br>`{letter}` 자리에 조 문자가 들어감 |
 | ANNOUNCEMENT_MESSAGE | 선택 | 대시보드에 표시할 공지 문구 |

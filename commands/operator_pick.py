@@ -7,17 +7,17 @@ from typing import List, Optional
 
 import discord
 from discord import ButtonStyle
-from discord.ui import ActionRow, Button, Container, DynamicItem, LayoutView, Separator, TextDisplay
+from discord.ui import ActionRow, Button, Container, DynamicItem, LayoutView, TextDisplay
 
 from bot.manager import BotManager
-from commands.ui.schedule_views import refresh_dashboard
+from commands.ui.schedule_views import refresh_dashboard, schedule_members
 from config.logging_config import get_logger
 from config.settings import settings
-from models.schedule_manager import ACTIVE_DAYS, PICK_CLOSE_HOUR
-from services import holidays_api, labs_api, labs_ops
+from models.schedule_manager import PICK_CLOSE_HOUR
+from services import holidays_api, labs_api
 from utils import operator_log
 from utils.helpers import get_current_kst_time, is_admin
-from utils.layout_helpers import FOOTER_TEXT, error_view, info_view, permission_error_view, send_response
+from utils.layout_helpers import error_view, info_view, permission_error_view, send_response
 
 logger = get_logger('operator_pick')
 
@@ -35,7 +35,7 @@ class PickButton(DynamicItem[Button], template=r"scrim:pick:(?P<key>[A-Z]|declin
     def __init__(self, key: str, *, taken: bool = False):
         self.key = key
         if key == DECLINE:
-            button = Button(label="오늘 불가", style=ButtonStyle.secondary, custom_id=f"scrim:pick:{key}")
+            button = Button(label="오늘 불참", style=ButtonStyle.secondary, custom_id=f"scrim:pick:{key}")
         else:
             # 선택한 사람이 다시 누르면 취소되므로 비활성으로 두지 않고 색으로만 구분
             style = ButtonStyle.success if taken else ButtonStyle.primary
@@ -64,7 +64,7 @@ def pick_view(guild: discord.Guild, schedule_mgr) -> LayoutView:
         lines.append(f"**{letter}조** <@{choices[letter]}>" if letter in choices else f"**{letter}조**")
     waiting = [uid for uid in pick['targets'] if uid not in choices.values()]
     if waiting:
-        lines.append(f"**진행** {_mentions(waiting)}")
+        lines.append(f"**미선택** {_mentions(waiting)}")
     if pick['reserves']:
         names = ', '.join(_name(guild, schedule_mgr, uid) for uid in pick['reserves'])
         lines.append(f"**예비** {names}")
@@ -72,12 +72,7 @@ def pick_view(guild: discord.Guild, schedule_mgr) -> LayoutView:
         lines.append(f"-# {PICK_CLOSE_HOUR}시 마감")
 
     view = LayoutView(timeout=None)
-    view.add_item(Container(
-        TextDisplay(content='\n'.join(lines)),
-        Separator(),
-        TextDisplay(content=FOOTER_TEXT),
-        accent_colour=discord.Color.blue(),
-    ))
+    view.add_item(Container(TextDisplay(content='\n'.join(lines)), accent_colour=discord.Color.blue()))
     buttons = [PickButton(letter, taken=letter in choices) for letter in pick['groups']] + [PickButton(DECLINE)]
     for i in range(0, len(buttons), 5):
         view.add_item(ActionRow(*buttons[i:i + 5]))
@@ -123,7 +118,7 @@ async def _handle(interaction: discord.Interaction, key: str) -> None:
             title = "조 배정"
         elif result['promoted']:
             notice = f"<@{result['promoted']}>\n{PROMOTED_TEXT}"
-        logger.info(f"[조 고르기] 오늘 불가 - {member.display_name}, 승격: {result['promoted']}")
+        logger.info(f"[조 고르기] 오늘 불참 - {member.display_name}, 승격: {result['promoted']}")
     else:
         result = schedule_mgr.pick_group(uid, key)
         status = result['status']
@@ -131,7 +126,7 @@ async def _handle(interaction: discord.Interaction, key: str) -> None:
             await send_response(interaction, error_view("다른 운영진이 먼저 선택한 조입니다.\n빈 조를 선택해주세요."))
             return
         if status == 'closed':
-            await send_response(interaction, error_view("마감 뒤에 빠지려면 오늘 불가를 선택해주세요."))
+            await send_response(interaction, error_view("마감 뒤에 빠지려면 오늘 불참을 선택해주세요."))
             return
         if status == 'full':
             await send_response(interaction, error_view("남은 조가 없어 선택할 수 없습니다."))
@@ -213,8 +208,17 @@ async def confirm_group(client: discord.Client, day_iso: str, letter: str) -> No
     if not _confirm(schedule_mgr, day, letter, operator_log.deployed(day)):
         return
     guild = client.get_guild(settings.GUILD_ID)
-    if guild:
-        await refresh_dashboard(guild, schedule_mgr=schedule_mgr)
+    if not guild:
+        return
+    pick = schedule_mgr.pick
+    channel = guild.get_channel(settings.SCHEDULE_CHANNEL_ID)
+    # 그날 조가 모두 확정되면 조 선택 메시지에서 더 누를 것이 없음
+    if channel and pick and pick.get('date') == day_iso and all(
+        f"{day_iso}:{group}" in schedule_mgr.confirmed for group in pick['groups']
+    ):
+        await _delete_messages(channel, pick)
+        schedule_mgr.save_backup()
+    await refresh_dashboard(guild, schedule_mgr=schedule_mgr)
 
 
 async def post_pick(client: discord.Client, guild: discord.Guild, letters: List[str]) -> None:
@@ -226,7 +230,8 @@ async def post_pick(client: discord.Client, guild: discord.Guild, letters: List[
     confirm_pending(schedule_mgr)
     await _delete_messages(channel, schedule_mgr.pick)
     day = operator_log.scrim_day()
-    if not letters or day.weekday() not in ACTIVE_DAYS or day.isoformat() in labs_ops.free_days():
+    # 참가팀에게 자율 진행으로 안내하는 날에는 운영진 조 선택도 올리지 않음
+    if not letters or (await holidays_api.get_rest_day_info(day))["is_rest_day"]:
         schedule_mgr.save_backup()
         await refresh_dashboard(guild, schedule_mgr=schedule_mgr)
         return
@@ -261,7 +266,13 @@ async def close_pick(client: discord.Client) -> None:
         lines = [f"<@{uid}> {letter}조" for uid, letter in assigned]
         lines.append(f"{PICK_CLOSE_HOUR}시까지 선택하지 않아 남은 조에 배정했습니다.")
         await _notify(channel, schedule_mgr, '\n'.join(lines), "조 배정")
-    logger.info(f"[조 고르기] 마감 - 자동 배정 {len(assigned)}명")
+    empty = [letter for letter in pick['groups'] if letter not in pick['choices']]
+    if empty:
+        holders = set(pick['choices'].values())
+        free = [str(m.id) for m in schedule_members(guild) if str(m.id) not in holders]
+        text = f"{'조, '.join(empty)}조를 맡을 운영진이 없습니다.\n위 메시지에서 조를 선택해주세요."
+        await _notify(channel, schedule_mgr, f"{_mentions(free)}\n{text}" if free else text, "빈 조")
+    logger.info(f"[조 고르기] 마감 - 자동 배정 {len(assigned)}명, 빈 조 {len(empty)}개")
 
 
 async def _close_at_deadline(client: discord.Client) -> None:

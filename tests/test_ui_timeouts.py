@@ -1,9 +1,8 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
-from commands.ui import roster_views, schedule_views
-from models.schedule_manager import ScheduleManager
+from commands.ui import roster_views
 from utils import layout_helpers
 
 
@@ -41,40 +40,6 @@ class TeamSelectionTimeoutTest(unittest.IsolatedAsyncioTestCase):
 
         edited = view.message.edit.await_args.kwargs["view"]
         self.assertIn(CLOSED_TEXT, _view_text(edited))
-
-
-class DeployViewTimeoutTest(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
-        self.mgr = ScheduleManager()
-        self.mgr.week_label = "test"
-        self.mgr.availability = {"u1": {0, 1}}
-        self.mgr.assignments = {0: ["u1"], 1: ["u1"]}
-
-    async def test_timeout_without_click_edits_first_message(self):
-        view = schedule_views.DeployView(self.mgr, "u1")
-        view.message = MagicMock()
-        view.message.edit = AsyncMock()
-
-        await view.on_timeout()
-
-        self.assertIn(CLOSED_TEXT, _view_text(view.message.edit.await_args.kwargs["view"]))
-
-    async def test_timeout_after_click_uses_latest_interaction(self):
-        view = schedule_views.DeployView(self.mgr, "u1")
-        view.message = MagicMock()
-        view.message.edit = AsyncMock()
-        click = MagicMock()
-        click.response.edit_message = AsyncMock()
-        click.edit_original_response = AsyncMock()
-
-        with patch.object(ScheduleManager, "save_backup"), \
-                patch.object(schedule_views, "_refresh_schedule_status", new=AsyncMock()):
-            await view._make_day_callback(0)(click)
-            await view.on_timeout()
-
-        click.response.edit_message.assert_awaited_once_with(view=view)
-        self.assertIn(CLOSED_TEXT, _view_text(click.edit_original_response.await_args.kwargs["view"]))
-        view.message.edit.assert_not_called()
 
 
 if __name__ == "__main__":

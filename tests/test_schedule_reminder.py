@@ -21,11 +21,12 @@ class ScheduleReminderTest(unittest.IsolatedAsyncioTestCase):
         sun_late = datetime(2026, 10, 11, 22, 30, tzinfo=KST)
         self.assertEqual(schedule._next_reminder(sun_late), datetime(2026, 10, 18, 22, 0, tzinfo=KST))
 
-    async def _run(self, *, assignments=None, week_start_offset=timedelta(hours=3)):
+    async def _run(self, *, week_start_offset=timedelta(hours=3), all_rest=False):
         now = datetime(2026, 10, 11, 22, 0, tzinfo=KST)
         mgr = SimpleNamespace(
-            assignments=assignments or {}, week_start=now + week_start_offset, week_label="10/12 ~ 10/17",
-            get_responded_user_ids=lambda: {"1"}, reminder_message_ids=[7], save_backup=MagicMock(),
+            week_start=now + week_start_offset, week_label="10/12 ~ 10/17",
+            get_responded_user_ids=lambda: {"1"}, reminder_message_ids=[7], reminder_shown=None, save_backup=MagicMock(),
+            all_rest=all_rest,
         )
         channel = SimpleNamespace(send=AsyncMock(return_value=SimpleNamespace(id=8)))
         guild = SimpleNamespace(get_channel=lambda cid: channel)
@@ -41,13 +42,16 @@ class ScheduleReminderTest(unittest.IsolatedAsyncioTestCase):
         sent, send = await self._run()
         self.assertEqual(sent, 2)
         text = send.await_args.kwargs['view'].children[0].children[0].content
-        self.assertIn("<@2> <@3>", text)
-        self.assertNotIn("<@1>", text)
+        self.assertEqual(text, "## 일정 미응답\n<@2> <@3>\n위 메시지에서 참가나 불참을 선택해주세요.")
+        self.assertEqual(len(send.await_args.kwargs['view'].children[0].children), 1)
         self.assertEqual(self.mgr.reminder_message_ids, [7, 8])
+        self.assertEqual(self.mgr.reminder_shown, ["2", "3"])
         self.mgr.save_backup.assert_called_once()
 
-    async def test_skips_after_assignment_or_when_week_not_open(self):
-        self.assertEqual((await self._run(assignments={0: ["1"]}))[0], 0)
+    async def test_skips_week_of_rest_days(self):
+        self.assertEqual((await self._run(all_rest=True))[0], 0)
+
+    async def test_skips_when_week_not_open(self):
         self.assertEqual((await self._run(week_start_offset=-timedelta(days=1)))[0], 0)
 
 
@@ -60,35 +64,54 @@ class DeleteOldRemindersTest(unittest.IsolatedAsyncioTestCase):
             return SimpleNamespace(delete=AsyncMock(side_effect=errors[message_id]))
 
         channel = SimpleNamespace(get_partial_message=partial)
-        mgr = SimpleNamespace(reminder_message_ids=[1, 2, 3], save_backup=MagicMock())
+        mgr = SimpleNamespace(reminder_message_ids=[1, 2, 3], reminder_shown=["1"], save_backup=MagicMock())
         await schedule.delete_old_reminders(channel, mgr)
         self.assertEqual(mgr.reminder_message_ids, [3])
         mgr.save_backup.assert_called_once()
 
 
 class AnsweredReminderTest(unittest.IsolatedAsyncioTestCase):
-    async def _refresh(self, responded):
-        deleted = AsyncMock()
-        channel = SimpleNamespace(id=5, get_partial_message=lambda message_id: SimpleNamespace(delete=deleted))
-        guild = SimpleNamespace(get_channel=lambda cid: channel)
-        mgr = SimpleNamespace(
-            reminder_message_ids=[7], get_responded_user_ids=lambda: responded, get_status_text=lambda admins: "일정",
-            assignments={}, status_channel_id=5, status_message_id=9, save_backup=MagicMock(),
+    def setUp(self):
+        self.deleted, self.edited = AsyncMock(), AsyncMock()
+        self.mgr = SimpleNamespace(
+            reminder_message_ids=[7], reminder_shown=["1", "2", "3"], get_status_text=lambda admins, groups: "일정",
+            week_start=None, actual_deployments={}, rest_days=set(), all_rest=False,
+            status_channel_id=5, status_message_id=9, save_backup=MagicMock(),
         )
-        with patch.object(schedule_views, "schedule_members", return_value=[_member(1, "a"), _member(2, "b")]), \
+
+    async def _refresh(self, responded):
+        channel = SimpleNamespace(
+            id=5, get_partial_message=lambda message_id: SimpleNamespace(delete=self.deleted, edit=self.edited),
+        )
+        guild = SimpleNamespace(get_channel=lambda cid: channel)
+        self.mgr.get_responded_user_ids = lambda: responded
+        members = [_member(1, "a"), _member(2, "b"), _member(3, "c")]
+        with patch.object(schedule_views, "schedule_members", return_value=members), \
              patch.object(schedule_views, "upsert_persistent_message", new=AsyncMock(return_value=9)):
-            await schedule_views.refresh_dashboard(guild, schedule_mgr=mgr)
-        return mgr.reminder_message_ids, deleted
+            await schedule_views.refresh_dashboard(guild, schedule_mgr=self.mgr)
 
     async def test_reminder_is_deleted_once_everyone_answered(self):
-        ids, deleted = await self._refresh({"1", "2"})
-        self.assertEqual(ids, [])
-        deleted.assert_awaited_once()
+        await self._refresh({"1", "2", "3"})
+        self.assertEqual(self.mgr.reminder_message_ids, [])
+        self.deleted.assert_awaited_once()
+        self.edited.assert_not_awaited()
 
-    async def test_reminder_stays_while_someone_has_not_answered(self):
-        ids, deleted = await self._refresh({"1"})
-        self.assertEqual(ids, [7])
-        deleted.assert_not_awaited()
+    async def test_reminder_keeps_only_the_operators_who_have_not_answered(self):
+        await self._refresh({"1"})
+        self.assertEqual(self.mgr.reminder_message_ids, [7])
+        self.deleted.assert_not_awaited()
+        text = self.edited.await_args.kwargs["view"].children[0].children[0].content
+        self.assertEqual(text, "## 일정 미응답\n<@2> <@3>\n위 메시지에서 참가나 불참을 선택해주세요.")
+
+        # 남은 사람이 그대로면 다시 편집하지 않음
+        await self._refresh({"1"})
+        self.edited.assert_awaited_once()
+
+    async def test_reminder_is_deleted_in_a_week_of_rest_days(self):
+        self.mgr.all_rest = True
+        await self._refresh({"1"})
+        self.assertEqual(self.mgr.reminder_message_ids, [])
+        self.deleted.assert_awaited_once()
 
 
 class WeekOpenTest(unittest.TestCase):

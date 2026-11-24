@@ -107,31 +107,13 @@ class RankingTest(unittest.TestCase):
         self.assertEqual(mgr.season_counts(), {"a": 1})
         self.assertEqual(mgr.ranked_for_day(0), ["b", "a"])
 
-    def test_assignments_follow_ranking(self, _save):
-        mgr = _manager({uid: {0} for uid in "abcdefgh"})
-        mgr.deploy_history = {"2026-11-16": ["a", "b"]}
-
-        assigned = mgr.generate_assignments()[0]
-
-        self.assertEqual(len(assigned), 6)
-        self.assertNotIn("a", assigned)
-        self.assertNotIn("b", assigned)
-
-    def test_week_plan_spreads_people_across_days(self, _save):
-        mgr = _manager({uid: {0, 1} for uid in "abcdefgh"})
-
-        # 주가 시작하기 전이라 잠긴 요일이 없음
-        with patch.object(schedule_manager, "get_current_kst_time", return_value=datetime(2026, 11, 21, 12, tzinfo=KST)):
-            assigned = mgr.generate_assignments()
-
-        self.assertEqual(assigned[0], mgr.ranked_for_day(0)[:6])
-        self.assertEqual(set(assigned[0]) | set(assigned[1]), set("abcdefgh"))
-
     def test_confirm_applies_once_and_updates_week(self, _save):
         mgr = _manager()
 
         self.assertTrue(mgr.confirm_deployment(TUESDAY, "A", ["a"]))
-        mgr.toggle_self_deployment(1, "a")
+        self.assertEqual(mgr.actual_deployments[1], ["a"])
+        with patch.object(schedule_manager, "get_current_kst_time", return_value=datetime(2026, 11, 24, 21, tzinfo=KST)):
+            mgr.set_deployment(TUESDAY, [])
         self.assertFalse(mgr.confirm_deployment(TUESDAY, "A", ["a"]))
 
         self.assertNotIn(1, mgr.actual_deployments)
@@ -152,7 +134,7 @@ class RankingTest(unittest.TestCase):
 
     def test_operator_dropped_on_labs_is_not_added_back_by_later_confirm(self, _save):
         mgr = _manager()
-        mgr.toggle_self_deployment(1, "a")
+        mgr.confirm_deployment(TUESDAY, "B", ["a"])
 
         with patch.object(schedule_manager, "get_current_kst_time", return_value=datetime(2026, 11, 24, 21, tzinfo=KST)):
             mgr.set_deployment(TUESDAY, ["b"])
@@ -197,14 +179,6 @@ class RankingTest(unittest.TestCase):
 
         self.assertEqual(mgr.deploy_history, {"2026-11-27": ["a"]})
         self.assertEqual(mgr.actual_deployments, {})
-
-    def test_status_text_lists_season_counts(self, _save):
-        mgr = _manager()
-        mgr.deploy_history = {"2026-11-23": ["a"]}
-
-        text = mgr.get_status_text([("a", "A"), ("b", "B")])
-
-        self.assertIn("**시즌 진행** B 0회, A 1회", text)
 
 
 class BackupTest(unittest.TestCase):
@@ -398,6 +372,7 @@ class PickFlowTest(unittest.IsolatedAsyncioTestCase):
         self.mgr = _manager({"11": {1}, "12": {1}, "13": {1}})
         self.mgr.save_backup = MagicMock()
         self.now = datetime(2026, 11, 24, 17, 1, tzinfo=KST)
+        self.holidays = set()
         self.roles = {letter: FakeRole(name=f"{letter}조") for letter in "AB"}
         self.members = {}
         for uid in (11, 12, 13):
@@ -429,6 +404,8 @@ class PickFlowTest(unittest.IsolatedAsyncioTestCase):
             patch.object(settings, "ADMIN_ROLE_IDS", [ADMIN_ROLE]),
             patch.object(operator_pick, "BotManager", bot_manager),
             patch.object(operator_pick, "refresh_dashboard", new=AsyncMock()),
+            patch.object(operator_pick, "schedule_members", side_effect=lambda guild: list(self.members.values())),
+            patch.object(operator_pick.holidays_api, "get_rest_day_info", new=AsyncMock(side_effect=self._rest_info)),
             patch.object(operator_pick, "start_close_task"),
             patch.object(operator_pick.holidays_api, "regular_season_start", new=AsyncMock(return_value=MONDAY)),
             patch.object(operator_pick.labs_api, "load_state", return_value={}),
@@ -437,6 +414,9 @@ class PickFlowTest(unittest.IsolatedAsyncioTestCase):
         ):
             target.start()
             self.addCleanup(target.stop)
+
+    async def _rest_info(self, day):
+        return {"is_rest_day": day.weekday() >= 5 or day in self.holidays}
 
     def _interaction(self, uid, message_id):
         interaction = MagicMock()
@@ -545,12 +525,53 @@ class PickFlowTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.sent), 1)
         self.assertIsNone(self.mgr.pick["message_id"])
 
-    async def test_designated_free_day_posts_no_pick(self):
-        with patch.object(operator_pick.labs_ops, "free_days", return_value={operator_pick.operator_log.scrim_day().isoformat()}):
-            await operator_pick.post_pick(self.client, self.guild, ["A", "B"])
+    async def test_holiday_posts_no_pick(self):
+        self.holidays = {TUESDAY}
+
+        await operator_pick.post_pick(self.client, self.guild, ["A", "B"])
 
         self.assertEqual(self.sent, [])
         self.assertIsNone(self.mgr.pick)
+
+    async def test_pick_message_has_no_footer_and_names_waiting_row(self):
+        await operator_pick.post_pick(self.client, self.guild, ["A", "B"])
+
+        view = self.sent[0]["view"]
+        text = _text(view)
+        self.assertIn("**미선택** ", text)
+        self.assertNotIn("**진행**", text)
+        self.assertNotIn(settings.EMBED_FOOTER_TEXT, text)
+        self.assertFalse([item for item in view.walk_children() if isinstance(item, discord.ui.Separator)])
+        labels = [item.item.label for item in view.walk_children() if isinstance(item, operator_pick.PickButton)]
+        self.assertEqual(labels, ["A조", "B조", "오늘 불참"])
+
+    async def test_close_with_an_empty_group_mentions_operators_without_one(self):
+        self.mgr.availability = {"11": {1}}
+        await operator_pick.post_pick(self.client, self.guild, ["A", "B"])
+
+        await operator_pick.close_pick(self.client)
+
+        self.assertEqual(self.mgr.pick["choices"], {"A": "11"})
+        text = _text(self.sent[-1]["view"])
+        self.assertIn("<@12> <@13>\nB조를 맡을 운영진이 없습니다.\n위 메시지에서 조를 선택해주세요.", text)
+        self.assertNotIn("<@11>", text)
+        self.assertTrue(self.sent[-1]["allowed_mentions"].users)
+        self.assertEqual(len(self.mgr.pick["notice_ids"]), 2)
+        # 마감 뒤에는 명단에 없던 운영진도 빈 조를 선택
+        await operator_pick._handle(self._interaction(12, 101), "B")
+        self.assertEqual(self.mgr.pick["choices"], {"A": "11", "B": "12"})
+
+    async def test_pick_message_is_deleted_once_every_group_is_confirmed(self):
+        await operator_pick.post_pick(self.client, self.guild, ["A", "B"])
+        delete = self.channel.get_partial_message.return_value.delete
+
+        await operator_pick.confirm_group(self.client, "2026-11-24", "A")
+        delete.assert_not_awaited()
+        self.assertEqual(self.mgr.pick["message_id"], 101)
+
+        await operator_pick.confirm_group(self.client, "2026-11-24", "B")
+        delete.assert_awaited_once()
+        self.assertIsNone(self.mgr.pick["message_id"])
 
 
 
