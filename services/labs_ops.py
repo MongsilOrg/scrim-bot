@@ -25,6 +25,7 @@ FAILURES_BEFORE_NOTICE = 5
 CHANGES_TEXT_LIMIT = 3500
 DEPLOY_DAYS = 7
 UNKNOWN_NAME = '알 수 없음'
+ROSTER_ROLES = {'Lead', 'Staff'}
 
 _copy: Optional[dict] = None
 _copy_loaded = False
@@ -122,6 +123,12 @@ def _deploys(guild: discord.Guild, history: Dict[str, List[str]]) -> Dict[str, L
     return result
 
 
+def _roster(members: List[discord.Member]) -> List[str]:
+    # Labs 진행 탭에서 고르는 명단. Head만 가진 사람은 빼고 서버에 들어온 순서
+    picked = [m for m in members if any(role.name in ROSTER_ROLES for role in m.roles)]
+    return [str(m.id) for m in sorted(picked, key=lambda m: (m.joined_at is None, m.joined_at, m.id))]
+
+
 def _body(guild: discord.Guild) -> Optional[dict]:
     ids = labs_api.operator_ids(guild)
     if not ids:
@@ -132,6 +139,7 @@ def _body(guild: discord.Guild) -> Optional[dict]:
         'ids': ids,
         'ops': [uid for uid, m in members.items() if m and is_admin(m)],
         'names': {uid: m.display_name for uid, m in members.items() if m},
+        'roster': _roster([m for m in members.values() if m]),
         'deploys': _deploys(guild, schedule.deploy_history),
         # Labs 투입 화면의 시즌 합계가 봇의 순위와 같은 날부터 세도록 전달
         'since': schedule.count_since,

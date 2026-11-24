@@ -2,7 +2,7 @@ import json
 import os
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -18,6 +18,10 @@ MOD = '222222222222222222'
 
 def texts(view):
     return [c.content for c in view.walk_children() if isinstance(c, discord.ui.TextDisplay)]
+
+
+def member(uid, name, *roles, joined=2024):
+    return SimpleNamespace(id=int(uid), display_name=name, roles=[SimpleNamespace(name=r) for r in roles], joined_at=datetime(joined, 1, 1, tzinfo=timezone.utc))
 
 
 def response(**extra):
@@ -52,7 +56,7 @@ class LabsOpsCase(unittest.IsolatedAsyncioTestCase):
         patch.object(labs_ops, 'BotManager').start().get_instance.return_value.get_schedule_manager.return_value = self.schedule
         self.addCleanup(patch.stopall)
 
-        members = {int(STAFF): SimpleNamespace(id=int(STAFF), display_name='스태프'), int(MOD): SimpleNamespace(id=int(MOD), display_name='모드')}
+        members = {int(STAFF): member(STAFF, '스태프', 'Staff'), int(MOD): member(MOD, '모드', 'Mod')}
         self.guild = MagicMock(chunked=True)
         self.guild.get_member.side_effect = members.get
         self.channel = MagicMock()
@@ -69,6 +73,13 @@ class LabsOpsCase(unittest.IsolatedAsyncioTestCase):
         return ['\n'.join(texts(call.kwargs['view'])) for call in self.channel.send.await_args_list]
 
 
+class RosterTest(unittest.TestCase):
+    def test_Lead와_Staff만_서버에_들어온_순서로(self):
+        members = [member(3, '다', 'Staff', joined=2025), member(1, '가', 'Head', 'Mod', joined=2020), member(2, '나', 'Lead', 'Mod', joined=2023), member(5, '마', 'Lead', joined=2025), member(4, '라', 'Staff', joined=2025)]
+        members[3].joined_at = None
+        self.assertEqual(labs_ops._roster(members), ['2', '3', '4', '5'])
+
+
 class SyncTest(LabsOpsCase):
     async def test_body_lists_staff_ops_names_deploys_and_season_start(self):
         self.assertTrue(await labs_ops.sync(self.client))
@@ -78,6 +89,7 @@ class SyncTest(LabsOpsCase):
         self.assertEqual(body['ids'], [STAFF, MOD])
         self.assertEqual(body['ops'], [STAFF])
         self.assertEqual(body['names'], {STAFF: '스태프', MOD: '모드'})
+        self.assertEqual(body['roster'], [STAFF])
         self.assertEqual(body['since'], '2026-11-19')
         self.assertNotIn('rev', body)
         self.assertEqual(len(body['deploys']), labs_ops.DEPLOY_DAYS)
