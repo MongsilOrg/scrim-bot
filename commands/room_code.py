@@ -338,7 +338,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
         expected_selected = round_number - 1
         if len(selected) < expected_selected:
             missed = expected_selected - len(selected)
-            weather_warning = f"이전 라운드 공지 {missed}개에서 서브 날씨를 고르지 않았습니다.\n이전 공지의 날씨 버튼으로 골라주세요."
+            weather_warning = f"이전 라운드 공지 {missed}개에서 서브 날씨를 선택하지 않았습니다.\n이전 공지의 날씨 버튼으로 선택해주세요."
 
         if len(available) == 1:
             sub_weather = available[0]
@@ -346,7 +346,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
         elif len(available) == 0:
             weather_value = f"`{main_weather}`"
         else:
-            weather_value = f"`{main_weather}`, 서브 날씨는 아래 버튼으로 골라주세요"
+            weather_value = f"`{main_weather}`, 서브 날씨는 아래 버튼으로 선택해주세요."
             weather_options = available
 
         role_mention = get_group_role_mention(interaction.guild, group_letter)

@@ -83,7 +83,7 @@ async def send_schedule_reminder(client: ScrimBot) -> int:
     message = await channel.send(
         view=info_view(
             f"{' '.join(m.mention for m in missing)}\n"
-            f"{schedule_mgr.week_label} 일정에 아직 응답하지 않았습니다.\n위 대시보드의 참가나 불참 버튼을 눌러주세요.",
+            f"{schedule_mgr.week_label} 일정에 아직 응답하지 않았습니다.\n위 대시보드에서 참가나 불참을 선택해주세요.",
             title="일정 미응답",
         ),
         allowed_mentions=discord.AllowedMentions(users=True),

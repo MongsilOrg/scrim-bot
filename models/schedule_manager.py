@@ -162,12 +162,12 @@ class ScheduleManager:
                 for uid in all_uids:
                     name = self.admin_names.get(uid, '알 수 없음')
                     if uid in deployed:
-                        name_parts.append(f'**{name}** 투입')
+                        name_parts.append(f'**{name}** 진행')
                     else:
                         name_parts.append(name)
                 for uid in extra_deployed:
                     name = self.admin_names.get(uid, '알 수 없음')
-                    name_parts.append(f'**{name}** 투입')
+                    name_parts.append(f'**{name}** 진행')
 
                 total_for_day = len(all_uids) + len(extra_deployed)
                 if name_parts:
@@ -182,7 +182,7 @@ class ScheduleManager:
         if counts:
             ordered = sorted(all_admin_ids, key=lambda item: (counts.get(item[0], 0), item[1]))
             lines.append('')
-            lines.append('**시즌 투입** ' + ', '.join(f'{name} {counts.get(uid, 0)}회' for uid, name in ordered))
+            lines.append('**시즌 진행** ' + ', '.join(f'{name} {counts.get(uid, 0)}회' for uid, name in ordered))
 
         return '\n'.join(lines)
 
@@ -327,33 +327,28 @@ class ScheduleManager:
         return changes
 
     def open_pick(self, day: date, letters: List[str]) -> dict:
-        """그날 조 고르기를 시작. 같은 날 다시 열면 남아 있는 조의 선택을 그대로 둠"""
+        """그날 조 선택을 시작. 같은 날 다시 열면 남아 있는 조의 선택을 그대로 둠"""
         day_index = (day - self.week_start.date()).days if self.week_start else -1
         if self.assignments:
-            # 주간 편성에 보이는 오늘 명단을 조 고르기 순위와 맞춤
+            # 주간 편성에 보이는 오늘 명단을 조 선택 순위와 맞춤
             self._readjust_remaining()
-        ranked = self.ranked_for_day(day_index)[:POOL_SIZE] if 0 <= day_index < 7 else []
         old = self.pick if self.pick and self.pick.get('date') == day.isoformat() else None
-        declined = [uid for uid in (old or {}).get('declined', [])]
-        choices = {g: uid for g, uid in (old or {}).get('choices', {}).items() if g in letters}
-        ranked = [uid for uid in ranked if uid not in declined]
-        # 이미 고른 사람은 순위가 밀려도 대상으로 둠
-        chosen = [uid for uid in choices.values() if uid in ranked]
-        rest = [uid for uid in ranked if uid not in chosen]
-        targets = chosen + rest[:max(0, len(letters) - len(choices))]
         self.pick = {
             'date': day.isoformat(),
             'message_id': None,
             'groups': list(letters),
-            'targets': targets,
-            'reserves': [uid for uid in rest if uid not in targets],
-            'choices': choices,
-            'declined': declined,
+            # 그날 가능하다고 응답한 사람의 순위. 진행과 예비는 선택이 바뀔 때마다 이 순서로 다시 나눔
+            'order': self.ranked_for_day(day_index)[:POOL_SIZE] if 0 <= day_index < 7 else [],
+            'targets': [],
+            'reserves': [],
+            'choices': {g: uid for g, uid in (old or {}).get('choices', {}).items() if g in letters},
+            'declined': list((old or {}).get('declined', [])),
             'closed': False,
             # 봇이 붙인 조 역할만 적어, 참가자로 받은 역할은 빼지 않음
             'granted': dict((old or {}).get('granted', {})),
             'notice_ids': [],
         }
+        self._rebalance()
         self.save_backup()
         return self.pick
 
@@ -365,72 +360,86 @@ class ScheduleManager:
     def _open_groups(self) -> List[str]:
         return [g for g in self.pick['groups'] if g not in self.pick['choices']]
 
-    def pick_group(self, user_id: str, letter: str) -> str:
-        """picked, cancelled, taken, not_allowed, closed 가운데 하나"""
+    def _unpicked(self) -> List[str]:
         pick = self.pick
+        chosen = pick['choices'].values()
+        return [uid for uid in pick['order'] if uid not in chosen and uid not in pick['declined']]
+
+    def _rebalance(self) -> Tuple[List[str], List[str]]:
+        """조를 선택한 사람과 남은 조 수만큼의 상위 순위를 진행으로, 나머지를 예비로 나눔. 새로 진행이 된 사람과 예비로 내려간 사람을 돌려줌"""
+        pick = self.pick
+        before = pick['targets']
+        rest = self._unpicked()
+        free = len(self._open_groups())
+        pick['targets'] = list(pick['choices'].values()) + rest[:free]
+        pick['reserves'] = rest[free:]
+        promoted = [uid for uid in rest[:free] if uid not in before]
+        demoted = [uid for uid in rest[free:] if uid in before]
+        return promoted, demoted
+
+    def pick_group(self, user_id: str, letter: str) -> dict:
+        """status는 picked, cancelled, taken, full, not_allowed, closed. 다른 사람의 명단이 바뀌면 promoted와 demoted에 담음"""
+        pick = self.pick
+        result = {'status': 'not_allowed', 'promoted': [], 'demoted': []}
         if letter not in pick['groups']:
-            return 'not_allowed'
+            return result
         holder = pick['choices'].get(letter)
         if holder == user_id:
             if pick['closed']:
-                # 마감 뒤에 조를 비우면 예비가 올라오지 않아 그 조가 빈 채로 남음
-                return 'closed'
+                # 마감 뒤에 조를 비우면 그 조가 빈 채로 남음
+                result['status'] = 'closed'
+                return result
             del pick['choices'][letter]
-            self.save_backup()
-            return 'cancelled'
-        if holder:
-            return 'taken'
-        if user_id not in pick['targets']:
-            waiting = [uid for uid in pick['targets'] if uid not in pick['choices'].values()]
-            # 대상이 고를 조는 남겨 두고, 그보다 많은 빈 조만 다른 운영진에게 엶
-            if len(self._open_groups()) <= len(waiting):
-                return 'not_allowed'
-        for group, uid in list(pick['choices'].items()):
-            if uid == user_id:
-                del pick['choices'][group]
-        pick['choices'][letter] = user_id
-        if user_id in pick['declined']:
-            pick['declined'].remove(user_id)
-        self.save_backup()
-        return 'picked'
-
-    def decline(self, user_id: str) -> dict:
-        """status는 declined, reserve_removed, not_target. 대상이 빠지면 예비 1순위를 promoted로 올림"""
-        pick = self.pick
-        result = {'status': 'not_target', 'promoted': None, 'assigned': None}
-        if user_id in pick['reserves']:
-            pick['reserves'].remove(user_id)
-            pick['declined'].append(user_id)
-            result['status'] = 'reserve_removed'
-        elif user_id in pick['targets'] or user_id in pick['choices'].values():
-            if user_id in pick['targets']:
-                pick['targets'].remove(user_id)
+            result['status'] = 'cancelled'
+        elif holder:
+            result['status'] = 'taken' if self._open_groups() else 'full'
+            return result
+        else:
+            # 명단에 없는 운영진은 진행과 예비가 모두 선택해도 남는 조만 선택
+            if user_id not in pick['order'] and len(self._open_groups()) <= len(self._unpicked()):
+                return result
             for group, uid in list(pick['choices'].items()):
                 if uid == user_id:
                     del pick['choices'][group]
-            pick['declined'].append(user_id)
-            result['status'] = 'declined'
-            waiting = [uid for uid in pick['targets'] if uid not in pick['choices'].values()]
-            if pick['reserves'] and len(self._open_groups()) > len(waiting):
-                promoted = pick['reserves'].pop(0)
-                pick['targets'].append(promoted)
-                result['promoted'] = promoted
-                if pick['closed']:
-                    result['assigned'] = self._open_groups()[0]
-                    pick['choices'][result['assigned']] = promoted
-        else:
+            pick['choices'][letter] = user_id
+            if user_id in pick['declined']:
+                pick['declined'].remove(user_id)
+            result['status'] = 'picked'
+        promoted, demoted = self._rebalance()
+        result['promoted'] = [uid for uid in promoted if uid != user_id]
+        result['demoted'] = [uid for uid in demoted if uid != user_id]
+        self.save_backup()
+        return result
+
+    def decline(self, user_id: str) -> dict:
+        """status는 declined, reserve_removed, not_target. 진행이 빠지면 예비 1순위를 promoted로 올림"""
+        pick = self.pick
+        result = {'status': 'not_target', 'promoted': None, 'assigned': None}
+        if user_id in pick['declined'] or (user_id not in pick['order'] and user_id not in pick['choices'].values()):
             return result
+        result['status'] = 'declined' if user_id in pick['targets'] else 'reserve_removed'
+        for group, uid in list(pick['choices'].items()):
+            if uid == user_id:
+                del pick['choices'][group]
+        pick['declined'].append(user_id)
+        promoted, _ = self._rebalance()
+        if promoted:
+            result['promoted'] = promoted[0]
+            if pick['closed']:
+                result['assigned'] = self._open_groups()[0]
+                pick['choices'][result['assigned']] = promoted[0]
+                self._rebalance()
         self.save_backup()
         return result
 
     def close_pick(self) -> List[Tuple[str, str]]:
-        """마감. 고르지 않은 대상을 남은 조에 순위대로 넣고 넣은 (user_id, 조) 목록을 돌려줌"""
+        """마감. 선택하지 않은 진행 운영진을 남은 조에 순위대로 넣고 넣은 사람과 조의 목록을 돌려줌"""
         pick = self.pick
         if not pick or pick['closed']:
             return []
         pick['closed'] = True
         assigned = []
-        for uid in pick['targets']:
+        for uid in list(pick['targets']):
             open_groups = self._open_groups()
             if not open_groups:
                 break
@@ -438,6 +447,7 @@ class ScheduleManager:
                 continue
             pick['choices'][open_groups[0]] = uid
             assigned.append((uid, open_groups[0]))
+        self._rebalance()
         self.save_backup()
         return assigned
 
@@ -519,6 +529,9 @@ class ScheduleManager:
             self.confirmed = data.get('confirmed') or []
             self.count_since = data.get('count_since')
             self.pick = data.get('pick')
+            if self.pick and 'order' not in self.pick:
+                # 순위를 따로 적기 전 백업은 진행, 예비 순서를 순위로 씀
+                self.pick['order'] = self.pick['targets'] + self.pick['reserves'] + self.pick['declined']
 
             logger.info(f"[일정] 백업 복구 완료: {self.week_label}")
             return True

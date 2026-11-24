@@ -145,7 +145,7 @@ async def _note(client: discord.Client, ok: bool) -> None:
     _notified = True
     text = "Labs에 연결하지 못하고 있습니다."
     if sanctions() is None:
-        text += "\n팀 등록의 제재 여부를 직접 확인해주세요."
+        text += "\n등록한 팀이 제재를 받았는지 직접 확인해주세요."
     await _post(client, warning_view(text))
 
 

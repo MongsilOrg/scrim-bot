@@ -65,7 +65,7 @@ def processing_view(description: str = "잠시 기다려주세요.") -> LayoutVi
     return _build_view("⏳ 처리 중", description, discord.Color.blue())
 
 
-def timeout_view(description: str = "제한 시간이 지났습니다.\n버튼을 다시 눌러주세요.") -> LayoutView:
+def timeout_view(description: str = "제한 시간이 지났습니다.\n처음부터 다시 진행해주세요.") -> LayoutView:
     return _build_view("⏳ 닫힘", description, discord.Color.greyple())
 
 

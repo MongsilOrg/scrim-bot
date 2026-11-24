@@ -39,7 +39,7 @@ class ScheduleStatusTextTest(unittest.TestCase):
         self.assertIsNone(FORBIDDEN.search(text), text)
         self.assertIn("3명 중 2명 응답", text)
         self.assertIn("Bob: 불참, 사유 출장", text)
-        self.assertIn("**월** 1명: **Alice** 투입", text)
+        self.assertIn("**월** 1명: **Alice** 진행", text)
         self.assertIn("**수** 배정 없음", text)
 
 

@@ -1,5 +1,5 @@
 """
-조편성 뒤 그날 투입 대상 운영진이 진행할 조를 고르는 메시지와 투입 기록 확정
+조편성 뒤 운영진이 그날 진행할 조를 선택하는 메시지와 진행 기록 확정
 """
 import asyncio
 from datetime import date
@@ -22,7 +22,8 @@ from utils.layout_helpers import FOOTER_TEXT, error_view, info_view, permission_
 logger = get_logger('operator_pick')
 
 DECLINE = 'decline'
-ROLE_REASON = "운영진 조 고르기"
+ROLE_REASON = "운영진 조 선택"
+PROMOTED_TEXT = "오늘 진행할 운영진으로 정해졌습니다.\n위 메시지에서 조를 선택해주세요."
 
 _close_task: Optional[asyncio.Task] = None
 _role_lock = asyncio.Lock()
@@ -59,12 +60,12 @@ def _name(guild: discord.Guild, schedule_mgr, user_id: str) -> str:
 def pick_view(guild: discord.Guild, schedule_mgr) -> LayoutView:
     pick = schedule_mgr.pick
     choices = pick['choices']
-    lines = ["## 조 고르기"]
+    lines = ["## 조 선택"]
     for letter in pick['groups']:
         lines.append(f"**{letter}조** <@{choices[letter]}>" if letter in choices else f"**{letter}조**")
     waiting = [uid for uid in pick['targets'] if uid not in choices.values()]
     if waiting:
-        lines.append(f"**대상** {_mentions(waiting)}")
+        lines.append(f"**진행** {_mentions(waiting)}")
     if pick['reserves']:
         names = ', '.join(_name(guild, schedule_mgr, uid) for uid in pick['reserves'])
         lines.append(f"**예비** {names}")
@@ -136,7 +137,7 @@ async def _handle(interaction: discord.Interaction, key: str) -> None:
     schedule_mgr = BotManager.get_instance().get_schedule_manager()
     pick = schedule_mgr.pick
     if not pick or interaction.message is None or interaction.message.id != pick.get('message_id'):
-        await send_response(interaction, error_view("지난 조 고르기입니다.\n가장 최근 메시지에서 골라주세요."))
+        await send_response(interaction, error_view("지난 메시지입니다.\n가장 최근 메시지에서 선택해주세요."))
         return
 
     uid = str(member.id)
@@ -144,30 +145,38 @@ async def _handle(interaction: discord.Interaction, key: str) -> None:
     if key == DECLINE:
         result = schedule_mgr.decline(uid)
         if result['status'] == 'not_target':
-            await send_response(interaction, error_view("오늘 투입 대상과 예비만 누를 수 있습니다."))
+            await send_response(interaction, error_view("오늘 진행할 운영진과 예비만 조를 선택할 수 있습니다."))
             return
         if result['assigned']:
             notice = f"<@{result['promoted']}>\n{result['assigned']}조에 배정됐습니다."
         elif result['promoted']:
-            notice = f"<@{result['promoted']}>\n오늘 투입 대상이 됐습니다.\n위 메시지에서 조를 골라주세요."
+            notice = f"<@{result['promoted']}>\n{PROMOTED_TEXT}"
         logger.info(f"[조 고르기] 오늘 불가 - {member.display_name}, 승격: {result['promoted']}")
     else:
-        status = schedule_mgr.pick_group(uid, key)
+        result = schedule_mgr.pick_group(uid, key)
+        status = result['status']
         if status == 'taken':
-            await send_response(interaction, error_view("다른 운영진이 먼저 고른 조입니다.\n빈 조를 골라주세요."))
+            await send_response(interaction, error_view("다른 운영진이 먼저 선택한 조입니다.\n빈 조를 선택해주세요."))
             return
         if status == 'closed':
-            await send_response(interaction, error_view("마감 뒤에 빠지려면 오늘 불가를 눌러주세요."))
+            await send_response(interaction, error_view("마감 뒤에 빠지려면 오늘 불가를 선택해주세요."))
+            return
+        if status == 'full':
+            await send_response(interaction, error_view("남은 조가 없어 선택할 수 없습니다."))
             return
         if status == 'not_allowed':
-            await send_response(interaction, error_view("오늘 투입 대상이 고른 뒤 남는 조를 골라주세요."))
+            await send_response(interaction, error_view("오늘 진행할 운영진과 예비만 조를 선택할 수 있습니다."))
             return
+        if result['demoted']:
+            notice = f"{_mentions(result['demoted'])}\n다른 운영진이 조를 먼저 선택해 예비로 바뀌었습니다."
+        elif result['promoted']:
+            notice = f"{_mentions(result['promoted'])}\n{PROMOTED_TEXT}"
         logger.info(f"[조 고르기] {key}조 {'취소' if status == 'cancelled' else '선택'} - {member.display_name}")
 
     await interaction.response.edit_message(view=pick_view(guild, schedule_mgr))
     await _sync_roles(guild, schedule_mgr)
     if notice:
-        await _notify(interaction.channel, schedule_mgr, notice, "조 고르기")
+        await _notify(interaction.channel, schedule_mgr, notice, "조 선택")
 
 
 async def _delete_messages(channel, pick: Optional[dict]) -> None:
@@ -279,7 +288,7 @@ async def close_pick(client: discord.Client) -> None:
         logger.warning(f"[조 고르기] 마감 표시 실패: {e}")
     if assigned:
         lines = [f"<@{uid}> {letter}조" for uid, letter in assigned]
-        lines.append(f"{PICK_CLOSE_HOUR}시까지 고르지 않아 남은 조에 배정했습니다.")
+        lines.append(f"{PICK_CLOSE_HOUR}시까지 선택하지 않아 남은 조에 배정했습니다.")
         await _notify(channel, schedule_mgr, '\n'.join(lines), "조 배정")
     logger.info(f"[조 고르기] 마감 - 자동 배정 {len(assigned)}명")
 

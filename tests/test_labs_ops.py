@@ -140,7 +140,7 @@ class SyncTest(LabsOpsCase):
         for _ in range(labs_ops.FAILURES_BEFORE_NOTICE + 2):
             self.assertFalse(await labs_ops.sync(self.client))
         self.assertEqual(len(self.posted()), 1)
-        self.assertIn("팀 등록의 제재 여부를 직접 확인해주세요.", self.posted()[0])
+        self.assertIn("등록한 팀이 제재를 받았는지 직접 확인해주세요.", self.posted()[0])
 
         self.request.return_value = response()
         await labs_ops.sync(self.client)

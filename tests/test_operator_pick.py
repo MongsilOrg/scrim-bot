@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import tempfile
@@ -28,6 +29,10 @@ def _manager(availability=None):
     mgr.availability = availability or {uid: {0, 1, 2, 3, 4} for uid in "abcdef"}
     mgr.admin_names = {uid: uid.upper() for uid in mgr.availability}
     return mgr
+
+
+def _text(view):
+    return "\n".join(item.content for item in view.walk_children() if isinstance(item, discord.ui.TextDisplay))
 
 
 def _admin(user_id=1, admin=True):
@@ -147,7 +152,7 @@ class RankingTest(unittest.TestCase):
 
         text = mgr.get_status_text([("a", "A"), ("b", "B")])
 
-        self.assertIn("**시즌 투입** B 0회, A 1회", text)
+        self.assertIn("**시즌 진행** B 0회, A 1회", text)
 
 
 class BackupTest(unittest.TestCase):
@@ -174,6 +179,37 @@ class BackupTest(unittest.TestCase):
             self.assertEqual(restored.count_since, "2026-11-23")
             self.assertEqual(restored.deploy_history, {"2026-11-23": ["a"]})
 
+    def test_restart_keeps_picks_and_lists(self):
+        with tempfile.TemporaryDirectory() as folder, patch("models.schedule_manager.BACKUP_PATH", os.path.join(folder, "schedule.json")):
+            mgr = _manager()
+            mgr.deploy_history = {f"2026-11-{10 + i:02d}": list("abcdef"[i:]) for i in range(1, 6)}
+            mgr.open_pick(TUESDAY, ["A", "B", "C"])
+            mgr.pick_group("e", "A")
+            mgr.decline("b")
+            restored = ScheduleManager()
+            restored.load_backup()
+
+            self.assertEqual(restored.pick, mgr.pick)
+            self.assertEqual(restored.pick["targets"], ["e", "a", "c"])
+            self.assertEqual(restored.pick_group("f", "B")["demoted"], ["c"])
+            self.assertEqual(restored.pick_group("e", "A")["promoted"], ["c"])
+
+    def test_backup_without_order_uses_listed_order(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "schedule.json")
+            pick = {
+                "date": "2026-11-24", "message_id": 5, "groups": ["A", "B"], "targets": ["b", "a"], "reserves": ["c"],
+                "choices": {"A": "b"}, "declined": ["d"], "closed": False, "granted": {}, "notice_ids": [],
+            }
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"week_label": "test", "week_start": MONDAY.isoformat(), "availability": {}, "pick": pick}, f)
+            with patch("models.schedule_manager.BACKUP_PATH", path):
+                mgr = ScheduleManager()
+                mgr.load_backup()
+
+                self.assertEqual(mgr.pick_group("c", "B")["demoted"], ["a"])
+                self.assertEqual(mgr.pick["reserves"], ["a"])
+
 
 @patch.object(ScheduleManager, "save_backup")
 class PickStateTest(unittest.TestCase):
@@ -193,19 +229,62 @@ class PickStateTest(unittest.TestCase):
     def test_pick_move_cancel_and_taken(self, _save):
         mgr = self._open()
 
-        self.assertEqual(mgr.pick_group("a", "B"), "picked")
-        self.assertEqual(mgr.pick_group("b", "B"), "taken")
-        self.assertEqual(mgr.pick_group("a", "C"), "picked")
+        self.assertEqual(mgr.pick_group("a", "B")["status"], "picked")
+        self.assertEqual(mgr.pick_group("b", "B")["status"], "taken")
+        self.assertEqual(mgr.pick_group("a", "C")["status"], "picked")
         self.assertEqual(mgr.pick["choices"], {"C": "a"})
-        self.assertEqual(mgr.pick_group("a", "C"), "cancelled")
+        self.assertEqual(mgr.pick_group("a", "C")["status"], "cancelled")
         self.assertEqual(mgr.pick["choices"], {})
+        self.assertEqual(mgr.pick["targets"], ["a", "b", "c"])
+
+    def test_reserve_pick_moves_lowest_waiting_target_to_reserves(self, _save):
+        mgr = self._open()
+
+        self.assertEqual(mgr.pick_group("b", "B"), {"status": "picked", "promoted": [], "demoted": []})
+        result = mgr.pick_group("e", "A")
+
+        self.assertEqual(result, {"status": "picked", "promoted": [], "demoted": ["c"]})
+        self.assertEqual(mgr.pick["targets"], ["b", "e", "a"])
+        self.assertEqual(mgr.pick["reserves"], ["c", "d", "f"])
+
+        self.assertEqual(mgr.pick_group("e", "A"), {"status": "cancelled", "promoted": ["c"], "demoted": []})
+        self.assertEqual(mgr.pick["targets"], ["b", "a", "c"])
+        self.assertEqual(mgr.pick["reserves"], ["d", "e", "f"])
+
+    def test_no_more_picks_when_every_group_is_taken(self, _save):
+        mgr = self._open()
+        for uid, letter in (("d", "A"), ("e", "B"), ("f", "C")):
+            mgr.pick_group(uid, letter)
+
+        self.assertEqual(mgr.pick["targets"], ["d", "e", "f"])
+        self.assertEqual(mgr.pick["reserves"], ["a", "b", "c"])
+        self.assertEqual(mgr.pick_group("a", "A")["status"], "full")
+        self.assertEqual(mgr.pick_group("d", "B")["status"], "full")
+
+        result = mgr.decline("e")
+
+        self.assertEqual((result["status"], result["promoted"]), ("declined", "a"))
+        self.assertEqual(mgr.pick_group("c", "B")["demoted"], ["a"])
+        self.assertEqual(mgr.close_pick(), [])
+
+    def test_same_group_goes_to_whoever_picked_first(self, _save):
+        mgr = self._open()
+
+        results = [mgr.pick_group(uid, "A")["status"] for uid in ("d", "a")]
+
+        self.assertEqual(results, ["picked", "taken"])
+        self.assertEqual(mgr.pick["choices"], {"A": "d"})
 
     def test_others_may_pick_only_spare_groups(self, _save):
         mgr = self._open()
 
-        self.assertEqual(mgr.pick_group("d", "A"), "not_allowed")
-        mgr.pick["targets"].remove("c")
-        self.assertEqual(mgr.pick_group("d", "A"), "picked")
+        self.assertEqual(mgr.pick_group("z", "A")["status"], "not_allowed")
+        for uid in "cdef":
+            mgr.decline(uid)
+        self.assertEqual(mgr.pick_group("z", "A")["status"], "picked")
+        self.assertEqual(mgr.pick["targets"], ["z", "a", "b"])
+        mgr.pick_group("z", "A")
+        self.assertNotIn("z", mgr.pick["targets"] + mgr.pick["reserves"])
 
     def test_decline_promotes_first_reserve(self, _save):
         mgr = self._open()
@@ -226,7 +305,7 @@ class PickStateTest(unittest.TestCase):
 
         self.assertEqual(mgr.close_pick(), [("a", "B"), ("c", "C")])
         self.assertEqual(mgr.close_pick(), [])
-        self.assertEqual(mgr.pick_group("a", "B"), "closed")
+        self.assertEqual(mgr.pick_group("a", "B")["status"], "closed")
         self.assertEqual(mgr.pick["choices"]["B"], "a")
         result = mgr.decline("c")
         self.assertEqual((result["promoted"], result["assigned"]), ("d", "C"))
@@ -365,6 +444,34 @@ class PickFlowTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn(reserve, self.mgr.pick["targets"])
         self.assertEqual(self.mgr.pick["notice_ids"], [102])
         self.assertTrue(self.sent[1]["allowed_mentions"].users)
+
+    async def test_reserve_pick_notifies_the_operator_moved_to_reserves(self):
+        await operator_pick.post_pick(self.client, self.guild, ["A", "B"])
+        waiting, reserve = self.mgr.pick["targets"][1], self.mgr.pick["reserves"][0]
+
+        await operator_pick._handle(self._interaction(int(reserve), 101), "A")
+
+        self.assertEqual(self.mgr.pick["reserves"], [waiting])
+        self.assertEqual(self.mgr.pick["notice_ids"], [102])
+        text = _text(self.sent[1]["view"])
+        self.assertIn(f"<@{waiting}>", text)
+        self.assertNotIn(f"<@{reserve}>", text)
+
+        await operator_pick._handle(self._interaction(int(reserve), 101), "A")
+
+        self.assertEqual(self.mgr.pick["reserves"], [reserve])
+        self.assertIn(f"<@{waiting}>", _text(self.sent[2]["view"]))
+
+    async def test_two_operators_pressing_the_same_group_at_once(self):
+        await operator_pick.post_pick(self.client, self.guild, ["A", "B"])
+        first, second = self._interaction(11, 101), self._interaction(12, 101)
+
+        await asyncio.gather(operator_pick._handle(first, "A"), operator_pick._handle(second, "A"))
+
+        self.assertEqual(self.mgr.pick["choices"], {"A": "11"})
+        first.response.edit_message.assert_awaited_once()
+        second.response.edit_message.assert_not_awaited()
+        self.assertEqual(self.mgr.pick["granted"], {"11": "A"})
 
     async def test_close_assigns_and_next_post_confirms_previous_day(self):
         await operator_pick.post_pick(self.client, self.guild, ["A", "B"])
