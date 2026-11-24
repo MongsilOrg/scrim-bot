@@ -183,19 +183,13 @@ _server_info_failed_at: Optional[float] = None
 
 
 def _build_server_info(is_tournament: bool, broadcast: bool) -> dict:
-    server_emoji = "🟠" if is_tournament else "🟢"
-    server_type = "Tournament" if is_tournament else "Live"
-    broadcast_emoji = "📡" if broadcast else "🚫"
+    server_type = "토너먼트" if is_tournament else "라이브"
     broadcast_status = "송출 가능" if broadcast else "송출 불가"
-    operate = f"{server_emoji} {server_type} 서버, {broadcast_emoji} {broadcast_status}"
+    operate = f"{server_type} 서버, {broadcast_status}"
 
     return {
         'is_tournament': is_tournament,
         'broadcast': broadcast,
-        'server_emoji': server_emoji,
-        'server_type': server_type,
-        'broadcast_emoji': broadcast_emoji,
-        'broadcast_status': broadcast_status,
         'operate': operate,
     }
 

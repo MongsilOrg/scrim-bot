@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, Dict, Optional
 import discord
 from discord import ButtonStyle, Color, SelectOption
-from discord.ui import ActionRow, Button, Container, LayoutView, Select, Separator, TextDisplay
+from discord.ui import ActionRow, Button, Container, LayoutView, Select, TextDisplay
 
 from bot.manager import BotManager
 from config.logging_config import get_logger
@@ -10,7 +10,7 @@ from utils.layout_helpers import (
     check_cooldown,
     custom_view, error_view, success_view, info_view,
     timeout_view, permission_error_view,
-    send_response, FOOTER_TEXT,
+    send_response,
     send_error_message,
     format_kr_date,
 )
@@ -36,7 +36,7 @@ NO_OWN_TEAM_MSG = "신청한 팀이 없습니다."
 OPEN_INPUT_ERROR_MSG = "입력 창을 여는 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요."
 TEAM_ALREADY_GONE_MSG = "이미 취소된 팀입니다."
 MODAL_SERVER_ERROR_MSG = "Discord 서버 오류로 입력 창을 열지 못했습니다.\n잠시 후 다시 시도해주세요."
-MY_SANCTIONS_TITLE = "📋 내 제재"
+MY_SANCTIONS_TITLE = "내 제재"
 NO_SANCTIONS_MSG = "받은 제재가 없습니다."
 SANCTION_LOOKUP_FAILED_MSG = "제재 기록을 불러오지 못했습니다.\n잠시 후 다시 시도해주세요."
 
@@ -96,25 +96,14 @@ class TeamInputView(LayoutView):
         super().__init__(timeout=None)
 
         scrim_label = "자율 스크림" if is_rest_day else "스크림"
-        title = f"🏆 {scrim_month}월 {scrim_day}일 {scrim_weekday} {scrim_label}"
+        title = f"{scrim_month}월 {scrim_day}일 {scrim_weekday} {scrim_label}"
         deadline_line = f"`{settings.TEAM_REGISTRATION_DEADLINE_HOUR}:00` 신청 마감, 조편성\n"
         start_line = f"`{settings.SCRIM_START_HOUR}:00` 스크림 시작, {settings.TOTAL_ROUNDS}라운드\n"
         open_line = f"`{settings.NEXT_SCRIM_OPEN_HOUR}:00` 다음 스크림 신청 시작"
         if is_rest_day:
-            schedule = (
-                "**일정**\n"
-                + deadline_line
-                + "`19:55` 지정된 팀 방 설정 완료\n"
-                + start_line
-                + open_line
-            )
+            schedule = deadline_line + "`19:55` 지정된 팀 방 설정 완료\n" + start_line + open_line
         else:
-            schedule = (
-                "**일정**\n"
-                + deadline_line
-                + start_line
-                + open_line
-            )
+            schedule = deadline_line + start_line + open_line
 
         children = [
             TextDisplay(content=f"## {title}\n{dashboard_status_line(phase, team_count)}"),
@@ -127,10 +116,7 @@ class TeamInputView(LayoutView):
         if is_rest_day:
             announcement_lines.append(settings.CUSTOM_GAME_GUIDE_LINK)
         if announcement_lines:
-            children.append(TextDisplay(content="**공지사항**\n" + "\n".join(announcement_lines)))
-
-        children.append(Separator())
-        children.append(TextDisplay(content=FOOTER_TEXT))
+            children.append(TextDisplay(content="\n".join(announcement_lines)))
 
         self.add_item(Container(*children, accent_colour=Color.green()))
 
@@ -249,7 +235,7 @@ class TeamInputView(LayoutView):
             fields.append(("MMR", f"{team_mmr:.2f}"))
 
             confirm_view = ConfirmView(
-                title="🚫 팀 취소 확인",
+                title="팀 취소 확인",
                 body=cancel_text,
                 fields=fields,
                 confirm_label="신청 취소하기",
@@ -366,7 +352,7 @@ class TeamInputView(LayoutView):
             # 조편성이 실패했거나 도중에 멈춘 날의 복구 수단
             if team_data_manager.assignment_needs_rerun():
                 view = ConfirmView(
-                    title="🔁 조편성 다시 실행",
+                    title="조편성 다시 실행",
                     body="오늘 조편성이 끝나지 않았습니다.\n남은 단계부터 다시 실행합니다.",
                     confirm_label="다시 실행",
                     accent_colour=Color.orange(),
@@ -475,8 +461,6 @@ class ConfirmView(_TimeoutEditView):
         if fields:
             for name, value in fields:
                 children.append(TextDisplay(content=f"**{name}**\n{value}"))
-        children.append(Separator())
-        children.append(TextDisplay(content=FOOTER_TEXT))
         self.add_item(Container(*children, accent_colour=accent_colour))
 
         self.confirm_button = Button(label=confirm_label, style=ButtonStyle.danger, emoji=confirm_emoji)
@@ -517,9 +501,7 @@ class ForceCancelSelectView(_TimeoutEditView):
         self.parent_view = parent_view
 
         self.add_item(Container(
-            TextDisplay(content="## 🛠️ 팀 강제 취소"),
-            Separator(),
-            TextDisplay(content=FOOTER_TEXT),
+            TextDisplay(content="## 팀 강제 취소"),
             accent_colour=Color.orange(),
         ))
 
@@ -557,7 +539,7 @@ class ForceCancelSelectView(_TimeoutEditView):
                 return await parent_view._execute_force_cancel(inter, team_name)
 
             confirm_view = ConfirmView(
-                title="🔨 강제 취소 확인",
+                title="강제 취소 확인",
                 body=f"**{selected}** 팀을 강제 취소하시겠습니까?",
                 confirm_label="강제 취소하기",
                 accent_colour=Color.red(),

@@ -5,7 +5,6 @@ import discord
 from discord.ui import (
     Container,
     LayoutView,
-    Separator,
     TextDisplay,
 )
 
@@ -35,25 +34,19 @@ def format_kr_date(value) -> str:
 
 def _build_view(title: str, description: str, accent_color: discord.Color) -> LayoutView:
     view = LayoutView()
-    container = Container(
-        TextDisplay(content=f"## {title}\n{description}"),
-        Separator(),
-        TextDisplay(content=FOOTER_TEXT),
-        accent_colour=accent_color,
-    )
-    view.add_item(container)
+    view.add_item(Container(TextDisplay(content=f"## {title}\n{description}"), accent_colour=accent_color))
     return view
 
 
-def error_view(description: str, title: str = "❌ 오류") -> LayoutView:
+def error_view(description: str, title: str = "오류") -> LayoutView:
     return _build_view(title, description, discord.Color.red())
 
 
-def success_view(description: str, title: str = "✅ 완료") -> LayoutView:
+def success_view(description: str, title: str = "완료") -> LayoutView:
     return _build_view(title, description, discord.Color.green())
 
 
-def warning_view(description: str, title: str = "⚠️ 확인") -> LayoutView:
+def warning_view(description: str, title: str = "확인") -> LayoutView:
     return _build_view(title, description, discord.Color.orange())
 
 
@@ -62,11 +55,11 @@ def info_view(description: str, title: str = "스크림 안내") -> LayoutView:
 
 
 def processing_view(description: str = "잠시 기다려주세요.") -> LayoutView:
-    return _build_view("⏳ 처리 중", description, discord.Color.blue())
+    return _build_view("처리 중", description, discord.Color.blue())
 
 
 def timeout_view(description: str = "제한 시간이 지났습니다.\n처음부터 다시 진행해주세요.") -> LayoutView:
-    return _build_view("⏳ 닫힘", description, discord.Color.greyple())
+    return _build_view("닫힘", description, discord.Color.greyple())
 
 
 class TimeoutEditView(LayoutView):
@@ -84,8 +77,8 @@ class TimeoutEditView(LayoutView):
                 logger.debug(f"[레이아웃] 닫힘 안내 편집 실패: {e}")
 
 
-def permission_error_view(description: str = "관리자만 사용할 수 있습니다.") -> LayoutView:
-    return _build_view("❌ 권한 없음", description, discord.Color.red())
+def permission_error_view(description: str = "운영진만 사용할 수 있습니다.") -> LayoutView:
+    return _build_view("권한 없음", description, discord.Color.red())
 
 
 def custom_view(
@@ -101,8 +94,6 @@ def custom_view(
         for name, value in fields:
             children.append(TextDisplay(content=f"**{name}**\n{value}"))
 
-    children.append(Separator())
-    children.append(TextDisplay(content=FOOTER_TEXT))
 
     view = LayoutView()
     view.add_item(Container(*children, accent_colour=accent_color))
@@ -250,7 +241,7 @@ async def check_cooldown(interaction: discord.Interaction, cooldown_seconds: flo
     now = time.monotonic()
     last_click = _button_cooldowns.get(user_id, 0)
     if now - last_click < cooldown_seconds:
-        await send_response(interaction, info_view("요청 처리 중입니다.\n잠시 기다려주세요.", title="⏳ 대기"))
+        await send_response(interaction, info_view("요청 처리 중입니다.\n잠시 기다려주세요.", title="대기"))
         return True
     _button_cooldowns[user_id] = now
     if len(_button_cooldowns) > _COOLDOWN_CLEANUP_THRESHOLD:

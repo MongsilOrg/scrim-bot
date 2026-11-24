@@ -6,7 +6,7 @@ from tests.test_room_code_logic import _FakeChannel
 
 
 def _notice(weather_line):
-    children = [SimpleNamespace(content="## 📢 스크림 공지 - 1라운드"), SimpleNamespace(content=weather_line)]
+    children = [SimpleNamespace(content="## 1라운드"), SimpleNamespace(content=weather_line)]
     return SimpleNamespace(components=[SimpleNamespace(children=children)], embeds=[])
 
 

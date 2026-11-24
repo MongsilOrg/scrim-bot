@@ -5,13 +5,13 @@ from datetime import datetime, timedelta
 import aiohttp
 import discord
 from discord import ButtonStyle
-from discord.ui import ActionRow, Button, Container, DynamicItem, LayoutView, Separator, TextDisplay
+from discord.ui import ActionRow, Button, Container, DynamicItem, LayoutView, TextDisplay
 
 from config.logging_config import get_logger
 from config.settings import settings
 from services.holidays_api import get_rest_day_info
 from utils import operator_log
-from utils.layout_helpers import error_view, permission_error_view, warning_view, send_response, FOOTER_TEXT
+from utils.layout_helpers import error_view, permission_error_view, warning_view, send_response
 from utils.helpers import (
     get_current_kst_time,
     get_group_letter,
@@ -52,19 +52,19 @@ def calculate_round_start_time(current_time: datetime) -> datetime:
     return round_start
 
 
+# 같은 채널의 몽실봇 라운드 안내는 "-# 2라운드"로 시작해 걸리지 않음
+_NOTICE_HEADER = re.compile(r'## \d+라운드')
+
+
 def _is_scrim_notice_message(message: discord.Message) -> bool:
     try:
         for component in message.components:
             for child in getattr(component, 'children', []):
                 content = getattr(child, 'content', '') or ''
-                if "스크림 공지" in content:
+                if _NOTICE_HEADER.match(content):
                     return True
     except Exception:
         logger.debug("[명령어] 공지 메시지 컴포넌트 판별 실패", exc_info=True)
-    if message.embeds:
-        title = message.embeds[0].title or ""
-        if "스크림 공지" in title:
-            return True
     return False
 
 
@@ -123,19 +123,15 @@ class RoomCodeView(LayoutView):
         self.role_mention = role_mention
         self.group_letter = group_letter
 
-        title = f"📢 스크림 공지 - {round_number}라운드"
-        header = f"## {title}"
+        header = f"## {round_number}라운드"
         if role_mention:
             header += f"\n{role_mention}"
 
         children: list = [
             TextDisplay(content=header),
             TextDisplay(content=f"# `{cleaned_room_code}`"),
-            TextDisplay(content=f"날씨: {weather_value}\n시작: `{round_start_str}`"),
+            TextDisplay(content=f"날씨 {weather_value}\n시작 `{round_start_str}`"),
         ]
-
-        children.append(Separator())
-        children.append(TextDisplay(content=FOOTER_TEXT))
 
         self.add_item(Container(*children, accent_colour=discord.Color.blue()))
 
@@ -225,10 +221,10 @@ async def _sub_weather_denial(member: discord.Member, group_letter: str) -> str 
     if is_admin(member):
         return None
     if not await _is_rest_day_today():
-        return "서브 날씨는 관리자만 고를 수 있습니다."
+        return "서브 날씨는 운영진만 고를 수 있습니다."
     if _can_post_room_code(member, group_letter):
         return None
-    return f"서브 날씨는 관리자와 {group_letter}조 참가자만 고를 수 있습니다."
+    return f"서브 날씨는 운영진과 {group_letter}조 참가자만 고를 수 있습니다."
 
 
 NOTICE_MAX_ATTEMPTS = 3
@@ -308,7 +304,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
             return
         if not _can_post_room_code(interaction.user, group_letter):
             logger.info(f"[명령어] 방코드 권한 없음 - 사용자: {interaction.user}, 조: {group_letter}조")
-            await send_response(interaction, permission_error_view(f"관리자와 {group_letter}조 참가자만 방 코드를 공지할 수 있습니다."))
+            await send_response(interaction, permission_error_view(f"운영진과 {group_letter}조 참가자만 방 코드를 공지할 수 있습니다."))
             return
 
         # 채널 기록 스캔이 3초 응답 제한을 넘김

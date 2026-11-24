@@ -20,7 +20,6 @@ from .mmr_updater import MmrUpdater
 
 logger = get_logger('team_data_manager')
 
-ACTION_EMOJI = {"신청": "📝", "취소": "❌", "수정": "✏️", "강제취소": "🔨"}
 
 NEXT_OPEN_NOTICE = f"다음 스크림 신청은 {settings.NEXT_SCRIM_OPEN_HOUR}시에 열립니다."
 DEADLINE_PASSED_MSG = (
@@ -407,7 +406,6 @@ class TeamDataManager:
             if not channel:
                 return
 
-            emoji = ACTION_EMOJI.get(action_type, "📌")
             unix_ts = int(timestamp.timestamp())
 
             msg = f"<t:{unix_ts}:t> **{team_name}** - {user.mention}"
@@ -415,7 +413,7 @@ class TeamDataManager:
                 msg += f" / {detail}"
 
             await channel.send(
-                view=info_view(msg, title=f"{emoji} 팀 {action_type}"),
+                view=info_view(msg, title=f"팀 {action_type}"),
                 allowed_mentions=discord.AllowedMentions(users=True),
             )
         except Exception as e:

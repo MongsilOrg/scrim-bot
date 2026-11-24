@@ -3,13 +3,13 @@ import time
 from typing import Optional, Tuple, TYPE_CHECKING
 
 import discord
-from discord.ui import Container, LayoutView, MediaGallery, Separator, TextDisplay
+from discord.ui import Container, LayoutView, MediaGallery, TextDisplay
 
 from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
 from utils.helpers import get_current_kst_time
-from utils.layout_helpers import FOOTER_TEXT, warning_view
+from utils.layout_helpers import warning_view
 
 from services.bser_api import UID_ERROR, UID_NOT_FOUND, BSERAPIClient
 from services.image_generator import TOURNAMENT_COLOR, ImageGenerator
@@ -72,16 +72,14 @@ class MmrUpdater:
             if mgr.is_maintenance:
                 desc = f"마지막 갱신 `{update_time}`, 서버 점검 중"
             else:
-                desc = f"총 **{len(mgr.teams)}**팀, 마지막 갱신 `{update_time}`"
+                desc = f"마지막 갱신 `{update_time}`"
                 if mmr_fail_count > 0:
                     desc += f"\n{mmr_fail_count}개 팀 MMR 갱신 실패"
 
             children = [
-                TextDisplay(content=f"## 📊 팀 MMR 정보\n{desc}"),
+                TextDisplay(content=f"## 팀 MMR\n{desc}"),
                 MediaGallery(discord.MediaGalleryItem(media="attachment://mmr_table.png")),
-                TextDisplay(content=f"**운영 정보**\n{operate}"),
-                Separator(),
-                TextDisplay(content=FOOTER_TEXT),
+                TextDisplay(content=operate),
             ]
 
             mmr_view = LayoutView()
@@ -363,7 +361,7 @@ class MmrUpdater:
             content += "\n신청자에게 직접 알려주세요."
         try:
             await channel.send(
-                view=warning_view(content, title="⚠️ 점검 해제 뒤 닉네임 확인 실패"),
+                view=warning_view(content, title="점검 해제 뒤 닉네임 확인 실패"),
                 allowed_mentions=discord.AllowedMentions.none(),
             )
         except Exception as e:
@@ -395,7 +393,7 @@ class MmrUpdater:
                     else "MMR은 다음 갱신 때 반영됩니다."
                 )
                 content = (
-                    f"## ✅ 닉네임 확인 완료\n"
+                    f"## 닉네임 확인 완료\n"
                     f"**{team_name}** 팀의 닉네임을 확인했습니다.\n\n"
                     f"선수: {players_str}\n"
                     f"{mmr_line}"
@@ -403,7 +401,7 @@ class MmrUpdater:
                 accent = discord.Color.green()
             else:
                 content = (
-                    f"## ⚠️ 닉네임 확인 실패\n"
+                    f"## 닉네임 확인 실패\n"
                     f"**{team_name}** 팀의 닉네임 중 게임에서 찾을 수 없는 닉네임이 있습니다.\n\n"
                     f"확인 안 된 닉네임: **{', '.join(invalid_members)}**\n\n"
                     f"게임 안에서 닉네임을 확인하고 "
@@ -414,8 +412,6 @@ class MmrUpdater:
 
             view.add_item(Container(
                 TextDisplay(content=content),
-                Separator(),
-                TextDisplay(content=FOOTER_TEXT),
                 accent_colour=accent,
             ))
 

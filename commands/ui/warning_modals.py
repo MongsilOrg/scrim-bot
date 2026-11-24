@@ -1,13 +1,13 @@
 import discord
 from discord.components import RadioGroupOption
 from discord import ButtonStyle
-from discord.ui import ActionRow, Button, Container, Label, Modal, RadioGroup, Separator, TextDisplay, TextInput
+from discord.ui import ActionRow, Button, Container, Label, Modal, RadioGroup, TextDisplay, TextInput
 
 from bot.manager import BotManager
 from models.warning_manager import MASTERS_NOT_DEDUCTED, WarningManager
 from utils.layout_helpers import (
     error_view, custom_view,
-    send_response, FOOTER_TEXT,
+    send_response,
     TimeoutEditView,
     format_kr_date,
 )
@@ -74,7 +74,7 @@ async def send_sanction_dm(
                 MASTERS_NOTE,
             ]
             dm_view = custom_view(
-                "🚨 경고 알림",
+                "경고 알림",
                 f"주의가 {WarningManager.CAUTION_TO_WARNING_COUNT}회 누적되어 **경고**가 부여되었습니다.",
                 discord.Color.red(),
                 fields=fields,
@@ -86,14 +86,14 @@ async def send_sanction_dm(
                 ("참가 제한", _restriction_summary(auto_warning)),
                 MASTERS_NOTE,
             ]
-            dm_view = custom_view("🚨 경고 알림", "**경고**가 부여되었습니다.", discord.Color.red(), fields=fields)
+            dm_view = custom_view("경고 알림", "**경고**가 부여되었습니다.", discord.Color.red(), fields=fields)
 
         else:
             fields = [
                 ("사유", reason),
                 ("경고 전환 기준", f"주의가 {WarningManager.CAUTION_TO_WARNING_COUNT}회 누적되면 경고로 전환되고 스크림 참가가 제한됩니다."),
             ]
-            dm_view = custom_view("⚡ 주의 알림", "**주의**가 부여되었습니다.", CAUTION_COLOR, fields=fields)
+            dm_view = custom_view("주의 알림", "**주의**가 부여되었습니다.", CAUTION_COLOR, fields=fields)
 
         await target_user.send(view=dm_view)
         return True
@@ -137,9 +137,7 @@ MISSING_DETAIL_TEXT = "기타를 선택했다면 상세 사유를 입력해주�
 def _missing_detail_view(target_user: discord.Member, reason_choice: str) -> TimeoutEditView:
     view = TimeoutEditView()
     view.add_item(Container(
-        TextDisplay(content=f"## ❌ 상세 사유 없음\n{MISSING_DETAIL_TEXT}"),
-        Separator(),
-        TextDisplay(content=FOOTER_TEXT),
+        TextDisplay(content=f"## 상세 사유 없음\n{MISSING_DETAIL_TEXT}"),
         accent_colour=discord.Color.red(),
     ))
     retry_button = Button(label="다시 입력", style=ButtonStyle.primary)
@@ -235,7 +233,7 @@ class WarningReasonModal(Modal):
                         *follow_up,
                     ]
                     view_result = custom_view(
-                        "🚨 경고 자동 부여 완료",
+                        "경고 자동 부여 완료",
                         f"주의가 {WarningManager.CAUTION_TO_WARNING_COUNT}회 누적되어 경고가 자동 부여되었습니다.",
                         discord.Color.red(),
                         fields=fields,
@@ -249,7 +247,7 @@ class WarningReasonModal(Modal):
                         ("사유", reason),
                         *follow_up,
                     ]
-                    view_result = custom_view("🚨 경고 부여 완료", "", discord.Color.red(), fields=fields)
+                    view_result = custom_view("경고 부여 완료", "", discord.Color.red(), fields=fields)
 
                 else:
                     fields = [
@@ -258,10 +256,10 @@ class WarningReasonModal(Modal):
                         ("경고 전환 기준", f"주의가 {WarningManager.CAUTION_TO_WARNING_COUNT}회 누적되면 경고로 자동 전환됩니다."),
                         *follow_up,
                     ]
-                    view_result = custom_view("⚡ 주의 부여 완료", "", CAUTION_COLOR, fields=fields)
+                    view_result = custom_view("주의 부여 완료", "", CAUTION_COLOR, fields=fields)
             else:
                 logger.error(f"[모달] {warning_type} 추가 실패 - 대상: {target_nickname}, 메시지: {message}")
-                view_result = error_view(message, title="❌ 처리 실패")
+                view_result = error_view(message, title="처리 실패")
 
             await interaction.followup.send(view=view_result, ephemeral=True)
 

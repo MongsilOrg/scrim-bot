@@ -202,13 +202,13 @@ class ScrimOrchestrator:
                 f"<@{team.user_id}>" for team in team_data_manager.teams.values() if team.user_id
             )
             description = (
-                f"등록된 팀이 {team_count}팀으로 최소 {settings.TEAMS_PER_GROUP}팀에 미달하여 "
+                f"신청한 팀이 {team_count}팀으로 {settings.TEAMS_PER_GROUP}팀 미만이라 "
                 f"오늘 스크림은 진행하지 않습니다.\n"
                 f"다음 스크림 신청은 {settings.NEXT_SCRIM_OPEN_HOUR}시에 열립니다."
             )
             if mentions:
                 description = f"{mentions}\n{description}"
-            view = custom_view(f"📢 {date_str} 스크림 취소 안내", description, discord.Color.orange())
+            view = custom_view(f"{date_str} 스크림 취소", description, discord.Color.orange())
             message = await channel.send(view=view, allowed_mentions=discord.AllowedMentions(users=True))
             team_data_manager.cancel_message_id = message.id
             team_data_manager.save_backup()
@@ -242,7 +242,7 @@ class ScrimOrchestrator:
                 if mentions:
                     text = f"{mentions}\n{text}"
                 await log_channel.send(
-                    view=warning_view(text, title="⚠️ 조편성 확인 필요"),
+                    view=warning_view(text, title="조편성 확인 필요"),
                     allowed_mentions=discord.AllowedMentions(roles=True),
                 )
             else:
@@ -256,7 +256,7 @@ class ScrimOrchestrator:
         try:
             channel = client.get_channel(mgr.scrim_channel_id) if mgr.scrim_channel_id else None
             if channel:
-                await channel.send(view=warning_view(DELAY_NOTICE, title="⏳ 조편성 지연"))
+                await channel.send(view=warning_view(DELAY_NOTICE, title="조편성 지연"))
         except Exception as e:
             logger.error(f"[조편성] 지연 안내 전송 실패: {e}", exc_info=True)
 
@@ -429,7 +429,7 @@ class ScrimOrchestrator:
         if not channel:
             return
         try:
-            await channel.send(view=warning_view(text, title="⚠️ Labs 연결 확인 필요"))
+            await channel.send(view=warning_view(text, title="Labs 연결 확인 필요"))
         except discord.HTTPException as e:
             logger.error(f"[Labs] 로그 채널 알림 실패: {e}")
 

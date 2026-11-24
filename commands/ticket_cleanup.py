@@ -15,7 +15,7 @@ IDLE_NOTICE_AFTER = timedelta(days=2)
 DELETE_AFTER_NOTICE = timedelta(days=1)
 DELETE_CLOSED_AFTER = timedelta(days=1)
 CHECK_INTERVAL_SECONDS = 3600
-NOTICE_TITLE = "🗑️ 티켓 삭제 예정"
+NOTICE_TITLE = "티켓 삭제 예정"
 
 _cleanup_task: asyncio.Task | None = None
 

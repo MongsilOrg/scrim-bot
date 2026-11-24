@@ -3,10 +3,10 @@ import time
 from typing import List, Optional, Tuple, TYPE_CHECKING
 
 import discord
-from discord.ui import Container, LayoutView, MediaGallery, Separator, TextDisplay
+from discord.ui import Container, LayoutView, MediaGallery, TextDisplay
 
 from commands.ui.roster_views import GroupRosterView, build_rest_day_guide_view
-from utils.layout_helpers import error_view, format_kr_date, FOOTER_TEXT
+from utils.layout_helpers import error_view, format_kr_date
 from config.logging_config import get_logger
 from config.settings import settings
 from services.notion_api import get_server_info
@@ -42,7 +42,7 @@ class DiscordService:
 
             view = LayoutView()
             view.add_item(Container(
-                TextDisplay(content=f"## 📢 {date_str} {settings.SCRIM_START_HOUR}시 스크림 조편성 결과"),
+                TextDisplay(content=f"## {date_str} 조편성"),
                 accent_colour=discord.Color.green(),
             ))
 
@@ -81,11 +81,6 @@ class DiscordService:
 
                 view.add_item(Container(*children, accent_colour=discord.Color.orange()))
 
-            view.add_item(Container(
-                Separator(),
-                TextDisplay(content=FOOTER_TEXT),
-            ))
-
             await notice_channel.send(view=view, files=files if files else None)
 
         except Exception as e:
@@ -96,8 +91,7 @@ class DiscordService:
         if not role_mention:
             logger.error(f"[Discord] 조별 역할을 찾을 수 없음 - 역할: {group_letter}조")
         title, _, rest = message.partition("\n")
-        info_line = " | ".join(part for part in (role_mention, rest) if part)
-        full_message = "\n".join(line for line in (title, info_line) if line)
+        full_message = "\n".join(line for line in (title, role_mention, rest) if line)
 
         roster_view = GroupRosterView(
             group_letter, group,
@@ -442,7 +436,7 @@ class DiscordService:
         current_time = get_current_kst_time()
         date_str = format_kr_date(current_time)
 
-        message = f"## 📢 {date_str} {settings.SCRIM_START_HOUR}시 스크림 {group_letter}조 조편성 결과\n{info['operate']}"
+        message = f"## {date_str} {group_letter}조 조편성\n{info['operate']}"
 
         return message
 

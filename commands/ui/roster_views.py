@@ -2,14 +2,14 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import discord
 from discord import ButtonStyle, Color, SelectOption
-from discord.ui import ActionRow, Button, Container, LayoutView, MediaGallery, Select, Separator, TextDisplay
+from discord.ui import ActionRow, Button, Container, LayoutView, MediaGallery, Select, TextDisplay
 
 from config.logging_config import get_logger
 from config.settings import settings
 from utils.layout_helpers import (
     error_view,
     permission_error_view,
-    send_response, FOOTER_TEXT,
+    send_response,
     send_error_message,
     TimeoutEditView,
 )
@@ -53,14 +53,11 @@ class GroupRosterView(LayoutView):
             children.append(MediaGallery(discord.MediaGalleryItem(media=f"attachment://{GROUP_IMAGE_FILENAME}")))
         if group_teams:
             children.append(TextDisplay(content=_team_name_line([name for name, _, _ in group_teams])))
-        children.append(Separator())
-        children.append(TextDisplay(content=FOOTER_TEXT))
         self.add_item(Container(*children, accent_colour=Color.blue()))
 
         self.roster_change_button = Button(
             label="로스터 변경",
             style=ButtonStyle.primary,
-            emoji="✏️",
             custom_id=f"roster_change_{group_letter}"
         )
         self.roster_change_button.callback = self.roster_change_callback
@@ -109,8 +106,6 @@ def build_rest_day_guide_view(team_name: str, user_id: Optional[str] = None, *, 
     view = LayoutView(timeout=None)
     view.add_item(Container(
         TextDisplay(content=notice),
-        Separator(),
-        TextDisplay(content=FOOTER_TEXT),
         accent_colour=Color.orange(),
     ))
     return view
@@ -125,13 +120,11 @@ class TeamSelectionView(TimeoutEditView):
 
         self.add_item(Container(
             TextDisplay(content="## 팀 선택"),
-            Separator(),
-            TextDisplay(content=FOOTER_TEXT),
             accent_colour=Color.blue(),
         ))
 
         if self.is_empty:
-            options = [SelectOption(label="등록된 팀이 없습니다", value="_empty", description="팀이 등록되면 선택 가능합니다")]
+            options = [SelectOption(label="신청한 팀이 없습니다", value="_empty")]
         else:
             options = [
                 SelectOption(

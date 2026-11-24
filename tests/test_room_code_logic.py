@@ -13,10 +13,6 @@ def _notice_layout(text):
     return SimpleNamespace(components=[component], embeds=[])
 
 
-def _notice_embed(title):
-    return SimpleNamespace(components=[], embeds=[SimpleNamespace(title=title)])
-
-
 def _plain(title=None):
     embeds = [SimpleNamespace(title=title)] if title else []
     return SimpleNamespace(components=[], embeds=embeds)
@@ -46,13 +42,11 @@ class _FakeChannel:
 class RoomCodeLogicTest(unittest.IsolatedAsyncioTestCase):
     def test_is_scrim_notice_message_layout(self):
         self.assertTrue(
-            room_code._is_scrim_notice_message(_notice_layout("📢 스크림 공지 - 1라운드"))
+            room_code._is_scrim_notice_message(_notice_layout("## 1라운드\n<@&1>"))
         )
 
-    def test_is_scrim_notice_message_embed(self):
-        self.assertTrue(
-            room_code._is_scrim_notice_message(_notice_embed("📢 스크림 공지 - 2라운드"))
-        )
+    def test_is_scrim_notice_message_ignores_other_bot_round_line(self):
+        self.assertFalse(room_code._is_scrim_notice_message(_notice_layout("-# 2라운드 | 날씨 비")))
 
     def test_is_scrim_notice_message_false(self):
         self.assertFalse(room_code._is_scrim_notice_message(_plain("그냥 잡담")))
@@ -60,9 +54,10 @@ class RoomCodeLogicTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_round_number_counts_notices_plus_one(self):
         channel = _FakeChannel([
-            _notice_layout("📢 스크림 공지 - 1라운드"),
+            _notice_layout("## 1라운드"),
             _plain("잡담"),
-            _notice_embed("📢 스크림 공지 - 2라운드"),
+            _notice_layout("-# 2라운드 | 날씨 비"),
+            _notice_layout("## 2라운드"),
             _plain(),
         ])
         self.assertEqual(await room_code.get_round_number(channel), 3)

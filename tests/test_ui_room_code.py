@@ -23,7 +23,7 @@ class SubWeatherPermissionTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_weekday_group_member_denied(self):
         denied = await self._denial(_member("A조"))
-        self.assertEqual(denied, "서브 날씨는 관리자만 고를 수 있습니다.")
+        self.assertEqual(denied, "서브 날씨는 운영진만 고를 수 있습니다.")
 
     async def test_rest_day_group_member_allowed(self):
         self.assertIsNone(await self._denial(_member("A조"), rest_day=True))
@@ -41,7 +41,7 @@ class SubWeatherPermissionTest(unittest.IsolatedAsyncioTestCase):
                 patch.object(room_code, "is_admin", return_value=False), \
                 patch.object(room_code, "get_rest_day_info", new=slow):
             denied = await room_code._sub_weather_denial(_member("A조"), "A")
-        self.assertEqual(denied, "서브 날씨는 관리자만 고를 수 있습니다.")
+        self.assertEqual(denied, "서브 날씨는 운영진만 고를 수 있습니다.")
 
 
 def _view_text(view):
@@ -103,7 +103,7 @@ class _HistoryChannel:
 
 def _bot_notice(code, author_id=99):
     child = SimpleNamespace(content=f"# `{code}`")
-    title = SimpleNamespace(content="## 📢 스크림 공지 - 1라운드")
+    title = SimpleNamespace(content="## 1라운드")
     return SimpleNamespace(
         author=SimpleNamespace(id=author_id),
         components=[SimpleNamespace(children=[title, child])],
