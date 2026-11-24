@@ -37,6 +37,8 @@ class LabsOpsCase(unittest.IsolatedAsyncioTestCase):
         labs_ops._copy, labs_ops._copy_loaded, labs_ops._failures, labs_ops._notified = None, False, 0, False
         labs_ops._unanswered.clear()
         self.addCleanup(labs_ops._unanswered.clear)
+        labs_ops._posted.clear()
+        self.addCleanup(labs_ops._posted.clear)
 
         self.request = patch.object(labs_ops.labs_api, 'request', new=AsyncMock(return_value=response())).start()
         patch.object(labs_ops.labs_api, 'operator_ids', return_value=[STAFF, MOD]).start()
@@ -151,10 +153,40 @@ class SyncTest(LabsOpsCase):
 
         self.assertEqual(self.saved()['rev'], 5)
 
+    async def test_rate_limited_post_is_sent_again(self):
+        self.request.return_value = response(rev=2, seeds=[], tests=[], sanctions=[])
+        await labs_ops.sync(self.client)
+        self.channel.send.side_effect = discord.HTTPException(MagicMock(status=429), 'slow')
+        self.request.return_value = response(rev=5, changes=[{'id': 5, 'at': 0, 'by': '운영진A', 'text': '변경'}])
+
+        await labs_ops.sync(self.client)
+
+        self.assertEqual(self.saved()['rev'], 2)
+
+    async def test_posted_part_is_not_repeated_after_partial_failure(self):
+        changes = [{'id': i, 'at': 0, 'by': '운영진A', 'text': f'{i}번 ' + '가' * 500} for i in range(20)]
+        self.request.return_value = response(rev=7, changes=changes)
+        self.channel.send.side_effect = [None, discord.HTTPException(MagicMock(status=500), 'down')]
+
+        await labs_ops.sync(self.client)
+        self.channel.send.side_effect = None
+        await labs_ops.sync(self.client)
+
+        text = '\n'.join(self.posted())
+        counts = [text.count(f': {i}번 ') for i in range(20)]
+        # 실패한 두 번째 묶음만 두 번 시도
+        self.assertEqual(counts[0], 1)
+        self.assertEqual(sorted(set(counts)), [1, 2])
+        self.assertEqual(counts[-1], 1)
+        self.assertEqual(self.saved()['rev'], 7)
+        self.assertEqual(labs_ops._posted, set())
+
     async def test_skipped_until_members_loaded(self):
         self.guild.chunked = False
-        self.assertFalse(await labs_ops.sync(self.client))
+        for _ in range(labs_ops.FAILURES_BEFORE_NOTICE):
+            self.assertFalse(await labs_ops.sync(self.client))
         self.request.assert_not_awaited()
+        self.assertIn("Labs에 연결하지 못하고 있습니다.", self.posted()[0])
 
     async def test_outage_notified_once_then_recovery(self):
         self.request.return_value = None
@@ -210,6 +242,16 @@ class GrantTest(LabsOpsCase):
 
         self.assertEqual(again, failed)
         self.assertNotEqual(fresh, failed)
+
+    async def test_old_unanswered_key_is_not_reused(self):
+        self.request.return_value = None
+        await labs_ops.grant(**self.ARGS)
+        failed = self.request.await_args.args[2]['key']
+
+        with patch.object(labs_ops.time, 'monotonic', return_value=labs_ops.time.monotonic() + labs_ops.UNANSWERED_SECONDS + 1):
+            await labs_ops.grant(**self.ARGS)
+
+        self.assertNotEqual(self.request.await_args.args[2]['key'], failed)
 
     async def test_extend_masters_returns_count_or_none(self):
         self.request.return_value = {'status': 'ok', 'extended': 2}

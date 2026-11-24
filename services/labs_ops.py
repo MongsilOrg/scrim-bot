@@ -1,6 +1,7 @@
 """Labs 운영 화면 연동. 운영진과 투입 기록을 보내고 시드팀, 테스트 계정, 제재 사본을 받음."""
 import asyncio
 import json
+import time
 import uuid
 from datetime import timedelta
 from typing import Dict, List, Optional
@@ -32,7 +33,10 @@ _lock = asyncio.Lock()
 _failures = 0
 _notified = False
 # 응답을 못 받은 제재의 key. 다시 부여할 때 같은 key를 보내 Labs에 두 번 기록되지 않게 함
-_unanswered: Dict[tuple, str] = {}
+_unanswered: Dict[tuple, tuple] = {}
+UNANSWERED_SECONDS = 600
+# rev를 올리지 못한 주기에 이미 게시한 변경의 id. 다음 주기에 다시 받아도 건너뜀
+_posted: set = set()
 
 
 def copy() -> Optional[dict]:
@@ -113,18 +117,26 @@ def _body(guild: discord.Guild) -> Optional[dict]:
     return body
 
 
-def changes_views(changes: List[dict]) -> List[discord.ui.LayoutView]:
+def _chunks(changes: List[dict]) -> List[List[dict]]:
     # 디스코드는 메시지 하나의 글자 합계를 4000자로 제한
-    chunks: List[List[str]] = [[]]
+    chunks: List[List[dict]] = [[]]
     size = 0
     for c in changes:
-        line = f"**{c.get('by')}**: {c.get('text')}"[:CHANGES_TEXT_LIMIT]
-        if chunks[-1] and size + len(line) + 1 > CHANGES_TEXT_LIMIT:
+        length = len(_line(c)) + 1
+        if chunks[-1] and size + length > CHANGES_TEXT_LIMIT:
             chunks.append([])
             size = 0
-        chunks[-1].append(line)
-        size += len(line) + 1
-    return [custom_view("운영툴 변경", "\n".join(lines), discord.Color.blue()) for lines in chunks if lines]
+        chunks[-1].append(c)
+        size += length
+    return [chunk for chunk in chunks if chunk]
+
+
+def _line(change: dict) -> str:
+    return f"**{change.get('by')}**: {change.get('text')}"[:CHANGES_TEXT_LIMIT]
+
+
+def changes_view(changes: List[dict]) -> discord.ui.LayoutView:
+    return custom_view("운영툴 변경", "\n".join(_line(c) for c in changes), discord.Color.blue())
 
 
 async def _post(client: discord.Client, view: discord.ui.LayoutView) -> bool:
@@ -137,7 +149,7 @@ async def _post(client: discord.Client, view: discord.ui.LayoutView) -> bool:
         await channel.send(view=view, allowed_mentions=discord.AllowedMentions.none())
     except discord.HTTPException as e:
         # 4xx는 같은 내용을 다시 보내도 같은 응답
-        if 400 <= e.status < 500:
+        if 400 <= e.status < 500 and e.status != 429:
             logger.warning(f"[운영툴] 로그 채널 게시 실패: {type(e).__name__} {e.status}")
             return True
         logger.warning(f"[운영툴] 로그 채널 게시 실패, 다음 주기에 다시 보냄: {type(e).__name__}")
@@ -168,12 +180,13 @@ async def sync(client: Optional[discord.Client] = None) -> bool:
     global _copy
     client = client or _client
     guild = client.get_guild(settings.GUILD_ID) if client else None
-    # 구성원 목록을 다 받기 전에 보내면 운영진 일부가 빠진 목록이 전달됨
-    if not labs_api.enabled() or guild is None or not guild.chunked:
+    if not labs_api.enabled() or guild is None:
         return False
     async with _lock:
-        body = _body(guild)
+        # 구성원 목록을 다 받기 전에 보내면 운영진 일부가 빠진 목록이 전달됨
+        body = _body(guild) if guild.chunked else None
         if body is None:
+            await _note(client, False)
             return False
         data = await labs_api.request('PUT', '/api/bot/scrim-staff', body)
         if not data or not isinstance(data.get('rev'), int):
@@ -181,10 +194,15 @@ async def sync(client: Optional[discord.Client] = None) -> bool:
             return False
         await _note(client, True)
 
-        changes = [c for c in data.get('changes') or [] if isinstance(c, dict)]
+        changes = [c for c in data.get('changes') or [] if isinstance(c, dict) and c.get('id') not in _posted]
         posted = True
-        for view in changes_views(changes):
-            posted = await _post(client, view) and posted
+        for chunk in _chunks(changes):
+            posted = await _post(client, changes_view(chunk))
+            if not posted:
+                break
+            _posted.update(c.get('id') for c in chunk)
+        if posted:
+            _posted.clear()
         fresh = {key: data[key] for key in ('seeds', 'tests', 'sanctions') if isinstance(data.get(key), list)}
         previous = copy() or {}
         # 게시하지 못한 변경은 번호를 올리지 않아 다음 주기에 다시 받음
@@ -229,7 +247,7 @@ async def grant(*, target: str, target_id: str, kind: str, reason: str, admin: s
     sent = (target_id, kind, reason, today)
     body = {
         # 응답을 못 받았을 때의 재전송용, 같은 key는 Labs가 한 번만 기록
-        'key': _unanswered.get(sent) or uuid.uuid4().hex,
+        'key': _retry_key(sent) or uuid.uuid4().hex,
         'target': target,
         'targetId': target_id,
         'kind': kind,
@@ -245,8 +263,14 @@ async def grant(*, target: str, target_id: str, kind: str, reason: str, admin: s
             # 방금 준 제재가 팀 등록 검사에 바로 반영되게 사본을 다시 받음
             await sync()
             return result
-    _unanswered[sent] = body['key']
+    _unanswered[sent] = (body['key'], time.monotonic())
     return None
+
+
+def _retry_key(sent: tuple) -> Optional[str]:
+    # 한참 뒤에 따로 주는 같은 제재까지 같은 key로 보내면 Labs가 기록하지 않음
+    key, at = _unanswered.get(sent, (None, 0.0))
+    return key if key and time.monotonic() - at < UNANSWERED_SECONDS else None
 
 
 async def extend_masters(day: str) -> Optional[int]:
