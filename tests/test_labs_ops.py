@@ -35,6 +35,8 @@ class LabsOpsCase(unittest.IsolatedAsyncioTestCase):
         for name in ('_copy', '_copy_loaded', '_client', '_failures', '_notified'):
             self.addCleanup(setattr, labs_ops, name, getattr(labs_ops, name))
         labs_ops._copy, labs_ops._copy_loaded, labs_ops._failures, labs_ops._notified = None, False, 0, False
+        labs_ops._unanswered.clear()
+        self.addCleanup(labs_ops._unanswered.clear)
 
         self.request = patch.object(labs_ops.labs_api, 'request', new=AsyncMock(return_value=response())).start()
         patch.object(labs_ops.labs_api, 'operator_ids', return_value=[STAFF, MOD]).start()
@@ -130,6 +132,25 @@ class SyncTest(LabsOpsCase):
         self.assertEqual(self.saved()['rev'], 2)
         self.assertEqual(labs_ops.seeds(), [{'team_name': '새팀', 'players': []}])
 
+    async def test_long_changes_split_into_several_messages(self):
+        changes = [{'id': i, 'at': 0, 'by': '운영진A', 'text': '가' * 500} for i in range(20)]
+        self.request.return_value = response(rev=7, changes=changes)
+
+        await labs_ops.sync(self.client)
+
+        self.assertGreater(len(self.posted()), 1)
+        self.assertTrue(all(len(text) <= 4000 for text in self.posted()))
+        self.assertEqual(sum(text.count('**운영진A**') for text in self.posted()), 20)
+        self.assertEqual(self.saved()['rev'], 7)
+
+    async def test_rejected_post_is_not_sent_again(self):
+        self.channel.send.side_effect = discord.HTTPException(MagicMock(status=400), 'bad')
+        self.request.return_value = response(rev=5, changes=[{'id': 5, 'at': 0, 'by': '운영진A', 'text': '변경'}])
+
+        await labs_ops.sync(self.client)
+
+        self.assertEqual(self.saved()['rev'], 5)
+
     async def test_skipped_until_members_loaded(self):
         self.guild.chunked = False
         self.assertFalse(await labs_ops.sync(self.client))
@@ -174,6 +195,21 @@ class GrantTest(LabsOpsCase):
         self.request.return_value = None
         self.assertIsNone(await labs_ops.grant(**self.ARGS))
         self.assertEqual(self.request.await_count, 2)
+
+    async def test_grant_after_failure_sends_the_same_key(self):
+        self.request.return_value = None
+        await labs_ops.grant(**self.ARGS)
+        failed = self.request.await_args.args[2]['key']
+        granted = {'status': 'ok', 'kind': '경고', 'warning': {'warning_count': 1}, 'converted': []}
+        self.request.side_effect = [granted, granted]
+
+        await labs_ops.grant(**self.ARGS)
+        again = self.request.await_args_list[2].args[2]['key']
+        await labs_ops.grant(**self.ARGS)
+        fresh = self.request.await_args_list[3].args[2]['key']
+
+        self.assertEqual(again, failed)
+        self.assertNotEqual(fresh, failed)
 
     async def test_extend_masters_returns_count_or_none(self):
         self.request.return_value = {'status': 'ok', 'extended': 2}

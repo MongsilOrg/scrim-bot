@@ -20,6 +20,7 @@ logger = get_logger('labs_ops')
 # Labs는 5분 안에 받은 운영진만 운영 화면에 들여보냄
 SYNC_SECONDS = 60
 FAILURES_BEFORE_NOTICE = 5
+CHANGES_TEXT_LIMIT = 3500
 DEPLOY_DAYS = 7
 UNKNOWN_NAME = '알 수 없음'
 
@@ -30,6 +31,8 @@ _task: Optional[asyncio.Task] = None
 _lock = asyncio.Lock()
 _failures = 0
 _notified = False
+# 응답을 못 받은 제재의 key. 다시 부여할 때 같은 key를 보내 Labs에 두 번 기록되지 않게 함
+_unanswered: Dict[tuple, str] = {}
 
 
 def copy() -> Optional[dict]:
@@ -110,9 +113,18 @@ def _body(guild: discord.Guild) -> Optional[dict]:
     return body
 
 
-def changes_view(changes: List[dict]) -> discord.ui.LayoutView:
-    lines = [f"**{c.get('by')}**: {c.get('text')}" for c in changes]
-    return custom_view("운영툴 변경", "\n".join(lines), discord.Color.blue())
+def changes_views(changes: List[dict]) -> List[discord.ui.LayoutView]:
+    # 디스코드는 메시지 하나의 글자 합계를 4000자로 제한
+    chunks: List[List[str]] = [[]]
+    size = 0
+    for c in changes:
+        line = f"**{c.get('by')}**: {c.get('text')}"[:CHANGES_TEXT_LIMIT]
+        if chunks[-1] and size + len(line) + 1 > CHANGES_TEXT_LIMIT:
+            chunks.append([])
+            size = 0
+        chunks[-1].append(line)
+        size += len(line) + 1
+    return [custom_view("운영툴 변경", "\n".join(lines), discord.Color.blue()) for lines in chunks if lines]
 
 
 async def _post(client: discord.Client, view: discord.ui.LayoutView) -> bool:
@@ -123,9 +135,11 @@ async def _post(client: discord.Client, view: discord.ui.LayoutView) -> bool:
         return True
     try:
         await channel.send(view=view, allowed_mentions=discord.AllowedMentions.none())
-    except (discord.Forbidden, discord.NotFound) as e:
-        logger.warning(f"[운영툴] 로그 채널 게시 실패: {type(e).__name__}")
     except discord.HTTPException as e:
+        # 4xx는 같은 내용을 다시 보내도 같은 응답
+        if 400 <= e.status < 500:
+            logger.warning(f"[운영툴] 로그 채널 게시 실패: {type(e).__name__} {e.status}")
+            return True
         logger.warning(f"[운영툴] 로그 채널 게시 실패, 다음 주기에 다시 보냄: {type(e).__name__}")
         return False
     return True
@@ -168,7 +182,9 @@ async def sync(client: Optional[discord.Client] = None) -> bool:
         await _note(client, True)
 
         changes = [c for c in data.get('changes') or [] if isinstance(c, dict)]
-        posted = not changes or await _post(client, changes_view(changes))
+        posted = True
+        for view in changes_views(changes):
+            posted = await _post(client, view) and posted
         fresh = {key: data[key] for key in ('seeds', 'tests', 'sanctions') if isinstance(data.get(key), list)}
         previous = copy() or {}
         # 게시하지 못한 변경은 번호를 올리지 않아 다음 주기에 다시 받음
@@ -210,9 +226,10 @@ def is_operator(member: discord.Member) -> bool:
 async def grant(*, target: str, target_id: str, kind: str, reason: str, admin: str,
                 today: str, warning_day: str) -> Optional[dict]:
     """제재 기록과 기간 계산은 Labs 담당. 실패하면 None"""
+    sent = (target_id, kind, reason, today)
     body = {
         # 응답을 못 받았을 때의 재전송용, 같은 key는 Labs가 한 번만 기록
-        'key': uuid.uuid4().hex,
+        'key': _unanswered.get(sent) or uuid.uuid4().hex,
         'target': target,
         'targetId': target_id,
         'kind': kind,
@@ -224,9 +241,11 @@ async def grant(*, target: str, target_id: str, kind: str, reason: str, admin: s
     for _ in range(2):
         result = await labs_api.request('POST', '/api/bot/scrim-sanctions', body)
         if result:
+            _unanswered.pop(sent, None)
             # 방금 준 제재가 팀 등록 검사에 바로 반영되게 사본을 다시 받음
             await sync()
             return result
+    _unanswered[sent] = body['key']
     return None
 
 

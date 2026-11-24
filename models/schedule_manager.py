@@ -396,7 +396,8 @@ class ScheduleManager:
             return result
         else:
             # 명단에 없는 운영진은 진행과 예비가 모두 선택해도 남는 조만 선택
-            if user_id not in pick['order'] and len(self._open_groups()) <= len(self._unpicked()):
+            outsider = user_id not in pick['order'] and user_id not in pick['choices'].values()
+            if outsider and len(self._open_groups()) <= len(self._unpicked()):
                 return result
             for group, uid in list(pick['choices'].items()):
                 if uid == user_id:

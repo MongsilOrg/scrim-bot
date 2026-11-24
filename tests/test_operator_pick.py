@@ -283,7 +283,9 @@ class PickStateTest(unittest.TestCase):
             mgr.decline(uid)
         self.assertEqual(mgr.pick_group("z", "A")["status"], "picked")
         self.assertEqual(mgr.pick["targets"], ["z", "a", "b"])
-        mgr.pick_group("z", "A")
+        self.assertEqual(mgr.pick_group("z", "B")["status"], "picked")
+        self.assertEqual(mgr.pick["choices"], {"B": "z"})
+        mgr.pick_group("z", "B")
         self.assertNotIn("z", mgr.pick["targets"] + mgr.pick["reserves"])
 
     def test_decline_promotes_first_reserve(self, _save):
