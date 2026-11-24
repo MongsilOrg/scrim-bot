@@ -4,6 +4,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
+import discord
+
 from commands import schedule
 from commands.ui import schedule_views
 
@@ -106,6 +108,16 @@ class AnsweredReminderTest(unittest.IsolatedAsyncioTestCase):
         # 남은 사람이 그대로면 다시 편집하지 않음
         await self._refresh({"1"})
         self.edited.assert_awaited_once()
+
+    async def test_failed_edit_is_retried_on_the_next_refresh(self):
+        self.edited.side_effect = [discord.HTTPException(MagicMock(status=500), "down"), None]
+
+        await self._refresh({"1"})
+        self.assertIsNone(self.mgr.reminder_shown)
+        await self._refresh({"1"})
+
+        self.assertEqual(self.edited.await_count, 2)
+        self.assertEqual(self.mgr.reminder_shown, ["2", "3"])
 
     async def test_reminder_is_deleted_in_a_week_of_rest_days(self):
         self.mgr.all_rest = True

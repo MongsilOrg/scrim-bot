@@ -188,14 +188,19 @@ async def _update_reminders(channel, schedule_mgr, missing: List[str]) -> None:
     """미응답 알림에 아직 응답하지 않은 사람의 멘션만 남김"""
     if not schedule_mgr.reminder_message_ids or missing == schedule_mgr.reminder_shown:
         return
+    failed = False
     for message_id in schedule_mgr.reminder_message_ids:
         try:
             await channel.get_partial_message(message_id).edit(
                 view=reminder_view(missing), allowed_mentions=discord.AllowedMentions(users=True),
             )
+        except discord.NotFound:
+            pass
         except discord.HTTPException as e:
+            failed = True
             logger.warning(f"[일정] 미응답 알림 편집 실패 - 메시지 ID: {message_id}: {e}")
-    schedule_mgr.reminder_shown = list(missing)
+    # 편집이 실패하면 다음 갱신 때 다시 시도
+    schedule_mgr.reminder_shown = None if failed else list(missing)
 
 
 async def _rest_days(schedule_mgr) -> Set[int]:

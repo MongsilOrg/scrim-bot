@@ -276,8 +276,10 @@ async def close_pick(client: discord.Client) -> None:
         await _notify(channel, schedule_mgr, '\n'.join(lines), "조 배정")
     empty = [letter for letter in pick['groups'] if letter not in pick['choices']]
     if empty:
-        holders = set(pick['choices'].values())
-        free = [str(m.id) for m in schedule_members(guild) if str(m.id) not in holders]
+        # 조를 맡았거나 오늘 불참, 이번 주 불참으로 답한 사람은 부르지 않음
+        skip = set(pick['choices'].values()) | set(pick['declined'])
+        skip |= {uid for uid, days in schedule_mgr.availability.items() if not days}
+        free = [str(m.id) for m in schedule_members(guild) if str(m.id) not in skip]
         text = f"{'조, '.join(empty)}조를 맡을 운영진이 없습니다.\n위 메시지에서 조를 선택해주세요."
         await _notify(channel, schedule_mgr, f"{_mentions(free)}\n{text}" if free else text, "빈 조")
     logger.info(f"[조 고르기] 마감 - 자동 배정 {len(assigned)}명, 빈 조 {len(empty)}개")

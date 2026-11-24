@@ -568,6 +568,17 @@ class PickFlowTest(unittest.IsolatedAsyncioTestCase):
         await operator_pick._handle(self._interaction(12, 101), "B")
         self.assertEqual(self.mgr.pick["choices"], {"A": "11", "B": "12"})
 
+    async def test_empty_group_notice_skips_operators_who_declined(self):
+        self.mgr.availability = {"11": {1}, "12": {1}, "13": set()}
+        await operator_pick.post_pick(self.client, self.guild, ["A", "B"])
+        self.mgr.decline("12")
+
+        await operator_pick.close_pick(self.client)
+
+        text = _text(self.sent[-1]["view"])
+        self.assertIn("B조를 맡을 운영진이 없습니다.", text)
+        self.assertNotIn("<@", text)
+
     async def test_pick_message_is_deleted_once_every_group_is_confirmed(self):
         await operator_pick.post_pick(self.client, self.guild, ["A", "B"])
         delete = self.channel.get_partial_message.return_value.delete
