@@ -285,13 +285,13 @@ def start_sync(client: discord.Client) -> None:
 
     async def run() -> None:
         while True:
-            try:
-                await sync(client)
-                await sync_members(client)
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                logger.error(f"[운영툴] 동기화 실패: {e}", exc_info=True)
+            for step in (sync, sync_members):
+                try:
+                    await step(client)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.error(f"[운영툴] 동기화 실패: {e}", exc_info=True)
             await asyncio.sleep(SYNC_SECONDS)
 
     _task = asyncio.create_task(run())
