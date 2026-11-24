@@ -99,7 +99,7 @@ async def _sync_roles(guild: discord.Guild, schedule_mgr) -> None:
                 role = discord.utils.get(guild.roles, name=f"{letter}조")
                 if member and role and role in member.roles:
                     await member.remove_roles(role, reason=ROLE_REASON)
-                del granted[uid]
+                granted.pop(uid, None)
             for uid, letter in desired.items():
                 if granted.get(uid) == letter:
                     continue
