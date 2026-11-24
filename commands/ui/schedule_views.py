@@ -391,6 +391,22 @@ def schedule_members(guild: discord.Guild) -> list[discord.Member]:
     return [m for m in guild.members if is_admin(m) and not m.bot and m.id not in EXCLUDED_USER_IDS]
 
 
+async def delete_old_reminders(channel, schedule_mgr) -> None:
+    if not schedule_mgr.reminder_message_ids:
+        return
+    failed = []
+    for message_id in schedule_mgr.reminder_message_ids:
+        try:
+            await channel.get_partial_message(message_id).delete()
+        except discord.NotFound:
+            pass
+        except discord.HTTPException as e:
+            logger.warning(f"[일정] 지난 미응답 알림 삭제 실패 - 메시지 ID: {message_id}: {e}")
+            failed.append(message_id)
+    schedule_mgr.reminder_message_ids = failed
+    schedule_mgr.save_backup()
+
+
 async def refresh_dashboard(
     guild: discord.Guild,
     channel=None,
@@ -400,6 +416,12 @@ async def refresh_dashboard(
         schedule_mgr = BotManager.get_instance().get_schedule_manager()
 
     all_admins = [(str(m.id), m.display_name) for m in schedule_members(guild)]
+
+    # 멤버 목록을 받기 전에는 대상이 0명이라 모두 응답한 것으로 보지 않음
+    if all_admins and {uid for uid, _ in all_admins} <= schedule_mgr.get_responded_user_ids():
+        reminder_channel = guild.get_channel(settings.SCHEDULE_CHANNEL_ID)
+        if reminder_channel:
+            await delete_old_reminders(reminder_channel, schedule_mgr)
 
     status_text = schedule_mgr.get_status_text(all_admins)
     has_assignments = bool(schedule_mgr.assignments)

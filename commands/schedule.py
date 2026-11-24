@@ -6,7 +6,7 @@ from bot.manager import BotManager
 import discord
 
 from commands.operator_pick import refresh_count_since, start_close_task
-from commands.ui.schedule_views import refresh_dashboard, schedule_members
+from commands.ui.schedule_views import delete_old_reminders, refresh_dashboard, schedule_members
 from config.logging_config import get_logger
 from config.settings import settings
 from models.schedule_manager import OPEN_WEEKDAY, REMINDER_HOUR, REMINDER_WEEKDAY
@@ -92,22 +92,6 @@ async def send_schedule_reminder(client: ScrimBot) -> int:
     schedule_mgr.save_backup()
     logger.info(f"[일정] 미응답 알림 - {len(missing)}명: {', '.join(m.display_name for m in missing)}")
     return len(missing)
-
-
-async def delete_old_reminders(channel, schedule_mgr) -> None:
-    if not schedule_mgr.reminder_message_ids:
-        return
-    failed = []
-    for message_id in schedule_mgr.reminder_message_ids:
-        try:
-            await channel.get_partial_message(message_id).delete()
-        except discord.NotFound:
-            pass
-        except discord.HTTPException as e:
-            logger.warning(f"[일정] 지난 미응답 알림 삭제 실패 - 메시지 ID: {message_id}: {e}")
-            failed.append(message_id)
-    schedule_mgr.reminder_message_ids = failed
-    schedule_mgr.save_backup()
 
 
 async def _reminder_loop(client: ScrimBot) -> None:

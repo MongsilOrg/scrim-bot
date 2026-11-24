@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
 from commands import schedule
+from commands.ui import schedule_views
 
 KST = ZoneInfo("Asia/Seoul")
 
@@ -63,6 +64,31 @@ class DeleteOldRemindersTest(unittest.IsolatedAsyncioTestCase):
         await schedule.delete_old_reminders(channel, mgr)
         self.assertEqual(mgr.reminder_message_ids, [3])
         mgr.save_backup.assert_called_once()
+
+
+class AnsweredReminderTest(unittest.IsolatedAsyncioTestCase):
+    async def _refresh(self, responded):
+        deleted = AsyncMock()
+        channel = SimpleNamespace(id=5, get_partial_message=lambda message_id: SimpleNamespace(delete=deleted))
+        guild = SimpleNamespace(get_channel=lambda cid: channel)
+        mgr = SimpleNamespace(
+            reminder_message_ids=[7], get_responded_user_ids=lambda: responded, get_status_text=lambda admins: "일정",
+            assignments={}, status_channel_id=5, status_message_id=9, save_backup=MagicMock(),
+        )
+        with patch.object(schedule_views, "schedule_members", return_value=[_member(1, "a"), _member(2, "b")]), \
+             patch.object(schedule_views, "upsert_persistent_message", new=AsyncMock(return_value=9)):
+            await schedule_views.refresh_dashboard(guild, schedule_mgr=mgr)
+        return mgr.reminder_message_ids, deleted
+
+    async def test_reminder_is_deleted_once_everyone_answered(self):
+        ids, deleted = await self._refresh({"1", "2"})
+        self.assertEqual(ids, [])
+        deleted.assert_awaited_once()
+
+    async def test_reminder_stays_while_someone_has_not_answered(self):
+        ids, deleted = await self._refresh({"1"})
+        self.assertEqual(ids, [7])
+        deleted.assert_not_awaited()
 
 
 class WeekOpenTest(unittest.TestCase):
