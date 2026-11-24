@@ -22,7 +22,7 @@ KEY_HEADER = '토너먼트 키'
 NAME_HEADER = '사용자'
 API = 'https://sheets.googleapis.com/v4/spreadsheets'
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-FIELDS = 'sheets(properties(title,index),merges,data(startRow,rowData(values(formattedValue,effectiveFormat(backgroundColor)))))'
+FIELDS = 'sheets(properties(title,index),merges,data(startRow,rowData(values(formattedValue))))'
 TIMEOUT = 20
 
 _task: Optional[asyncio.Task] = None
@@ -38,16 +38,6 @@ def enabled() -> bool:
 def _text(cells: List[dict], col: int) -> str:
     value = cells[col].get('formattedValue') if col < len(cells) else None
     return value if isinstance(value, str) else ''
-
-
-def _color(cells: List[dict], col: int) -> str:
-    """칸에 칠한 배경색. 칠하지 않은 흰 칸은 빈 문자열"""
-    fmt = cells[col].get('effectiveFormat') if col < len(cells) else None
-    back = (fmt or {}).get('backgroundColor')
-    if not isinstance(back, dict):
-        return ''
-    code = '#' + ''.join(f"{round(min(max(float(back.get(c) or 0), 0), 1) * 255):02x}" for c in ('red', 'green', 'blue'))
-    return '' if code == '#ffffff' else code
 
 
 def parse(sheet: dict) -> Optional[dict]:
@@ -79,7 +69,7 @@ def parse(sheet: dict) -> Optional[dict]:
             continue
         top = merged.get(i, i) - offset
         note = _text(grid[top], note_col) if 0 <= top < len(grid) else ''
-        rows.append({'pos': offset + i + 1, 'key': key, 'name': _text(grid[i], name_col), 'note': note, 'batch': batch, 'color': _color(grid[i], key_col)})
+        rows.append({'pos': offset + i + 1, 'key': key, 'name': _text(grid[i], name_col), 'note': note, 'batch': batch})
     return {'title': (sheet.get('properties') or {}).get('title', ''), 'key_col': key_col, 'name_col': name_col, 'rows': rows}
 
 
