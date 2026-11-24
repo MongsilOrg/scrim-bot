@@ -51,15 +51,14 @@ class OperatorLogTest(unittest.TestCase):
             target.start()
             self.addCleanup(target.stop)
 
-    def test_two_rounds_in_one_group_count_as_deployed(self):
+    def test_one_round_in_a_group_counts_as_deployed(self):
         lead, helper = _admin(1), _admin(2)
         operator_log.record(lead, "a", 1, "room_code")
         operator_log.record(lead, "a", 1, "weather")
-        operator_log.record(helper, "a", 2, "csv")
         operator_log.record(lead, "a", 2, "room_code")
-        operator_log.record(helper, "b", 1, "room_code")
+        operator_log.record(helper, "b", 1, "csv")
 
-        self.assertEqual(operator_log.deployed(TUESDAY), {"A": ["1"]})
+        self.assertEqual(operator_log.deployed(TUESDAY), {"A": ["1"], "B": ["2"]})
 
     def test_after_midnight_belongs_to_the_day_it_started(self):
         member = _admin(1)

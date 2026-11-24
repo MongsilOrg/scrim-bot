@@ -17,8 +17,6 @@ logger = get_logger('operator_log')
 LOG_FILE = os.getenv('OPERATOR_LOG_PATH', 'data/operator_log.jsonl')
 # 자정을 넘긴 경기도 시작한 날의 기록으로 셈
 DAY_SHIFT = timedelta(hours=6)
-# 다른 조를 한 번 도운 사람은 투입으로 세지 않음
-MIN_ROUNDS = 2
 
 
 def scrim_day(now: Optional[datetime] = None) -> date:
@@ -46,8 +44,8 @@ def record(member, group_letter: str, round_number: int, kind: str) -> None:
 
 
 def deployed(day: date) -> Dict[str, List[str]]:
-    """그날 조마다 서로 다른 라운드 MIN_ROUNDS개 이상에 기록이 있는 운영진"""
-    rounds: Dict[tuple, set] = defaultdict(set)
+    """그날 조마다 라운드 기록이 하나라도 있는 운영진"""
+    seen = set()
     target = day.isoformat()
     try:
         with open(LOG_FILE, 'r', encoding='utf-8') as f:
@@ -57,14 +55,14 @@ def deployed(day: date) -> Dict[str, List[str]]:
                 except ValueError:
                     continue
                 if isinstance(entry, dict) and entry.get('date') == target:
-                    rounds[(entry.get('group'), entry.get('user_id'))].add(entry.get('round'))
+                    seen.add((entry.get('group'), entry.get('user_id')))
     except FileNotFoundError:
         return {}
     except OSError as e:
         logger.warning(f"[투입 기록] 읽기 실패: {e}")
         return {}
     result: Dict[str, List[str]] = defaultdict(list)
-    for (group, user_id), seen in sorted(rounds.items(), key=lambda item: str(item[0])):
-        if group and user_id and len(seen) >= MIN_ROUNDS:
+    for group, user_id in sorted(seen, key=str):
+        if group and user_id:
             result[group].append(user_id)
     return dict(result)
