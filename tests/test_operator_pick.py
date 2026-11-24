@@ -533,6 +533,13 @@ class PickFlowTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.sent, [])
         self.assertIsNone(self.mgr.pick)
 
+    async def test_rest_day_lookup_failure_still_posts_on_a_weekday(self):
+        with patch.object(operator_pick.holidays_api, "get_rest_day_info", new=AsyncMock(side_effect=RuntimeError("down"))):
+            await operator_pick.post_pick(self.client, self.guild, ["A", "B"])
+
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(self.mgr.pick["message_id"], 101)
+
     async def test_pick_message_has_no_footer_and_names_waiting_row(self):
         await operator_pick.post_pick(self.client, self.guild, ["A", "B"])
 

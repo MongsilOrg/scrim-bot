@@ -13,7 +13,7 @@ from bot.manager import BotManager
 from commands.ui.schedule_views import refresh_dashboard, schedule_members
 from config.logging_config import get_logger
 from config.settings import settings
-from models.schedule_manager import PICK_CLOSE_HOUR
+from models.schedule_manager import ACTIVE_DAYS, PICK_CLOSE_HOUR
 from services import holidays_api, labs_api
 from utils import operator_log
 from utils.helpers import get_current_kst_time, is_admin
@@ -221,6 +221,15 @@ async def confirm_group(client: discord.Client, day_iso: str, letter: str) -> No
     await refresh_dashboard(guild, schedule_mgr=schedule_mgr)
 
 
+async def _is_rest_day(day) -> bool:
+    # 참가팀에게 자율 진행으로 안내하는 날에는 운영진 조 선택도 올리지 않음
+    try:
+        return (await holidays_api.get_rest_day_info(day))["is_rest_day"]
+    except Exception as e:
+        logger.warning(f"[조 고르기] 자율 진행일 조회 실패, 요일로 판정: {type(e).__name__}")
+        return day.weekday() not in ACTIVE_DAYS
+
+
 async def post_pick(client: discord.Client, guild: discord.Guild, letters: List[str]) -> None:
     schedule_mgr = BotManager.get_instance().get_schedule_manager()
     channel = guild.get_channel(settings.SCHEDULE_CHANNEL_ID)
@@ -230,8 +239,7 @@ async def post_pick(client: discord.Client, guild: discord.Guild, letters: List[
     confirm_pending(schedule_mgr)
     await _delete_messages(channel, schedule_mgr.pick)
     day = operator_log.scrim_day()
-    # 참가팀에게 자율 진행으로 안내하는 날에는 운영진 조 선택도 올리지 않음
-    if not letters or (await holidays_api.get_rest_day_info(day))["is_rest_day"]:
+    if not letters or await _is_rest_day(day):
         schedule_mgr.save_backup()
         await refresh_dashboard(guild, schedule_mgr=schedule_mgr)
         return
