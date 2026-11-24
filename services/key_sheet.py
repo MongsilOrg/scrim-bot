@@ -139,11 +139,11 @@ def _set(layout: dict, row: dict, value: str) -> bool:
 def apply(layout: dict, result: dict) -> int:
     """Labs가 돌려준 칸 가운데 방금 읽은 시트와 키가 맞는 칸만 바꿈. 이름은 빈 칸에만 적음"""
     by_pos = {r['pos']: r for r in layout['rows']}
-    wipes = []
+    wipes: Dict[int, dict] = {}
     for task in result.get('wipe') or []:
         row = by_pos.get(task.get('pos'))
         if row and row['key'] == task.get('key') and row['name']:
-            wipes.append(row)
+            wipes[row['pos']] = row
     if len(wipes) > WIPE_MAX:
         logger.error(f"[서버 키] 비울 칸이 {len(wipes)}개라 시트를 바꾸지 않음")
         return 0
@@ -156,7 +156,7 @@ def apply(layout: dict, result: dict) -> int:
         if _set(layout, row, name):
             row['name'] = name
             done += 1
-    for row in wipes:
+    for row in wipes.values():
         if _set(layout, row, ''):
             row['name'] = ''
             done += 1

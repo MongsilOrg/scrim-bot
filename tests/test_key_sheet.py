@@ -110,7 +110,7 @@ class ApplyCase(unittest.TestCase):
         self.assertEqual(self.layout['rows'][1]['name'], '나')
 
     def test_비우기는_키가_맞고_이름이_있는_칸에만(self):
-        done = key_sheet.apply(self.layout, {'wipe': [{'pos': 3, 'key': K1}, {'pos': 5, 'key': K2}, {'pos': 6, 'key': K1}]})
+        done = key_sheet.apply(self.layout, {'wipe': [{'pos': 3, 'key': K1}, {'pos': 3, 'key': K1}, {'pos': 5, 'key': K2}, {'pos': 6, 'key': K1}]})
         self.assertEqual((done, self.changed()), (1, [(3, '')]))
         self.assertEqual(self.layout['rows'][0]['name'], '')
 
