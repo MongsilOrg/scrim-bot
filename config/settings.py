@@ -57,6 +57,9 @@ class Settings:
     LABS_SCRIM_TOKEN: str = os.getenv('LABS_SCRIM_TOKEN', '')
     LABS_STATE_PATH: str = os.getenv('LABS_STATE_PATH', 'data/labs_scrim.json')
     LABS_OPS_PATH: str = os.getenv('LABS_OPS_PATH', 'data/labs_ops.json')
+    # 토너먼트 키 시트. ID가 없으면 서버 키 연동을 건너뜀
+    GOOGLE_SHEETS_CREDENTIALS_PATH: str = os.getenv('GOOGLE_SHEETS_CREDENTIALS_PATH', 'credentials/google_sheets_credentials.json')
+    GOOGLE_SHEETS_KEYS_SPREADSHEET_ID: str = os.getenv('GOOGLE_SHEETS_KEYS_SPREADSHEET_ID', '')
     # 운영자 PC 감시 창이 보낸 결과 CSV를 이 대회에 받을지. 끄면 디스코드 업로드만 씀
     LABS_AUTO_UPLOAD: bool = os.getenv('LABS_AUTO_UPLOAD', 'true').lower() in ('1', 'true', 'yes')
     # 스크림 서버에서 이 역할을 가진 사람을 Labs 대회 운영자로 넣음

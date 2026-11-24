@@ -11,7 +11,7 @@ from commands.scrim import setup_scrim_dashboard
 from utils.layout_helpers import error_view, send_response
 from config.logging_config import get_logger
 from config.settings import settings
-from services import labs_api, labs_ops
+from services import key_sheet, labs_api, labs_ops
 from utils import operator_log
 from utils.helpers import get_current_kst_time, get_group_letter, is_admin, is_assignment_window, is_csv_filename
 
@@ -48,6 +48,7 @@ async def bootstrap_on_ready(client: "ScrimBot") -> None:
             logger.error("[시작] 백업 복구 실패")
 
     labs_ops.start_sync(client)
+    key_sheet.start()
     bot_manager.get_warning_manager().start_masters_task()
 
     try:

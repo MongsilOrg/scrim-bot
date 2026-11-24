@@ -4,6 +4,7 @@ discord.py>=2.7.0
 # HTTP 클라이언트
 aiohttp>=3.9.0
 requests>=2.31.0
+google-auth>=2.23.0
 
 # 데이터 처리
 
