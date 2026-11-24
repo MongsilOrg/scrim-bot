@@ -96,7 +96,8 @@ async def _sync_roles(guild: discord.Guild, schedule_mgr) -> None:
             role = discord.utils.get(guild.roles, name=f"{letter}조")
             if member and role and role in member.roles:
                 await member.remove_roles(role, reason=ROLE_REASON)
-            del granted[uid]
+            # 버튼을 동시에 누르면 기다리는 사이 다른 실행이 먼저 지웠을 수 있음
+            granted.pop(uid, None)
         for uid, letter in desired.items():
             if granted.get(uid) == letter:
                 continue
@@ -152,6 +153,9 @@ async def _handle(interaction: discord.Interaction, key: str) -> None:
         status = schedule_mgr.pick_group(uid, key)
         if status == 'taken':
             await send_response(interaction, error_view("다른 운영진이 먼저 고른 조입니다.\n빈 조를 골라주세요."))
+            return
+        if status == 'closed':
+            await send_response(interaction, error_view("마감 뒤에 빠지려면 오늘 불가를 눌러주세요."))
             return
         if status == 'not_allowed':
             await send_response(interaction, error_view("오늘 투입 대상이 고른 뒤 남는 조를 골라주세요."))

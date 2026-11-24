@@ -10,6 +10,7 @@ import discord
 
 from commands import operator_pick
 from config.settings import settings
+from models import schedule_manager
 from models.schedule_manager import ScheduleManager
 from services.discord_service import DiscordService
 from utils import operator_log
@@ -111,6 +112,16 @@ class RankingTest(unittest.TestCase):
         self.assertEqual(len(assigned), 6)
         self.assertNotIn("a", assigned)
         self.assertNotIn("b", assigned)
+
+    def test_week_plan_spreads_people_across_days(self, _save):
+        mgr = _manager({uid: {0, 1} for uid in "abcdefgh"})
+
+        # 주가 시작하기 전이라 잠긴 요일이 없음
+        with patch.object(schedule_manager, "get_current_kst_time", return_value=datetime(2026, 11, 21, 12, tzinfo=KST)):
+            assigned = mgr.generate_assignments()
+
+        self.assertEqual(assigned[0], mgr.ranked_for_day(0)[:6])
+        self.assertEqual(set(assigned[0]) | set(assigned[1]), set("abcdefgh"))
 
     def test_confirm_applies_once_and_updates_week(self, _save):
         mgr = _manager()
@@ -216,6 +227,8 @@ class PickStateTest(unittest.TestCase):
 
         self.assertEqual(mgr.close_pick(), [("a", "B"), ("c", "C")])
         self.assertEqual(mgr.close_pick(), [])
+        self.assertEqual(mgr.pick_group("a", "B"), "closed")
+        self.assertEqual(mgr.pick["choices"]["B"], "a")
         result = mgr.decline("c")
         self.assertEqual((result["promoted"], result["assigned"]), ("d", "C"))
 

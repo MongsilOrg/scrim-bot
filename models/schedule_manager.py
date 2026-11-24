@@ -206,16 +206,17 @@ class ScheduleManager:
                     last[uid] = day
         return last
 
-    def ranked_for_day(self, day_index: int) -> List[str]:
-        """그날 가능하다고 응답한 사람을 투입 순위대로"""
+    def ranked_for_day(self, day_index: int, planned: Optional[Dict[str, int]] = None) -> List[str]:
+        """그날 가능하다고 응답한 사람을 투입 순위대로. planned는 같은 주 앞 요일에 편성한 횟수"""
         counts = self.season_counts()
+        planned = planned or {}
         last = self._last_deployed()
         week = self.week_start.date().isoformat() if self.week_start else ''
         candidates = [uid for uid, days in self.availability.items() if day_index in days]
         return sorted(
             candidates,
             key=lambda uid: (
-                counts.get(uid, 0),
+                counts.get(uid, 0) + planned.get(uid, 0),
                 last.get(uid, ''),
                 len(self.availability[uid]),
                 # ID 순이면 동점일 때 늘 같은 사람이 앞에 와서 주마다 순서를 바꿈
@@ -223,11 +224,23 @@ class ScheduleManager:
             ),
         )
 
+    def _plan(self, days) -> Dict[int, List[str]]:
+        # 앞 요일에 편성한 사람은 그만큼 투입된 것으로 보고 뒤 요일 순위를 매겨, 같은 6명이 한 주 내내 편성되지 않게 함
+        planned: Dict[str, int] = defaultdict(int)
+        result: Dict[int, List[str]] = {}
+        for day in sorted(days):
+            result[day] = self.ranked_for_day(day, planned)[:POOL_SIZE]
+            for uid in result[day]:
+                planned[uid] += 1
+        return result
+
     def generate_assignments(self) -> Dict[int, List[str]]:
         days = set(ACTIVE_DAYS)
         for available in self.availability.values():
             days |= available
-        self.assignments = {day: self.ranked_for_day(day)[:POOL_SIZE] for day in sorted(days)}
+        self.assignments = self._plan(days)
+        # 지난 요일의 편성을 횟수에 넣지 않고 남은 요일을 다시 매김. 가장 가까운 요일이 조 고르기 순위와 같아짐
+        self._readjust_remaining()
         self.save_backup()
         logger.info("[일정] 편성 완료")
         return self.assignments
@@ -302,9 +315,10 @@ class ScheduleManager:
             if not self.actual_deployments.get(d) and d not in locked
         )
         changes = []
+        plan = self._plan(remaining_days)
         for day in remaining_days:
             before = self.assignments.get(day, [])
-            after = self.ranked_for_day(day)[:POOL_SIZE]
+            after = plan[day]
             self.assignments[day] = after
             added = [uid for uid in after if uid not in before]
             removed = [uid for uid in before if uid not in after]
@@ -315,6 +329,9 @@ class ScheduleManager:
     def open_pick(self, day: date, letters: List[str]) -> dict:
         """그날 조 고르기를 시작. 같은 날 다시 열면 남아 있는 조의 선택을 그대로 둠"""
         day_index = (day - self.week_start.date()).days if self.week_start else -1
+        if self.assignments:
+            # 주간 편성에 보이는 오늘 명단을 조 고르기 순위와 맞춤
+            self._readjust_remaining()
         ranked = self.ranked_for_day(day_index)[:POOL_SIZE] if 0 <= day_index < 7 else []
         old = self.pick if self.pick and self.pick.get('date') == day.isoformat() else None
         declined = [uid for uid in (old or {}).get('declined', [])]
@@ -349,12 +366,15 @@ class ScheduleManager:
         return [g for g in self.pick['groups'] if g not in self.pick['choices']]
 
     def pick_group(self, user_id: str, letter: str) -> str:
-        """picked, cancelled, taken, not_allowed 가운데 하나"""
+        """picked, cancelled, taken, not_allowed, closed 가운데 하나"""
         pick = self.pick
         if letter not in pick['groups']:
             return 'not_allowed'
         holder = pick['choices'].get(letter)
         if holder == user_id:
+            if pick['closed']:
+                # 마감 뒤에 조를 비우면 예비가 올라오지 않아 그 조가 빈 채로 남음
+                return 'closed'
             del pick['choices'][letter]
             self.save_backup()
             return 'cancelled'
