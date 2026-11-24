@@ -213,8 +213,8 @@ def _mark_posted(code: str, group_letter: str) -> None:
         save_state(state)
 
 
-def schedule_backup(client: discord.Client, group_letter: str) -> None:
-    """결과 CSV가 올라온 뒤 Labs에 반영되면 확인. 확인 중에 새 CSV가 오면 처음부터 다시 기다림"""
+def schedule_backup(client: discord.Client, group_letter: str, unfinished: bool = True) -> None:
+    """결과 CSV가 올라온 뒤 Labs에 반영되면 확인. 확인 중에 새 CSV가 오면 처음부터 다시 기다림. unfinished면 마지막 확인에서 치른 라운드까지만 보냄"""
     task = _backup_tasks.get(group_letter)
     if task and not task.done():
         task.cancel()
@@ -223,7 +223,7 @@ def schedule_backup(client: discord.Client, group_letter: str) -> None:
         for i, delay in enumerate(BACKUP_CHECK_DELAYS):
             await asyncio.sleep(delay)
             try:
-                if await post_backup(client, group_letter, finished_only=i < len(BACKUP_CHECK_DELAYS) - 1):
+                if await post_backup(client, group_letter, finished_only=not unfinished or i < len(BACKUP_CHECK_DELAYS) - 1):
                     return
             except Exception as e:
                 logger.error(f"[Labs] {group_letter}조 게임 ID 백업 실패: {e}", exc_info=True)
@@ -271,7 +271,8 @@ def resume_backups(client: discord.Client) -> None:
         return
     for letter in state.get('groups', []):
         if letter not in state.get('posted', []):
-            schedule_backup(client, letter)
+            # 마지막 CSV가 언제 올라왔는지 몰라 경기 중인 조일 수 있음
+            schedule_backup(client, letter, unfinished=False)
     start_backup_poll(client)
 
 

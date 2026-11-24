@@ -211,6 +211,19 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual([c.args[0] for c in sleep.await_args_list], list(labs_api.BACKUP_CHECK_DELAYS))
         channel.send.assert_awaited_once()
 
+    async def test_resumed_check_waits_for_all_rounds(self):
+        labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
+        channel = MagicMock()
+        channel.send = AsyncMock()
+        client = MagicMock()
+        client.get_channel.return_value = channel
+        self.request.return_value = {'played': 2, 'plannedRounds': 4, 'ended': False, 'replays': [{'roundNo': 1, 'gameId': 5}]}
+        with patch.object(labs_api.asyncio, 'sleep', new=AsyncMock()):
+            labs_api.schedule_backup(client, 'A', unfinished=False)
+            await labs_api._backup_tasks['A']
+        channel.send.assert_not_awaited()
+        self.assertEqual(labs_api.load_state()['posted'], [])
+
     async def test_failed_send_can_retry(self):
         labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
         channel = MagicMock()
@@ -227,7 +240,7 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A', 'B'], 'posted': ['A']})
         with patch.object(labs_api, 'schedule_backup') as schedule, patch.object(labs_api, 'start_backup_poll') as poll:
             labs_api.resume_backups('client')
-        schedule.assert_called_once_with('client', 'B')
+        schedule.assert_called_once_with('client', 'B', unfinished=False)
         poll.assert_called_once_with('client')
 
     async def test_poll_posts_finished_groups_until_all_sent(self):
