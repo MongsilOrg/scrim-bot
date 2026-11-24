@@ -119,13 +119,17 @@ class ApplyCase(unittest.TestCase):
         self.assertEqual(key_sheet.apply(self.layout, {'write': [{'pos': 5, 'key': K2, 'name': '나'}], 'wipe': [{'pos': 3, 'key': K1}]}), 0)
         self.assertEqual([r['name'] for r in self.layout['rows']], [' 가 ', '', ''])
 
-    def test_비울_칸이_상한을_넘으면_하나도_비우지_않음(self):
+    def test_비울_칸이_상한을_넘으면_시트를_바꾸지_않음(self):
         rows = [{'pos': i, 'key': f'AAAAA-BBBBB-{i:05d}', 'name': '가', 'note': ''} for i in range(3, 33)]
+        rows.append({'pos': 40, 'key': K1, 'name': '', 'note': ''})
         layout = {**self.layout, 'rows': rows}
         wipes = [{'pos': r['pos'], 'key': r['key']} for r in rows]
-        self.assertEqual(key_sheet.apply(layout, {'wipe': wipes}), 0)
+        write = [{'pos': 40, 'key': K1, 'name': '나'}]
+        self.assertEqual(key_sheet.apply(layout, {'write': write, 'wipe': wipes}), 0)
         self.set.assert_not_called()
-        self.assertEqual(key_sheet.apply(layout, {'wipe': wipes[:key_sheet.WIPE_MAX]}), key_sheet.WIPE_MAX)
+        # 이미 빈 칸과 키가 다른 칸은 상한에 세지 않음
+        some = wipes[:key_sheet.WIPE_MAX] + [{'pos': 40, 'key': K1}, {'pos': 3, 'key': K2}, {'pos': 99, 'key': K3}]
+        self.assertEqual(key_sheet.apply(layout, {'write': write, 'wipe': some}), key_sheet.WIPE_MAX + 1)
 
 
 class SyncCase(unittest.IsolatedAsyncioTestCase):

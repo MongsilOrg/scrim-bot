@@ -15,7 +15,7 @@ logger = get_logger('key_sheet')
 CHECK_SECONDS = 60
 # Labs에서 할 일이 없어도 시트에 새로 넣은 키와 손으로 고친 이름을 받아 오는 주기
 FULL_SYNC_SECONDS = 600
-# 비울 칸이 이보다 많으면 Labs 응답이 잘못된 것으로 보고 원본 시트를 하나도 비우지 않는 상한
+# 비울 칸이 이보다 많으면 Labs 응답이 잘못된 것으로 보고 원본 시트를 바꾸지 않는 상한
 WIPE_MAX = 20
 KEY_FORM = re.compile(r'^[A-Z0-9]{5}(-[A-Z0-9]{5}){2}$')
 KEY_HEADER = '토너먼트 키'
@@ -139,6 +139,14 @@ def _set(layout: dict, row: dict, value: str) -> bool:
 def apply(layout: dict, result: dict) -> int:
     """Labs가 돌려준 칸 가운데 방금 읽은 시트와 키가 맞는 칸만 바꿈. 이름은 빈 칸에만 적음"""
     by_pos = {r['pos']: r for r in layout['rows']}
+    wipes = []
+    for task in result.get('wipe') or []:
+        row = by_pos.get(task.get('pos'))
+        if row and row['key'] == task.get('key') and row['name']:
+            wipes.append(row)
+    if len(wipes) > WIPE_MAX:
+        logger.error(f"[서버 키] 비울 칸이 {len(wipes)}개라 시트를 바꾸지 않음")
+        return 0
     done = 0
     for task in result.get('write') or []:
         row = by_pos.get(task.get('pos'))
@@ -148,14 +156,7 @@ def apply(layout: dict, result: dict) -> int:
         if _set(layout, row, name):
             row['name'] = name
             done += 1
-    wipes = result.get('wipe') or []
-    if len(wipes) > WIPE_MAX:
-        logger.error(f"[서버 키] 비울 칸이 {len(wipes)}개라 비우지 않음")
-        wipes = []
-    for task in wipes:
-        row = by_pos.get(task.get('pos'))
-        if not row or row['key'] != task.get('key') or not row['name']:
-            continue
+    for row in wipes:
         if _set(layout, row, ''):
             row['name'] = ''
             done += 1
