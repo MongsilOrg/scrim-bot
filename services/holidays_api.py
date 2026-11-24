@@ -198,14 +198,18 @@ async def get_rest_day_info(target_date: Optional[Union[date, datetime]] = None)
         logger.warning(f"[시즌] 프리시즌 판정 실패, 평일 방식 사용: {type(e).__name__}")
         preseason = False
 
+    # labs_ops가 bot.manager를 불러와 모듈 수준에서는 순환
+    from services import labs_ops
+    designated = target.isoformat() in labs_ops.free_days()
+
     labels = (
-        (["프리시즌"] if preseason else [])
+        (["프리시즌"] if preseason else []) + (["자율 진행일"] if designated else [])
         + (["토요일"] if is_saturday else []) + (["일요일"] if is_sunday else []) + holiday_names
     )
 
     return {
         "date": target,
-        "is_rest_day": is_saturday or is_sunday or is_holiday or preseason,
+        "is_rest_day": is_saturday or is_sunday or is_holiday or preseason or designated,
         "is_preseason": preseason,
         "is_saturday": is_saturday,
         "is_sunday": is_sunday,

@@ -51,6 +51,12 @@ class TestRestDayInfo(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(info["labels"], [])
 
 
+    async def test_designated_weekday_is_rest_day(self):
+        with patch("services.holidays_api.get_holiday_names", new=AsyncMock(return_value=[])), \
+                patch("services.labs_ops.free_days", return_value={"2026-08-19"}):
+            self.assertTrue((await holidays_api.get_rest_day_info(date(2026, 8, 19)))["is_rest_day"])
+            self.assertFalse((await holidays_api.get_rest_day_info(date(2026, 8, 20)))["is_rest_day"])
+
     async def test_preseason_weekday_is_rest_day(self):
         with patch("services.holidays_api.get_holiday_names", new=AsyncMock(return_value=[])), \
                 patch("services.holidays_api.is_preseason", new=AsyncMock(return_value=True)):

@@ -137,6 +137,27 @@ class RankingTest(unittest.TestCase):
         self.assertNotIn(1, mgr.actual_deployments)
         self.assertNotIn("2026-11-24", mgr.deploy_history)
 
+    def test_set_deployment_replaces_the_day_and_reports_change(self, _save):
+        mgr = _manager()
+        mgr.confirm_deployment(TUESDAY, "A", ["a", "b"])
+
+        self.assertTrue(mgr.set_deployment(TUESDAY, ["b", "c"]))
+        self.assertFalse(mgr.set_deployment(TUESDAY, ["c", "b"]))
+        self.assertEqual(mgr.deploy_history["2026-11-24"], ["b", "c"])
+        self.assertEqual(mgr.actual_deployments[1], ["b", "c"])
+
+        self.assertTrue(mgr.set_deployment(TUESDAY, []))
+        self.assertNotIn("2026-11-24", mgr.deploy_history)
+        self.assertNotIn(1, mgr.actual_deployments)
+
+    def test_set_deployment_outside_the_week_keeps_history_only(self, _save):
+        mgr = _manager()
+
+        self.assertTrue(mgr.set_deployment(date(2026, 11, 10), ["a"]))
+
+        self.assertEqual(mgr.deploy_history, {"2026-11-10": ["a"]})
+        self.assertEqual(mgr.actual_deployments, {})
+
     def test_confirm_after_week_change_keeps_history_only(self, _save):
         mgr = _manager()
         mgr.week_start = datetime(2026, 11, 30, tzinfo=KST)
@@ -458,6 +479,9 @@ class PickFlowTest(unittest.IsolatedAsyncioTestCase):
         text = _text(self.sent[1]["view"])
         self.assertIn(f"<@{waiting}>", text)
         self.assertNotIn(f"<@{reserve}>", text)
+        self.assertIn("님이 A조를 선택해 예비로 옮겨졌습니다.", text)
+        self.assertIn("남은 조를 선택하면 다시 진행으로 바뀝니다.", text)
+        self.assertNotIn("조 선택", text)
 
         await operator_pick._handle(self._interaction(int(reserve), 101), "A")
 
@@ -501,6 +525,14 @@ class PickFlowTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(self.sent), 1)
         self.assertIsNone(self.mgr.pick["message_id"])
+
+    async def test_designated_free_day_posts_no_pick(self):
+        with patch.object(operator_pick.labs_ops, "free_days", return_value={operator_pick.operator_log.scrim_day().isoformat()}):
+            await operator_pick.post_pick(self.client, self.guild, ["A", "B"])
+
+        self.assertEqual(self.sent, [])
+        self.assertIsNone(self.mgr.pick)
+
 
 
 if __name__ == "__main__":

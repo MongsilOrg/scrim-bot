@@ -308,6 +308,27 @@ class ScheduleManager:
         self.save_backup()
         return True
 
+    def set_deployment(self, day: date, user_ids: List[str]) -> bool:
+        """운영 화면에서 고친 그날의 명단으로 바꿈. 바뀌었으면 True"""
+        key = day.isoformat()
+        if sorted(self.deploy_history.get(key, [])) == sorted(user_ids):
+            return False
+        if user_ids:
+            self.deploy_history[key] = list(user_ids)
+        else:
+            self.deploy_history.pop(key, None)
+        day_index = (day - self.week_start.date()).days if self.week_start else -1
+        if 0 <= day_index < 7:
+            if user_ids:
+                self.actual_deployments[day_index] = list(user_ids)
+                for uid in user_ids:
+                    self.admin_names.setdefault(uid, uid)
+            else:
+                self.actual_deployments.pop(day_index, None)
+            self._readjust_remaining()
+        self.save_backup()
+        return True
+
     def _readjust_remaining(self) -> List[Tuple[int, List[str], List[str]]]:
         locked = self._locked_days()
         remaining_days = sorted(

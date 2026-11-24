@@ -1,10 +1,10 @@
-"""Labs 운영 화면 연동. 운영진과 투입 기록을 보내고 시드팀, 테스트 계정, 제재 사본을 받음."""
+"""Labs 운영 화면 연동. 운영진과 투입 기록을 보내고 시드팀, 테스트 계정, 제재 사본과 화면에서 고친 진행 명단, 자율 진행일을 받음."""
 import asyncio
 import json
 import time
 import uuid
-from datetime import timedelta
-from typing import Dict, List, Optional
+from datetime import date, timedelta
+from typing import Dict, List, Optional, Set
 
 import discord
 
@@ -72,6 +72,27 @@ def tests() -> Optional[Dict[str, float]]:
 
 def sanctions() -> Optional[List[dict]]:
     return _rows('sanctions')
+
+
+def free_days() -> Set[str]:
+    """운영 화면에서 지정한 자율 진행일"""
+    return {day for day in (copy() or {}).get('free') or [] if isinstance(day, str)}
+
+
+def _apply_days(days) -> bool:
+    """운영 화면에서 고친 날의 명단을 진행 기록에 반영. 바뀐 날이 있으면 True"""
+    schedule_mgr = BotManager.get_instance().get_schedule_manager()
+    changed = False
+    for item in days if isinstance(days, list) else []:
+        try:
+            day = date.fromisoformat(item['day'])
+            ids = [uid for uid in item['ids'] if isinstance(uid, str) and uid.isdigit()]
+        except (KeyError, TypeError, ValueError):
+            continue
+        if schedule_mgr.set_deployment(day, ids):
+            logger.info(f"[운영툴] {day.isoformat()} 진행 명단 반영: {len(ids)}명")
+            changed = True
+    return changed
 
 
 def _deploys(guild: discord.Guild, history: Dict[str, List[str]]) -> Dict[str, List[dict]]:
@@ -197,6 +218,14 @@ async def sync(client: Optional[discord.Client] = None) -> bool:
             return False
         await _note(client, True)
 
+        try:
+            if _apply_days(data.get('days')):
+                # schedule_views가 이 모듈을 불러와 모듈 수준에서는 순환
+                from commands.ui.schedule_views import refresh_dashboard
+                await refresh_dashboard(guild, schedule_mgr=BotManager.get_instance().get_schedule_manager())
+        except Exception as e:
+            logger.error(f"[운영툴] 진행 명단 반영 실패: {type(e).__name__}: {e}")
+
         changes = [c for c in data.get('changes') or [] if isinstance(c, dict) and (c.get('id') is None or c['id'] not in _posted)]
         posted = True
         for chunk in _chunks(changes):
@@ -210,9 +239,11 @@ async def sync(client: Optional[discord.Client] = None) -> bool:
         previous = copy() or {}
         # 게시하지 못한 변경은 번호를 올리지 않아 다음 주기에 다시 받음
         rev = data['rev'] if posted else previous.get('rev')
-        if not fresh and rev == previous.get('rev'):
+        had_free = previous.get('free') or []
+        free = sorted(d for d in data['free'] if isinstance(d, str)) if isinstance(data.get('free'), list) else had_free
+        if not fresh and rev == previous.get('rev') and free == had_free:
             return True
-        updated = {**previous, **fresh, 'rev': rev}
+        updated = {**previous, **fresh, 'rev': rev, 'free': free}
         try:
             save_json_atomic(settings.LABS_OPS_PATH, updated)
         except OSError as e:

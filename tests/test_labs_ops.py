@@ -113,6 +113,30 @@ class SyncTest(LabsOpsCase):
         self.assertEqual(self.request.await_args.args[2]['rev'], 3)
         self.assertEqual(labs_ops.sanctions(), [{'kind': '주의'}])
 
+    async def test_days_edited_on_labs_replace_history_and_refresh_dashboard(self):
+        self.schedule.set_deployment = MagicMock(side_effect=[True, False])
+        self.request.return_value = response(days=[
+            {'day': '2026-11-23', 'ids': [STAFF, 'abc', 7]}, {'day': 'x', 'ids': []}, {'day': '2026-11-24'}, {'day': '2026-11-22', 'ids': []},
+        ])
+
+        with patch('commands.ui.schedule_views.refresh_dashboard', new=AsyncMock()) as refresh:
+            await labs_ops.sync(self.client)
+
+        self.assertEqual([c.args for c in self.schedule.set_deployment.call_args_list], [(date(2026, 11, 23), [STAFF]), (date(2026, 11, 22), [])])
+        refresh.assert_awaited_once()
+
+    async def test_free_days_saved_and_served(self):
+        self.assertEqual(labs_ops.free_days(), set())
+        self.request.return_value = response(free=['2026-11-26', '2026-11-25', 3])
+        await labs_ops.sync(self.client)
+        self.assertEqual(self.saved()['free'], ['2026-11-25', '2026-11-26'])
+
+        # 같은 번호의 응답이어도 자율 진행일이 바뀌면 저장
+        self.request.return_value = response(free=[])
+        await labs_ops.sync(self.client)
+        labs_ops._copy, labs_ops._copy_loaded = None, False
+        self.assertEqual(labs_ops.free_days(), set())
+
     async def test_changes_posted_to_log_channel_without_mentions(self):
         self.request.return_value = response(changes=[{'id': 3, 'at': 0, 'by': '운영진A', 'text': '시드A를 추가했습니다.'}])
 

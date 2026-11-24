@@ -14,7 +14,7 @@ from commands.ui.schedule_views import refresh_dashboard
 from config.logging_config import get_logger
 from config.settings import settings
 from models.schedule_manager import ACTIVE_DAYS, PICK_CLOSE_HOUR
-from services import holidays_api, labs_api
+from services import holidays_api, labs_api, labs_ops
 from utils import operator_log
 from utils.helpers import get_current_kst_time, is_admin
 from utils.layout_helpers import FOOTER_TEXT, error_view, info_view, permission_error_view, send_response
@@ -39,7 +39,8 @@ class PickButton(DynamicItem[Button], template=r"scrim:pick:(?P<key>[A-Z]|declin
         if key == DECLINE:
             button = Button(label="오늘 불가", style=ButtonStyle.secondary, custom_id=f"scrim:pick:{key}")
         else:
-            style = ButtonStyle.secondary if taken else ButtonStyle.primary
+            # 선택한 사람이 다시 누르면 취소되므로 비활성으로 두지 않고 색으로만 구분
+            style = ButtonStyle.success if taken else ButtonStyle.primary
             button = Button(label=f"{key}조", style=style, custom_id=f"scrim:pick:{key}")
         super().__init__(button)
 
@@ -142,6 +143,7 @@ async def _handle(interaction: discord.Interaction, key: str) -> None:
 
     uid = str(member.id)
     notice = None
+    title = "명단 변경"
     if key == DECLINE:
         result = schedule_mgr.decline(uid)
         if result['status'] == 'not_target':
@@ -149,6 +151,7 @@ async def _handle(interaction: discord.Interaction, key: str) -> None:
             return
         if result['assigned']:
             notice = f"<@{result['promoted']}>\n{result['assigned']}조에 배정됐습니다."
+            title = "조 배정"
         elif result['promoted']:
             notice = f"<@{result['promoted']}>\n{PROMOTED_TEXT}"
         logger.info(f"[조 고르기] 오늘 불가 - {member.display_name}, 승격: {result['promoted']}")
@@ -168,7 +171,9 @@ async def _handle(interaction: discord.Interaction, key: str) -> None:
             await send_response(interaction, error_view("오늘 진행할 운영진과 예비만 조를 선택할 수 있습니다."))
             return
         if result['demoted']:
-            notice = f"{_mentions(result['demoted'])}\n다른 운영진이 조를 먼저 선택해 예비로 바뀌었습니다."
+            notice = f"{_mentions(result['demoted'])}\n{_name(guild, schedule_mgr, uid)}님이 {key}조를 선택해 예비로 옮겨졌습니다."
+            if any(letter not in pick['choices'] for letter in pick['groups']):
+                notice += "\n남은 조를 선택하면 다시 진행으로 바뀝니다."
         elif result['promoted']:
             notice = f"{_mentions(result['promoted'])}\n{PROMOTED_TEXT}"
         logger.info(f"[조 고르기] {key}조 {'취소' if status == 'cancelled' else '선택'} - {member.display_name}")
@@ -176,7 +181,7 @@ async def _handle(interaction: discord.Interaction, key: str) -> None:
     await interaction.response.edit_message(view=pick_view(guild, schedule_mgr))
     await _sync_roles(guild, schedule_mgr)
     if notice:
-        await _notify(interaction.channel, schedule_mgr, notice, "조 선택")
+        await _notify(interaction.channel, schedule_mgr, notice, title)
 
 
 async def _delete_messages(channel, pick: Optional[dict]) -> None:
@@ -253,7 +258,7 @@ async def post_pick(client: discord.Client, guild: discord.Guild, letters: List[
     confirm_pending(schedule_mgr)
     await _delete_messages(channel, schedule_mgr.pick)
     day = operator_log.scrim_day()
-    if not letters or day.weekday() not in ACTIVE_DAYS:
+    if not letters or day.weekday() not in ACTIVE_DAYS or day.isoformat() in labs_ops.free_days():
         schedule_mgr.save_backup()
         await refresh_dashboard(guild, schedule_mgr=schedule_mgr)
         return
