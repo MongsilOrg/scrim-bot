@@ -372,7 +372,6 @@ class TeamInputView(LayoutView):
                     accent_colour=Color.orange(),
                     error_text="조편성을 다시 실행하지 못했습니다.\n잠시 후 다시 시도해주세요.",
                     on_confirm=self._rerun_assignment,
-                    back_text="실행하지 않았습니다.",
                 )
                 view.message = await send_response(interaction, view)
                 return
@@ -466,11 +465,9 @@ class ConfirmView(_TimeoutEditView):
         confirm_emoji: Optional[str] = None,
         error_text: str,
         on_confirm,
-        back_text: str = "취소하지 않았습니다.",
     ):
         super().__init__()
         self._on_confirm = on_confirm
-        self._back_text = back_text
         self._error_text = error_text
         self._title = title
 
@@ -484,16 +481,13 @@ class ConfirmView(_TimeoutEditView):
 
         self.confirm_button = Button(label=confirm_label, style=ButtonStyle.danger, emoji=confirm_emoji)
         self.confirm_button.callback = self.confirm_callback
-        self.back_button = Button(label="돌아가기", style=ButtonStyle.secondary)
-        self.back_button.callback = self.back_callback
-        self.add_item(ActionRow(self.confirm_button, self.back_button))
+        self.add_item(ActionRow(self.confirm_button))
 
     async def confirm_callback(self, interaction: discord.Interaction) -> None:
         """on_confirm이 LayoutView를 돌려주면 확인 카드를 그 결과로 바꿈."""
         # 멈추지 않으면 on_timeout이 결과 카드를 시간 초과로 덮어씀
         self.stop()
         self.confirm_button.disabled = True
-        self.back_button.disabled = True
         try:
             await interaction.response.edit_message(view=self)
             result = await self._on_confirm(interaction)
@@ -508,14 +502,6 @@ class ConfirmView(_TimeoutEditView):
                 await interaction.edit_original_response(view=result)
             except Exception as e:
                 logger.warning(f"[뷰] 확인 결과 표시 실패 - {self._title}: {e}")
-
-    async def back_callback(self, interaction: discord.Interaction) -> None:
-        self.stop()
-        try:
-            logger.info(f"[뷰] 확인 돌아가기 - {self._title} | 사용자: {interaction.user}")
-            await interaction.response.edit_message(view=info_view(self._back_text, title="↩️ 돌아가기"))
-        except Exception as e:
-            logger.error(f"[뷰] 돌아가기 콜백 실패: {e}", exc_info=True)
 
     async def on_timeout(self) -> None:
         logger.info(f"[뷰] 확인 시간 만료 - {self._title}")

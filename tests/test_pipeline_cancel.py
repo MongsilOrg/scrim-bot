@@ -112,18 +112,6 @@ class ConfirmViewTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(inter.original_edits, [])
         self.assertTrue(view.confirm_button.disabled)
 
-    async def test_back_replaces_card_and_stops(self):
-        async def on_confirm(_):
-            raise AssertionError("호출되면 안 됨")
-
-        view = make_confirm(on_confirm)
-        inter = FakeInteraction()
-
-        await view.back_callback(inter)
-
-        self.assertTrue(view.is_finished())
-        self.assertIn("취소하지 않았습니다.", texts(inter.response.edited[0]))
-
 
 def patch_manager(teams):
     mgr = mock.Mock()
