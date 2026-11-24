@@ -10,6 +10,7 @@ from discord.ui import ActionRow, Button, Container, DynamicItem, LayoutView, Se
 from config.logging_config import get_logger
 from config.settings import settings
 from services.holidays_api import get_rest_day_info
+from utils import operator_log
 from utils.layout_helpers import error_view, permission_error_view, warning_view, send_response, FOOTER_TEXT
 from utils.helpers import (
     get_current_kst_time,
@@ -195,6 +196,7 @@ class WeatherButton(
         )
 
         await interaction.response.edit_message(view=new_view)
+        operator_log.record(interaction.user, self.group_letter, self.round_number, 'weather')
         logger.info(f"[날씨] {self.group_letter}조 {self.round_number}R 서브 날씨 선택: {weather_name}, 선택: {interaction.user}")
 
 
@@ -371,6 +373,7 @@ async def 방코드(interaction: discord.Interaction, room_code: str) -> None:
             return
 
         logger.debug(f"[명령어] Round {round_number} 방코드 공지 완료: {cleaned_room_code}")
+        operator_log.record(interaction.user, group_letter, round_number, 'room_code')
         if weather_warning:
             try:
                 await interaction.followup.send(view=warning_view(weather_warning), ephemeral=True)

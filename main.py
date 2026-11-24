@@ -45,6 +45,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from bot.client import ScrimBot
 from bot.events import bootstrap_on_ready, on_app_command_error, on_message as handle_message
 from bot.manager import BotManager
+from commands.operator_pick import PickButton
 from commands.room_code import WeatherButton, 방코드
 from commands.warning import 제재부여
 from config.logging_config import ScrimbotLogger
@@ -97,7 +98,7 @@ async def main():
 
         client = ScrimBot()
         BotManager.get_instance().set_client(client)
-        client.add_dynamic_items(WeatherButton)
+        client.add_dynamic_items(WeatherButton, PickButton)
 
         _register_client_events(client)
         _register_app_commands(client)

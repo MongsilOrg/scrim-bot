@@ -25,6 +25,7 @@ STAGE_GLOBAL_NOTICE = 'global_notice'
 STAGE_ROLES = 'roles'
 STAGE_GROUP_NOTICES = 'group_notices'
 STAGE_VOICE = 'voice'
+STAGE_OPERATORS = 'operators'
 STAGE_LABS = 'labs'
 
 DELAY_NOTICE = "조편성이 늦어지고 있습니다.\n운영진이 확인하고 있습니다."
@@ -354,6 +355,15 @@ class ScrimOrchestrator:
         if STAGE_VOICE not in done:
             await service.rename_voice_channels(guild, groups)
             self._mark_stage(STAGE_VOICE)
+
+        if STAGE_OPERATORS not in done:
+            try:
+                from commands.operator_pick import post_pick
+                await post_pick(client, guild, [chr(65 + i) for i, group in enumerate(groups) if group])
+            except Exception as e:
+                # 조 고르기를 올리지 못해도 대회 연결과 조편성 마무리는 진행
+                logger.error(f"[조 고르기] 게시 실패: {e}", exc_info=True)
+            self._mark_stage(STAGE_OPERATORS)
 
         if missing:
             letters = ", ".join(f"{letter}조" for letter in missing)

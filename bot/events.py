@@ -4,6 +4,7 @@ import discord
 from discord import app_commands
 
 from bot.manager import BotManager
+from commands.room_code import get_round_number
 from commands.schedule import setup_schedule_dashboard
 from commands.ticket_cleanup import setup_ticket_cleanup
 from commands.scrim import setup_scrim_dashboard
@@ -11,7 +12,8 @@ from utils.layout_helpers import error_view, send_response
 from config.logging_config import get_logger
 from config.settings import settings
 from services import labs_api
-from utils.helpers import get_current_kst_time, get_group_letter, is_assignment_window, is_csv_filename
+from utils import operator_log
+from utils.helpers import get_current_kst_time, get_group_letter, is_admin, is_assignment_window, is_csv_filename
 
 if TYPE_CHECKING:
     from bot.client import ScrimBot
@@ -107,6 +109,10 @@ async def on_message(message: discord.Message) -> None:
     group_letter = get_group_letter(message.channel.id)
     if not group_letter:
         return
+    # 라운드 번호는 채널 기록을 읽어 구하므로 운영진이 올렸을 때만 계산
+    if isinstance(message.author, discord.Member) and is_admin(message.author):
+        played = await get_round_number(message.channel) - 1
+        operator_log.record(message.author, group_letter, max(1, played), 'csv')
     if labs_api.linked_today(group_letter):
         client = BotManager.get_instance().get_client()
         if client:

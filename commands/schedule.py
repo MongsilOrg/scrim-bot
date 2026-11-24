@@ -5,6 +5,7 @@ from bot.client import ScrimBot
 from bot.manager import BotManager
 import discord
 
+from commands.operator_pick import refresh_count_since, start_close_task
 from commands.ui.schedule_views import refresh_dashboard, schedule_members
 from config.logging_config import get_logger
 from config.settings import settings
@@ -141,7 +142,12 @@ async def setup_schedule_dashboard(client: ScrimBot) -> None:
         await delete_old_reminders(channel, schedule_mgr)
 
     schedule_mgr.status_channel_id = settings.SCHEDULE_CHANNEL_ID
+    try:
+        await refresh_count_since(schedule_mgr)
+    except Exception as e:
+        logger.warning(f"[일정] 시즌 시작일 조회 실패: {e}")
     await refresh_dashboard(guild, channel=channel, schedule_mgr=schedule_mgr)
+    start_close_task(client)
 
     if _weekly_reset_task is not None:
         _weekly_reset_task.cancel()

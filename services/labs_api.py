@@ -198,6 +198,11 @@ async def post_backup(client: discord.Client, group_letter: str, finished_only: 
             save_state(state)
         raise
     logger.info(f"[Labs] {group_letter}조 게임 ID {len(replays)}개 백업 채널 전송")
+    try:
+        from commands.operator_pick import confirm_group
+        await confirm_group(client, state['date'], group_letter)
+    except Exception as e:
+        logger.error(f"[투입] {group_letter}조 확정 실패: {e}", exc_info=True)
     return True
 
 

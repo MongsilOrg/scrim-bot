@@ -175,6 +175,15 @@ async def rank_season_ids() -> Optional[Tuple[int, Optional[int]]]:
     return ids[-1], (ids[-2] if len(ids) > 1 else None)
 
 
+async def regular_season_start() -> Optional[datetime]:
+    """지금 진행 중이거나 가장 최근에 시작한 정규 시즌의 시작 시각. 시즌 목록을 받은 적이 없으면 None"""
+    if not settings.BSER_API_KEY:
+        return None
+    now = get_current_kst_time()
+    starts = [s[1] for s in await _load_seasons(now) if s[0].lower().startswith('season') and s[1] <= now]
+    return starts[-1] if starts else None
+
+
 async def get_rest_day_info(target_date: Optional[Union[date, datetime]] = None) -> dict:
     target = _to_date(target_date)
 

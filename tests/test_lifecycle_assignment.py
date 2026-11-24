@@ -86,12 +86,14 @@ class AssignmentHarness(unittest.IsolatedAsyncioTestCase):
         self.processor.is_test_account = lambda name: False
 
         self.now = _kst(17, 0)
+        self.post_pick = AsyncMock()
         for target in (
             patch.object(scrim_orchestrator, 'get_current_kst_time', side_effect=lambda: self.now),
             patch('models.team_data_manager.get_current_kst_time', side_effect=lambda: self.now),
             patch.object(scrim_orchestrator, 'record_assignment', new=AsyncMock()),
             patch.object(scrim_orchestrator, 'get_rest_day_info', new=AsyncMock(return_value={'is_rest_day': False})),
             patch.object(scrim_orchestrator, 'get_server_info', new=lambda: {'operate': 'Live'}),
+            patch('commands.operator_pick.post_pick', new=self.post_pick),
         ):
             target.start()
             self.addCleanup(target.stop)
@@ -151,8 +153,9 @@ class FreshAssignmentTest(AssignmentHarness):
         self.assertEqual(mgr.last_auto_assignment, self.now)
         self.assertEqual(
             sorted(mgr.assignment_progress['done']),
-            sorted(['global_notice', 'roles', 'group_notices', 'voice']),
+            sorted(['global_notice', 'roles', 'group_notices', 'voice', 'operators']),
         )
+        self.assertEqual(self.post_pick.await_args.args[2], ['A'])
         self.log_channel.send.assert_not_awaited()
 
     async def test_completed_assignment_does_not_resume_after_restart(self):

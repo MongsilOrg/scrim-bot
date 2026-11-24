@@ -1,7 +1,8 @@
+import hashlib
 import json
 import os
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Set, Tuple
 
 from config.logging_config import get_logger
@@ -19,6 +20,10 @@ OPEN_WEEKDAY = ACTIVE_DAYS[-1]
 REMINDER_WEEKDAY = 6
 REMINDER_HOUR = 22
 POOL_SIZE = 6
+# 이 시각까지 조를 고르지 않은 대상은 남은 조에 순위대로 넣음
+PICK_CLOSE_HOUR = 19
+# 확정한 조 목록은 다음 날 다시 확정하지 않을 만큼만 남김
+CONFIRMED_KEEP_DAYS = 14
 
 EXCLUDED_USER_IDS: Set[int] = {settings.TEST_ACCOUNT_CONTACT_ID}
 
@@ -51,6 +56,14 @@ class ScheduleManager:
         self.status_channel_id: Optional[int] = None
         # 다음 주 일정이 열릴 때 지울 미응답 알림
         self.reminder_message_ids: List[int] = []
+
+        # 날짜별 투입자. 순위를 시즌 누적으로 세므로 주가 바뀌어도 지우지 않음
+        self.deploy_history: Dict[str, List[str]] = {}
+        # 기록으로 확정한 '날짜:조'. 투입 버튼으로 뺀 사람이 다시 들어가지 않게 한 번만 확정
+        self.confirmed: List[str] = []
+        # 지금 정규 시즌이 시작한 날. 시즌 목록을 받지 못하면 None이고 전부 셈
+        self.count_since: Optional[str] = None
+        self.pick: Optional[dict] = None
 
     def initialize_week(self) -> str:
         now = get_current_kst_time()
@@ -165,55 +178,59 @@ class ScheduleManager:
                 else:
                     lines.append(f'> **{WEEKDAYS[day_idx]}** 배정 없음')
 
+        counts = self.season_counts()
+        if counts:
+            ordered = sorted(all_admin_ids, key=lambda item: (counts.get(item[0], 0), item[1]))
+            lines.append('')
+            lines.append('**시즌 투입** ' + ', '.join(f'{name} {counts.get(uid, 0)}회' for uid, name in ordered))
+
         return '\n'.join(lines)
 
-    def generate_assignments(self) -> Dict[int, List[str]]:
-        day_candidates: Dict[int, List[str]] = defaultdict(list)
-        for uid, days in self.availability.items():
-            for day in days:
-                day_candidates[day].append(uid)
+    def _day_date(self, day_index: int) -> Optional[date]:
+        return (self.week_start + timedelta(days=day_index)).date() if self.week_start else None
 
-        assign_count: Dict[str, int] = defaultdict(int)
-        avail_count: Dict[str, int] = {
-            uid: len(days) for uid, days in self.availability.items()
-        }
+    def season_counts(self) -> Dict[str, int]:
+        counts: Dict[str, int] = defaultdict(int)
+        for day, uids in self.deploy_history.items():
+            if self.count_since and day < self.count_since:
+                continue
+            for uid in uids:
+                counts[uid] += 1
+        return counts
 
-        assignments: Dict[int, List[str]] = {}
+    def _last_deployed(self) -> Dict[str, str]:
+        last: Dict[str, str] = {}
+        for day, uids in self.deploy_history.items():
+            for uid in uids:
+                if day > last.get(uid, ''):
+                    last[uid] = day
+        return last
 
-        sorted_days = sorted(
-            day_candidates.keys(),
-            key=lambda d: len(day_candidates[d]),
+    def ranked_for_day(self, day_index: int) -> List[str]:
+        """그날 가능하다고 응답한 사람을 투입 순위대로"""
+        counts = self.season_counts()
+        last = self._last_deployed()
+        week = self.week_start.date().isoformat() if self.week_start else ''
+        candidates = [uid for uid, days in self.availability.items() if day_index in days]
+        return sorted(
+            candidates,
+            key=lambda uid: (
+                counts.get(uid, 0),
+                last.get(uid, ''),
+                len(self.availability[uid]),
+                # ID 순이면 동점일 때 늘 같은 사람이 앞에 와서 주마다 순서를 바꿈
+                hashlib.sha1(f"{week}:{uid}".encode()).hexdigest(),
+            ),
         )
 
-        for day in sorted_days:
-            candidates = day_candidates[day]
-            if not candidates:
-                assignments[day] = []
-                continue
-
-            ranked = sorted(
-                candidates,
-                key=lambda uid: (
-                    assign_count[uid],
-                    avail_count.get(uid, 0),
-                    uid,
-                ),
-            )
-
-            selected = ranked[:POOL_SIZE]
-            assignments[day] = selected
-
-            for uid in selected:
-                assign_count[uid] += 1
-
-        for day in ACTIVE_DAYS:
-            if day not in assignments:
-                assignments[day] = []
-
-        self.assignments = assignments
+    def generate_assignments(self) -> Dict[int, List[str]]:
+        days = set(ACTIVE_DAYS)
+        for available in self.availability.values():
+            days |= available
+        self.assignments = {day: self.ranked_for_day(day)[:POOL_SIZE] for day in sorted(days)}
         self.save_backup()
         logger.info("[일정] 편성 완료")
-        return assignments
+        return self.assignments
 
     def toggle_self_deployment(self, day_index: int, user_id: str) -> Tuple[bool, List[Tuple[int, List[str], List[str]]]]:
         """반환은 등록 여부와 재배정으로 바뀐 요일별 추가, 제외 목록."""
@@ -228,6 +245,7 @@ class ScheduleManager:
         else:
             deployed.append(user_id)
             self.admin_names.setdefault(user_id, user_id)
+        self._sync_history(day_index)
 
         changes = self._readjust_remaining()
         self.save_backup()
@@ -246,69 +264,162 @@ class ScheduleManager:
                 locked.add(day)
         return locked
 
-    def _readjust_remaining(self) -> List[Tuple[int, List[str], List[str]]]:
-        deploy_count: Dict[str, int] = defaultdict(int)
-        for day_idx, deployed in self.actual_deployments.items():
-            for uid in deployed:
-                deploy_count[uid] += 1
+    def _sync_history(self, day_index: int) -> None:
+        day = self._day_date(day_index)
+        if day is None:
+            return
+        uids = list(self.actual_deployments.get(day_index, []))
+        if uids:
+            self.deploy_history[day.isoformat()] = uids
+        else:
+            self.deploy_history.pop(day.isoformat(), None)
 
+    def confirm_deployment(self, day: date, group_letter: str, user_ids: List[str]) -> bool:
+        """기록으로 판정한 그 조의 투입자를 한 번만 반영. 반영했으면 True"""
+        key = f"{day.isoformat()}:{group_letter}"
+        if key in self.confirmed:
+            return False
+        oldest = (day - timedelta(days=CONFIRMED_KEEP_DAYS)).isoformat()
+        self.confirmed = [k for k in self.confirmed if k >= oldest] + [key]
+        history = self.deploy_history.setdefault(day.isoformat(), [])
+        history.extend(uid for uid in user_ids if uid not in history)
+        if not history:
+            del self.deploy_history[day.isoformat()]
+        day_index = (day - self.week_start.date()).days if self.week_start else -1
+        if 0 <= day_index < 7 and user_ids:
+            deployed = self.actual_deployments.setdefault(day_index, [])
+            deployed.extend(uid for uid in user_ids if uid not in deployed)
+            for uid in user_ids:
+                self.admin_names.setdefault(uid, uid)
+        self._readjust_remaining()
+        self.save_backup()
+        return True
+
+    def _readjust_remaining(self) -> List[Tuple[int, List[str], List[str]]]:
         locked = self._locked_days()
         remaining_days = sorted(
             d for d in self.assignments
             if not self.actual_deployments.get(d) and d not in locked
         )
-
-        if not remaining_days:
-            return []
-
-        before = {d: list(self.assignments.get(d, [])) for d in remaining_days}
-
-        day_candidates: Dict[int, List[str]] = defaultdict(list)
-        for uid, days in self.availability.items():
-            for day in days:
-                if day in remaining_days:
-                    day_candidates[day].append(uid)
-
-        avail_count: Dict[str, int] = {
-            uid: len(days) for uid, days in self.availability.items()
-        }
-
-        sorted_remaining = sorted(
-            remaining_days,
-            key=lambda d: len(day_candidates.get(d, [])),
-        )
-
-        assign_count: Dict[str, int] = defaultdict(int)
-
-        for day in sorted_remaining:
-            candidates = day_candidates.get(day, [])
-            if not candidates:
-                self.assignments[day] = []
-                continue
-
-            ranked = sorted(
-                candidates,
-                key=lambda uid: (
-                    deploy_count.get(uid, 0),
-                    assign_count.get(uid, 0),
-                    avail_count.get(uid, 0),
-                    uid,
-                ),
-            )
-            selected = ranked[:POOL_SIZE]
-            self.assignments[day] = selected
-
-            for uid in selected:
-                assign_count[uid] += 1
-
         changes = []
         for day in remaining_days:
-            after = self.assignments.get(day, [])
-            added = [uid for uid in after if uid not in before[day]]
-            removed = [uid for uid in before[day] if uid not in after]
+            before = self.assignments.get(day, [])
+            after = self.ranked_for_day(day)[:POOL_SIZE]
+            self.assignments[day] = after
+            added = [uid for uid in after if uid not in before]
+            removed = [uid for uid in before if uid not in after]
             if added or removed:
                 changes.append((day, added, removed))
         return changes
+
+    def open_pick(self, day: date, letters: List[str]) -> dict:
+        """그날 조 고르기를 시작. 같은 날 다시 열면 남아 있는 조의 선택을 그대로 둠"""
+        day_index = (day - self.week_start.date()).days if self.week_start else -1
+        ranked = self.ranked_for_day(day_index)[:POOL_SIZE] if 0 <= day_index < 7 else []
+        old = self.pick if self.pick and self.pick.get('date') == day.isoformat() else None
+        declined = [uid for uid in (old or {}).get('declined', [])]
+        choices = {g: uid for g, uid in (old or {}).get('choices', {}).items() if g in letters}
+        ranked = [uid for uid in ranked if uid not in declined]
+        # 이미 고른 사람은 순위가 밀려도 대상으로 둠
+        chosen = [uid for uid in choices.values() if uid in ranked]
+        rest = [uid for uid in ranked if uid not in chosen]
+        targets = chosen + rest[:max(0, len(letters) - len(choices))]
+        self.pick = {
+            'date': day.isoformat(),
+            'message_id': None,
+            'groups': list(letters),
+            'targets': targets,
+            'reserves': [uid for uid in rest if uid not in targets],
+            'choices': choices,
+            'declined': declined,
+            'closed': False,
+            # 봇이 붙인 조 역할만 적어, 참가자로 받은 역할은 빼지 않음
+            'granted': dict((old or {}).get('granted', {})),
+            'notice_ids': [],
+        }
+        self.save_backup()
+        return self.pick
+
+    def picked_on(self, day: date) -> Dict[str, Set[int]]:
+        if not self.pick or self.pick.get('date') != day.isoformat():
+            return {}
+        return {letter: {int(uid)} for letter, uid in self.pick['choices'].items()}
+
+    def _open_groups(self) -> List[str]:
+        return [g for g in self.pick['groups'] if g not in self.pick['choices']]
+
+    def pick_group(self, user_id: str, letter: str) -> str:
+        """picked, cancelled, taken, not_allowed 가운데 하나"""
+        pick = self.pick
+        if letter not in pick['groups']:
+            return 'not_allowed'
+        holder = pick['choices'].get(letter)
+        if holder == user_id:
+            del pick['choices'][letter]
+            self.save_backup()
+            return 'cancelled'
+        if holder:
+            return 'taken'
+        if user_id not in pick['targets']:
+            waiting = [uid for uid in pick['targets'] if uid not in pick['choices'].values()]
+            # 대상이 고를 조는 남겨 두고, 그보다 많은 빈 조만 다른 운영진에게 엶
+            if len(self._open_groups()) <= len(waiting):
+                return 'not_allowed'
+        for group, uid in list(pick['choices'].items()):
+            if uid == user_id:
+                del pick['choices'][group]
+        pick['choices'][letter] = user_id
+        if user_id in pick['declined']:
+            pick['declined'].remove(user_id)
+        self.save_backup()
+        return 'picked'
+
+    def decline(self, user_id: str) -> dict:
+        """status는 declined, reserve_removed, not_target. 대상이 빠지면 예비 1순위를 promoted로 올림"""
+        pick = self.pick
+        result = {'status': 'not_target', 'promoted': None, 'assigned': None}
+        if user_id in pick['reserves']:
+            pick['reserves'].remove(user_id)
+            pick['declined'].append(user_id)
+            result['status'] = 'reserve_removed'
+        elif user_id in pick['targets'] or user_id in pick['choices'].values():
+            if user_id in pick['targets']:
+                pick['targets'].remove(user_id)
+            for group, uid in list(pick['choices'].items()):
+                if uid == user_id:
+                    del pick['choices'][group]
+            pick['declined'].append(user_id)
+            result['status'] = 'declined'
+            waiting = [uid for uid in pick['targets'] if uid not in pick['choices'].values()]
+            if pick['reserves'] and len(self._open_groups()) > len(waiting):
+                promoted = pick['reserves'].pop(0)
+                pick['targets'].append(promoted)
+                result['promoted'] = promoted
+                if pick['closed']:
+                    result['assigned'] = self._open_groups()[0]
+                    pick['choices'][result['assigned']] = promoted
+        else:
+            return result
+        self.save_backup()
+        return result
+
+    def close_pick(self) -> List[Tuple[str, str]]:
+        """마감. 고르지 않은 대상을 남은 조에 순위대로 넣고 넣은 (user_id, 조) 목록을 돌려줌"""
+        pick = self.pick
+        if not pick or pick['closed']:
+            return []
+        pick['closed'] = True
+        assigned = []
+        for uid in pick['targets']:
+            open_groups = self._open_groups()
+            if not open_groups:
+                break
+            if uid in pick['choices'].values():
+                continue
+            pick['choices'][open_groups[0]] = uid
+            assigned.append((uid, open_groups[0]))
+        self.save_backup()
+        return assigned
 
     def save_backup(self) -> None:
         try:
@@ -332,6 +443,10 @@ class ScheduleManager:
                 'status_message_id': self.status_message_id,
                 'status_channel_id': self.status_channel_id,
                 'reminder_message_ids': self.reminder_message_ids,
+                'deploy_history': self.deploy_history,
+                'confirmed': self.confirmed,
+                'count_since': self.count_since,
+                'pick': self.pick,
             }
             save_json_atomic(BACKUP_PATH, data, indent=2)
         except Exception as e:
@@ -376,6 +491,14 @@ class ScheduleManager:
             self.status_message_id = data.get('status_message_id')
             self.status_channel_id = data.get('status_channel_id')
             self.reminder_message_ids = data.get('reminder_message_ids', [])
+            self.deploy_history = data.get('deploy_history') or {}
+            if 'deploy_history' not in data:
+                # 시즌 누적을 두기 전 백업은 이번 주 투입 기록에서 채움
+                for day_index in self.actual_deployments:
+                    self._sync_history(day_index)
+            self.confirmed = data.get('confirmed') or []
+            self.count_since = data.get('count_since')
+            self.pick = data.get('pick')
 
             logger.info(f"[일정] 백업 복구 완료: {self.week_label}")
             return True
