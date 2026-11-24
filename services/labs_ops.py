@@ -1,5 +1,6 @@
 """Labs 운영 화면 연동. 운영진과 투입 기록을 보내고 시드팀, 테스트 계정, 제재 사본과 화면에서 고친 진행 명단, 자율 진행일을 받음."""
 import asyncio
+import hashlib
 import json
 import time
 import uuid
@@ -37,6 +38,8 @@ _unanswered: Dict[tuple, tuple] = {}
 UNANSWERED_SECONDS = 600
 # rev를 올리지 못한 주기에 이미 게시한 변경의 id. 다음 주기에 다시 받아도 건너뜀
 _posted: set = set()
+# 마지막으로 보낸 구성원 목록의 요약값
+_members_sent = ''
 
 
 def copy() -> Optional[dict]:
@@ -253,6 +256,27 @@ async def sync(client: Optional[discord.Client] = None) -> bool:
         return True
 
 
+async def sync_members(client: Optional[discord.Client] = None) -> bool:
+    """Labs 서버 키 탭에서 받을 사람을 닉네임으로 찾도록 구성원 목록을 보냄. 바뀐 때에만 전송"""
+    global _members_sent
+    client = client or _client
+    guild = client.get_guild(settings.GUILD_ID) if client else None
+    # 구성원 목록을 다 받기 전에 보내면 Labs에 저장된 목록에서 사람이 빠짐
+    if not labs_api.enabled() or guild is None or not guild.chunked:
+        return False
+    members = sorted(({'id': str(m.id), 'name': m.display_name, 'username': m.name} for m in guild.members if not m.bot), key=lambda m: m['id'])
+    if not members:
+        return False
+    digest = hashlib.sha256(json.dumps(members, ensure_ascii=False).encode()).hexdigest()
+    if digest == _members_sent:
+        return True
+    data = await labs_api.request('PUT', '/api/bot/scrim-members', {'members': members})
+    if not data or data.get('status') != 'ok':
+        return False
+    _members_sent = digest
+    return True
+
+
 def start_sync(client: discord.Client) -> None:
     global _client, _task
     _client = client
@@ -263,6 +287,7 @@ def start_sync(client: discord.Client) -> None:
         while True:
             try:
                 await sync(client)
+                await sync_members(client)
             except asyncio.CancelledError:
                 raise
             except Exception as e:

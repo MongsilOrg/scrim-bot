@@ -32,7 +32,7 @@ class LabsOpsCase(unittest.IsolatedAsyncioTestCase):
         for name, value in (('LABS_SCRIM_TOKEN', 's' * 64), ('LABS_OPS_PATH', self.path), ('GUILD_ID', 1), ('LOG_CHANNEL_ID', 9)):
             self.addCleanup(setattr, settings, name, getattr(settings, name))
             setattr(settings, name, value)
-        for name in ('_copy', '_copy_loaded', '_client', '_failures', '_notified'):
+        for name in ('_copy', '_copy_loaded', '_client', '_failures', '_notified', '_members_sent'):
             self.addCleanup(setattr, labs_ops, name, getattr(labs_ops, name))
         labs_ops._copy, labs_ops._copy_loaded, labs_ops._failures, labs_ops._notified = None, False, 0, False
         labs_ops._unanswered.clear()
@@ -229,6 +229,42 @@ class SyncTest(LabsOpsCase):
 
         self.assertEqual(len(self.posted()), 2)
         self.assertIn("Labs 연결이 복구되었습니다.", self.posted()[1])
+
+
+class MembersTest(LabsOpsCase):
+    def setUp(self):
+        super().setUp()
+        labs_ops._members_sent = ''
+        self.guild.members = [
+            SimpleNamespace(id=30, display_name='나', name='b', bot=False),
+            SimpleNamespace(id=20, display_name='가', name='a', bot=False),
+            SimpleNamespace(id=10, display_name='봇', name='bot', bot=True),
+        ]
+        self.request.return_value = {'status': 'ok', 'members': 2}
+
+    async def test_sent_once_until_changed(self):
+        self.assertTrue(await labs_ops.sync_members(self.client))
+        self.assertTrue(await labs_ops.sync_members(self.client))
+        self.request.assert_awaited_once_with('PUT', '/api/bot/scrim-members', {'members': [
+            {'id': '20', 'name': '가', 'username': 'a'}, {'id': '30', 'name': '나', 'username': 'b'}]})
+        self.guild.members[0].display_name = '바뀐 이름'
+        self.assertTrue(await labs_ops.sync_members(self.client))
+        self.assertEqual(self.request.await_count, 2)
+
+    async def test_failed_send_is_retried(self):
+        self.request.return_value = None
+        self.assertFalse(await labs_ops.sync_members(self.client))
+        self.request.return_value = {'status': 'ok', 'members': 2}
+        self.assertTrue(await labs_ops.sync_members(self.client))
+        self.assertEqual(self.request.await_count, 2)
+
+    async def test_skipped_until_members_loaded(self):
+        self.guild.chunked = False
+        self.assertFalse(await labs_ops.sync_members(self.client))
+        self.guild.chunked = True
+        self.guild.members = [m for m in self.guild.members if m.bot]
+        self.assertFalse(await labs_ops.sync_members(self.client))
+        self.request.assert_not_awaited()
 
 
 class GrantTest(LabsOpsCase):

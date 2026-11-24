@@ -43,10 +43,16 @@ class ParseCase(unittest.TestCase):
         layout = key_sheet.parse(sheet())
         self.assertEqual((layout['title'], layout['key_col'], layout['name_col']), ('시트1', 1, 2))
         self.assertEqual(layout['rows'], [
-            {'pos': 3, 'key': K1, 'name': ' 가 ', 'note': '메모'},
-            {'pos': 5, 'key': K2, 'name': '', 'note': '메모'},
-            {'pos': 6, 'key': K3, 'name': '', 'note': ''},
+            {'pos': 3, 'key': K1, 'name': ' 가 ', 'note': '메모', 'batch': '', 'color': ''},
+            {'pos': 5, 'key': K2, 'name': '', 'note': '메모', 'batch': '2026/01/01 추가', 'color': ''},
+            {'pos': 6, 'key': K3, 'name': '', 'note': '', 'batch': '2026/01/01 추가', 'color': ''},
         ])
+
+    def test_키_칸에_칠한_색은_흰색이_아닐_때만_전달(self):
+        def painted(back):
+            return {'values': [{}, {'formattedValue': K1, 'effectiveFormat': {'backgroundColor': back}}, {}]}
+        rows = key_sheet.parse(grid([cells('', '토너먼트 키', '사용자'), painted({'red': 1, 'green': 1, 'blue': 1}), painted({'green': 1}), painted({'red': 0.85, 'green': 0.9176, 'blue': 0.827})]))['rows']
+        self.assertEqual([r['color'] for r in rows], ['', '#00ff00', '#d9ead3'])
 
     def test_헤더가_없으면_None(self):
         self.assertIsNone(key_sheet.parse(grid([cells('', K1, '가')])))

@@ -22,7 +22,7 @@ KEY_HEADER = '토너먼트 키'
 NAME_HEADER = '사용자'
 API = 'https://sheets.googleapis.com/v4/spreadsheets'
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-FIELDS = 'sheets(properties(title,index),merges,data(startRow,rowData(values(formattedValue))))'
+FIELDS = 'sheets(properties(title,index),merges,data(startRow,rowData(values(formattedValue,effectiveFormat(backgroundColor)))))'
 TIMEOUT = 20
 
 _task: Optional[asyncio.Task] = None
@@ -40,8 +40,18 @@ def _text(cells: List[dict], col: int) -> str:
     return value if isinstance(value, str) else ''
 
 
+def _color(cells: List[dict], col: int) -> str:
+    """칸에 칠한 배경색. 칠하지 않은 흰 칸은 빈 문자열"""
+    fmt = cells[col].get('effectiveFormat') if col < len(cells) else None
+    back = (fmt or {}).get('backgroundColor')
+    if not isinstance(back, dict):
+        return ''
+    code = '#' + ''.join(f"{round(min(max(float(back.get(c) or 0), 0), 1) * 255):02x}" for c in ('red', 'green', 'blue'))
+    return '' if code == '#ffffff' else code
+
+
 def parse(sheet: dict) -> Optional[dict]:
-    """첫 탭에서 헤더 행을 찾아 그 아래의 키 행만 고름. 날짜 구분 행처럼 키 형식이 아닌 행은 빠짐"""
+    """첫 탭에서 헤더 행을 찾아 그 아래의 키 행만 고름. 키 열에 적힌 날짜 구분 글은 그 아래 키들의 batch"""
     data = (sheet.get('data') or [{}])[0]
     offset = data.get('startRow', 0)
     grid = [row.get('values') or [] for row in data.get('rowData') or []]
@@ -61,13 +71,15 @@ def parse(sheet: dict) -> Optional[dict]:
             for i in range(m.get('startRowIndex', 0), m.get('endRowIndex', 0)):
                 merged[i] = m.get('startRowIndex', 0)
     rows = []
+    batch = ''
     for i in range(head + 1, len(grid)):
         key = _text(grid[i], key_col).strip()
         if not KEY_FORM.match(key):
+            batch = key or batch
             continue
         top = merged.get(i, i) - offset
         note = _text(grid[top], note_col) if 0 <= top < len(grid) else ''
-        rows.append({'pos': offset + i + 1, 'key': key, 'name': _text(grid[i], name_col), 'note': note})
+        rows.append({'pos': offset + i + 1, 'key': key, 'name': _text(grid[i], name_col), 'note': note, 'batch': batch, 'color': _color(grid[i], key_col)})
     return {'title': (sheet.get('properties') or {}).get('title', ''), 'key_col': key_col, 'name_col': name_col, 'rows': rows}
 
 
