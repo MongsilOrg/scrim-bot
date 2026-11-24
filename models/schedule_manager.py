@@ -384,18 +384,11 @@ class ScheduleManager:
             'choices': {g: uid for g, uid in (old or {}).get('choices', {}).items() if g in letters},
             'declined': list((old or {}).get('declined', [])),
             'closed': False,
-            # 봇이 붙인 조 역할만 적어, 참가자로 받은 역할은 빼지 않음
-            'granted': dict((old or {}).get('granted', {})),
             'notice_ids': [],
         }
         self._rebalance()
         self.save_backup()
         return self.pick
-
-    def picked_on(self, day: date) -> Dict[str, Set[int]]:
-        if not self.pick or self.pick.get('date') != day.isoformat():
-            return {}
-        return {letter: {int(uid)} for letter, uid in self.pick['choices'].items()}
 
     def _open_groups(self) -> List[str]:
         return [g for g in self.pick['groups'] if g not in self.pick['choices']]

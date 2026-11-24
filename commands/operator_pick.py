@@ -22,11 +22,9 @@ from utils.layout_helpers import FOOTER_TEXT, error_view, info_view, permission_
 logger = get_logger('operator_pick')
 
 DECLINE = 'decline'
-ROLE_REASON = "운영진 조 선택"
 PROMOTED_TEXT = "오늘 진행할 운영진으로 정해졌습니다.\n위 메시지에서 조를 선택해주세요."
 
 _close_task: Optional[asyncio.Task] = None
-_role_lock = asyncio.Lock()
 
 
 def _mentions(user_ids: List[str]) -> str:
@@ -84,35 +82,6 @@ def pick_view(guild: discord.Guild, schedule_mgr) -> LayoutView:
     for i in range(0, len(buttons), 5):
         view.add_item(ActionRow(*buttons[i:i + 5]))
     return view
-
-
-async def _sync_roles(guild: discord.Guild, schedule_mgr) -> None:
-    """고른 조의 역할을 붙이고, 봇이 붙였던 역할 가운데 선택이 바뀐 것은 뺌"""
-    # 버튼이 동시에 눌려도 한 번에 하나씩 맞춤. 겹치면 기다리는 사이 다른 실행이 적은 기록을 지움
-    async with _role_lock:
-        pick = schedule_mgr.pick
-        desired = {uid: letter for letter, uid in pick['choices'].items()}
-        granted = pick['granted']
-        try:
-            for uid, letter in list(granted.items()):
-                if desired.get(uid) == letter:
-                    continue
-                member = guild.get_member(int(uid))
-                role = discord.utils.get(guild.roles, name=f"{letter}조")
-                if member and role and role in member.roles:
-                    await member.remove_roles(role, reason=ROLE_REASON)
-                granted.pop(uid, None)
-            for uid, letter in desired.items():
-                if granted.get(uid) == letter:
-                    continue
-                member = guild.get_member(int(uid))
-                role = discord.utils.get(guild.roles, name=f"{letter}조")
-                if member and role and role not in member.roles:
-                    await member.add_roles(role, reason=ROLE_REASON)
-                    granted[uid] = letter
-        except discord.HTTPException as e:
-            logger.warning(f"[조 고르기] 조 역할 변경 실패: {e}")
-        schedule_mgr.save_backup()
 
 
 async def _notify(channel, schedule_mgr, text: str, title: str) -> None:
@@ -179,7 +148,6 @@ async def _handle(interaction: discord.Interaction, key: str) -> None:
         logger.info(f"[조 고르기] {key}조 {'취소' if status == 'cancelled' else '선택'} - {member.display_name}")
 
     await interaction.response.edit_message(view=pick_view(guild, schedule_mgr))
-    await _sync_roles(guild, schedule_mgr)
     if notice:
         await _notify(interaction.channel, schedule_mgr, notice, title)
 
@@ -264,7 +232,6 @@ async def post_pick(client: discord.Client, guild: discord.Guild, letters: List[
         return
     await refresh_count_since(schedule_mgr)
     schedule_mgr.open_pick(day, letters)
-    await _sync_roles(guild, schedule_mgr)
     message = await channel.send(
         view=pick_view(guild, schedule_mgr),
         allowed_mentions=discord.AllowedMentions(users=True),
@@ -286,7 +253,6 @@ async def close_pick(client: discord.Client) -> None:
     if not channel:
         return
     assigned = schedule_mgr.close_pick()
-    await _sync_roles(guild, schedule_mgr)
     try:
         await channel.get_partial_message(pick['message_id']).edit(view=pick_view(guild, schedule_mgr))
     except discord.HTTPException as e:

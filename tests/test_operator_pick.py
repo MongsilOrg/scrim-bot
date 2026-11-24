@@ -251,7 +251,7 @@ class BackupTest(unittest.TestCase):
             path = os.path.join(folder, "schedule.json")
             pick = {
                 "date": "2026-11-24", "message_id": 5, "groups": ["A", "B"], "targets": ["b", "a"], "reserves": ["c"],
-                "choices": {"A": "b"}, "declined": ["d"], "closed": False, "granted": {}, "notice_ids": [],
+                "choices": {"A": "b"}, "declined": ["d"], "closed": False, "notice_ids": [],
             }
             with open(path, "w", encoding="utf-8") as f:
                 json.dump({"week_label": "test", "week_start": MONDAY.isoformat(), "availability": {}, "pick": pick}, f)
@@ -368,7 +368,6 @@ class PickStateTest(unittest.TestCase):
         mgr = self._open()
         mgr.pick_group("c", "A")
         mgr.pick_group("a", "C")
-        mgr.pick["granted"] = {"c": "A", "a": "C"}
         mgr.decline("b")
 
         mgr.open_pick(TUESDAY, ["A", "B"])
@@ -376,14 +375,6 @@ class PickStateTest(unittest.TestCase):
         self.assertEqual(mgr.pick["choices"], {"A": "c"})
         self.assertEqual(mgr.pick["targets"], ["c", "a"])
         self.assertNotIn("b", mgr.pick["targets"] + mgr.pick["reserves"])
-        self.assertEqual(mgr.pick["granted"], {"c": "A", "a": "C"})
-
-    def test_picked_on_only_for_that_day(self, _save):
-        mgr = self._open()
-        mgr.pick["choices"] = {"A": "11"}
-
-        self.assertEqual(mgr.picked_on(TUESDAY), {"A": {11}})
-        self.assertEqual(mgr.picked_on(date(2026, 11, 25)), {})
 
 
 class FakeRole(SimpleNamespace):
@@ -391,16 +382,15 @@ class FakeRole(SimpleNamespace):
         return hash(self.name)
 
 
-class KeepRoleTest(unittest.TestCase):
-    def test_picked_operator_keeps_group_role(self):
+class GroupRoleTest(unittest.TestCase):
+    def test_operator_outside_teams_loses_group_role(self):
         role = FakeRole(name="A조")
         operator = SimpleNamespace(id=11, display_name="운영", name="op", nick=None, global_name=None, roles=[role])
-        left = SimpleNamespace(id=12, display_name="나감", name="left", nick=None, global_name=None, roles=[role])
-        guild = SimpleNamespace(members=[operator, left])
+        guild = SimpleNamespace(members=[operator])
 
-        updates = DiscordService._build_role_updates(guild, {"A": role}, {"A": set()}, {"A": {11}})
+        updates = DiscordService._build_role_updates(guild, {"A": role}, {"A": set()})
 
-        self.assertEqual(updates, [(left, {role}, set())])
+        self.assertEqual(updates, [(operator, {role}, set())])
 
 
 class PickFlowTest(unittest.IsolatedAsyncioTestCase):
@@ -459,7 +449,7 @@ class PickFlowTest(unittest.IsolatedAsyncioTestCase):
         interaction.response.send_message = AsyncMock()
         return interaction
 
-    async def test_post_then_pick_grants_group_role(self):
+    async def test_post_then_pick_leaves_roles_alone(self):
         await operator_pick.post_pick(self.client, self.guild, ["A", "B"])
 
         self.assertEqual(self.mgr.count_since, "2026-11-23")
@@ -472,13 +462,12 @@ class PickFlowTest(unittest.IsolatedAsyncioTestCase):
         await operator_pick._handle(interaction, "B")
 
         interaction.response.edit_message.assert_awaited_once()
-        self.members[target].add_roles.assert_awaited_once_with(self.roles["B"], reason=operator_pick.ROLE_REASON)
-        self.assertEqual(self.mgr.pick["granted"], {str(target): "B"})
+        self.assertEqual(self.mgr.pick["choices"], {"B": str(target)})
 
-        self.members[target].roles.append(self.roles["B"])
         await operator_pick._handle(self._interaction(target, 101), "B")
-        self.members[target].remove_roles.assert_awaited_once_with(self.roles["B"], reason=operator_pick.ROLE_REASON)
-        self.assertEqual(self.mgr.pick["granted"], {})
+        self.assertEqual(self.mgr.pick["choices"], {})
+        self.members[target].add_roles.assert_not_awaited()
+        self.members[target].remove_roles.assert_not_awaited()
 
     async def test_old_message_is_rejected(self):
         await operator_pick.post_pick(self.client, self.guild, ["A", "B"])
@@ -528,7 +517,6 @@ class PickFlowTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.mgr.pick["choices"], {"A": "11"})
         first.response.edit_message.assert_awaited_once()
         second.response.edit_message.assert_not_awaited()
-        self.assertEqual(self.mgr.pick["granted"], {"11": "A"})
 
     async def test_close_assigns_and_next_post_confirms_previous_day(self):
         await operator_pick.post_pick(self.client, self.guild, ["A", "B"])

@@ -261,9 +261,7 @@ class DiscordService:
         return participants
 
     @staticmethod
-    def _build_role_updates(guild: discord.Guild, group_roles: dict, participants_by_letter: dict, keep: Optional[dict] = None) -> list:
-        """keep은 조별 멤버 ID 집합. 참가자가 아니어도 그 조 역할을 그대로 둠"""
-        keep = keep or {}
+    def _build_role_updates(guild: discord.Guild, group_roles: dict, participants_by_letter: dict) -> list:
         role_values = set(group_roles.values())
         role_updates = []
         for member in guild.members:
@@ -276,8 +274,7 @@ class DiscordService:
                 role = group_roles.get(group_letter)
                 if not role:
                     continue
-                kept = keep.get(group_letter)
-                if member_keys & participants or (kept and role in current_group_roles and member.id in kept):
+                if member_keys & participants:
                     roles_to_add.add(role)
 
             roles_to_remove = current_group_roles - roles_to_add
@@ -286,17 +283,6 @@ class DiscordService:
             if roles_to_remove or roles_to_add:
                 role_updates.append((member, roles_to_remove, roles_to_add))
         return role_updates
-
-    @staticmethod
-    def _picked_operators() -> dict:
-        """오늘 조를 고른 운영진. 조 역할을 다시 맞출 때 빼지 않음"""
-        try:
-            from bot.manager import BotManager
-            from utils import operator_log
-            return BotManager.get_instance().get_schedule_manager().picked_on(operator_log.scrim_day())
-        except Exception as e:
-            logger.warning(f"[Discord] 조를 고른 운영진 조회 실패: {e}")
-            return {}
 
     async def _apply_role_updates(self, role_updates: list) -> None:
         # 역할 추가와 제거는 서버당 10초 10건 한도를 같이 쓰고 멤버 수정은 한도가 따로라 두 줄로 나눠 동시에 보냄
@@ -343,7 +329,7 @@ class DiscordService:
                     continue
                 today_participants[group_letter] |= self._team_participants(group)
 
-            role_updates = self._build_role_updates(guild, group_roles, today_participants, self._picked_operators())
+            role_updates = self._build_role_updates(guild, group_roles, today_participants)
             applying = time.monotonic()
             await self._apply_role_updates(role_updates)
             changes = sum(len(remove) + len(add) for _, remove, add in role_updates)
@@ -363,9 +349,7 @@ class DiscordService:
                 return
 
             participants = self._team_participants(group_teams)
-            role_updates = self._build_role_updates(
-                guild, {group_letter: group_role}, {group_letter: participants}, self._picked_operators()
-            )
+            role_updates = self._build_role_updates(guild, {group_letter: group_role}, {group_letter: participants})
             await self._apply_role_updates(role_updates)
 
             logger.info(f"[Discord] 조별 역할 업데이트 완료 - 조: {group_letter}조, 변경된 멤버: {len(role_updates)}명")
