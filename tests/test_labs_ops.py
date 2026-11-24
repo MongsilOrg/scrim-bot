@@ -39,8 +39,6 @@ class LabsOpsCase(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(labs_ops._unanswered.clear)
         labs_ops._posted.clear()
         self.addCleanup(labs_ops._posted.clear)
-        labs_ops._applied.clear()
-        self.addCleanup(labs_ops._applied.clear)
 
         self.request = patch.object(labs_ops.labs_api, 'request', new=AsyncMock(return_value=response())).start()
         patch.object(labs_ops.labs_api, 'operator_ids', return_value=[STAFF, MOD]).start()
@@ -116,24 +114,20 @@ class SyncTest(LabsOpsCase):
         self.assertEqual(labs_ops.sanctions(), [{'kind': '주의'}])
 
     async def test_days_edited_on_labs_replace_history_and_refresh_dashboard(self):
-        self.schedule.set_deployment = MagicMock(side_effect=[True, False, True])
+        self.schedule.set_deployment = MagicMock(side_effect=[True, False, False])
         self.request.return_value = response(days=[
             {'day': '2026-11-23', 'ids': [STAFF, 'abc', 7, STAFF], 'rev': 5}, {'day': 'x', 'ids': []}, {'day': '2026-11-24'}, 'x',
-            {'day': '2026-11-22', 'ids': [], 'rev': 4},
+            {'day': '2026-11-22', 'ids': [], 'rev': 4}, {'day': '2026-11-21', 'ids': [STAFF], 'rev': '6'},
         ])
 
         with patch('commands.ui.schedule_views.refresh_dashboard', new=AsyncMock()) as refresh:
             await labs_ops.sync(self.client)
-            # 번호를 올리지 못해 같은 수정을 다시 받으면 넘기고, 번호가 바뀐 수정만 반영
-            await labs_ops.sync(self.client)
-            self.request.return_value = response(days=[{'day': '2026-11-23', 'ids': [STAFF], 'rev': 6}])
-            await labs_ops.sync(self.client)
 
         self.assertEqual(
             [c.args for c in self.schedule.set_deployment.call_args_list],
-            [(date(2026, 11, 23), [STAFF]), (date(2026, 11, 22), []), (date(2026, 11, 23), [STAFF])],
+            [(date(2026, 11, 23), [STAFF], 5), (date(2026, 11, 22), [], 4), (date(2026, 11, 21), [STAFF], None)],
         )
-        self.assertEqual(refresh.await_count, 2)
+        refresh.assert_awaited_once()
 
     async def test_free_days_saved_and_served(self):
         self.assertEqual(labs_ops.free_days(), set())

@@ -164,6 +164,23 @@ class RankingTest(unittest.TestCase):
             mgr.set_deployment(TUESDAY, ["a", "b", "c"])
         self.assertEqual(mgr.dropped, {})
 
+    def test_same_labs_edit_is_applied_once_and_survives_restart(self, save):
+        mgr = _manager()
+        now = patch.object(schedule_manager, "get_current_kst_time", return_value=datetime(2026, 11, 24, 21, tzinfo=KST))
+        with now:
+            self.assertTrue(mgr.set_deployment(TUESDAY, ["b"], 5))
+            mgr.confirm_deployment(TUESDAY, "A", ["c"])
+            # 변경 번호가 오르지 않아 같은 수정을 다시 받으면 그 사이의 조 확정을 지우지 않음
+            self.assertFalse(mgr.set_deployment(TUESDAY, ["b"], 5))
+            self.assertEqual(mgr.deploy_history["2026-11-24"], ["b", "c"])
+            self.assertEqual(mgr.applied, {"2026-11-24": 5})
+            # 명단이 같아도 새 번호는 저장해 재시작 뒤에 다시 반영하지 않음
+            saved = save.call_count
+            self.assertFalse(mgr.set_deployment(TUESDAY, ["b", "c"], 6))
+            self.assertEqual(save.call_count, saved + 1)
+            self.assertTrue(mgr.set_deployment(TUESDAY, ["b"], 7))
+        self.assertEqual(mgr.deploy_history["2026-11-24"], ["b"])
+
     def test_set_deployment_outside_the_week_keeps_history_only(self, _save):
         mgr = _manager()
 

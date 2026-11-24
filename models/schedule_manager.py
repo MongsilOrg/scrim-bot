@@ -63,6 +63,8 @@ class ScheduleManager:
         self.confirmed: List[str] = []
         # 운영 화면에서 그날 명단에서 뺀 사람. 뒤에 오는 조 확정이 다시 넣지 않음
         self.dropped: Dict[str, List[str]] = {}
+        # 날짜별로 마지막에 반영한 운영 화면 수정의 변경 번호
+        self.applied: Dict[str, int] = {}
         # 지금 정규 시즌이 시작한 날. 시즌 목록을 받지 못하면 None이고 전부 셈
         self.count_since: Optional[str] = None
         self.pick: Optional[dict] = None
@@ -311,32 +313,40 @@ class ScheduleManager:
         self.save_backup()
         return True
 
-    def set_deployment(self, day: date, user_ids: List[str]) -> bool:
+    def set_deployment(self, day: date, user_ids: List[str], rev: Optional[int] = None) -> bool:
         """운영 화면에서 고친 그날의 명단으로 바꿈. 바뀌었으면 True"""
         key = day.isoformat()
-        before = self.deploy_history.get(key, [])
-        if sorted(before) == sorted(user_ids):
+        # 같은 변경 번호를 다시 받으면 그 뒤의 조 확정을 지우지 않음
+        if rev is not None and self.applied.get(key) == rev:
             return False
         oldest = (get_current_kst_time().date() - timedelta(days=CONFIRMED_KEEP_DAYS)).isoformat()
-        dropped = [uid for uid in dict.fromkeys([*self.dropped.get(key, []), *before]) if uid not in user_ids]
-        self.dropped = {k: v for k, v in self.dropped.items() if k >= oldest and k != key}
-        if dropped and key >= oldest:
-            self.dropped[key] = dropped
-        if user_ids:
-            self.deploy_history[key] = list(user_ids)
-        else:
-            self.deploy_history.pop(key, None)
-        day_index = (day - self.week_start.date()).days if self.week_start else -1
-        if 0 <= day_index < 7:
+        before = self.deploy_history.get(key, [])
+        changed = sorted(before) != sorted(user_ids)
+        if changed:
+            dropped = [uid for uid in dict.fromkeys([*self.dropped.get(key, []), *before]) if uid not in user_ids]
+            self.dropped = {k: v for k, v in self.dropped.items() if k >= oldest and k != key}
+            if dropped and key >= oldest:
+                self.dropped[key] = dropped
             if user_ids:
-                self.actual_deployments[day_index] = list(user_ids)
-                for uid in user_ids:
-                    self.admin_names.setdefault(uid, uid)
+                self.deploy_history[key] = list(user_ids)
             else:
-                self.actual_deployments.pop(day_index, None)
-            self._readjust_remaining()
-        self.save_backup()
-        return True
+                self.deploy_history.pop(key, None)
+            day_index = (day - self.week_start.date()).days if self.week_start else -1
+            if 0 <= day_index < 7:
+                if user_ids:
+                    self.actual_deployments[day_index] = list(user_ids)
+                    for uid in user_ids:
+                        self.admin_names.setdefault(uid, uid)
+                else:
+                    self.actual_deployments.pop(day_index, None)
+                self._readjust_remaining()
+        noted = rev is not None and key >= oldest
+        if noted:
+            self.applied = {k: v for k, v in self.applied.items() if k >= oldest}
+            self.applied[key] = rev
+        if changed or noted:
+            self.save_backup()
+        return changed
 
     def _readjust_remaining(self) -> List[Tuple[int, List[str], List[str]]]:
         locked = self._locked_days()
@@ -507,6 +517,7 @@ class ScheduleManager:
                 'deploy_history': self.deploy_history,
                 'confirmed': self.confirmed,
                 'dropped': self.dropped,
+                'applied': self.applied,
                 'count_since': self.count_since,
                 'pick': self.pick,
             }
@@ -560,6 +571,7 @@ class ScheduleManager:
                     self._sync_history(day_index)
             self.confirmed = data.get('confirmed') or []
             self.dropped = data.get('dropped') or {}
+            self.applied = data.get('applied') or {}
             self.count_since = data.get('count_since')
             self.pick = data.get('pick')
             if self.pick and 'order' not in self.pick:
