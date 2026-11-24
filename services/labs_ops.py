@@ -184,9 +184,12 @@ async def sync(client: Optional[discord.Client] = None) -> bool:
         return False
     async with _lock:
         # 구성원 목록을 다 받기 전에 보내면 운영진 일부가 빠진 목록이 전달됨
-        body = _body(guild) if guild.chunked else None
-        if body is None:
+        if not guild.chunked:
             await _note(client, False)
+            return False
+        body = _body(guild)
+        if body is None:
+            logger.warning("[운영툴] 운영진 역할을 가진 구성원이 없어 동기화를 건너뜀")
             return False
         data = await labs_api.request('PUT', '/api/bot/scrim-staff', body)
         if not data or not isinstance(data.get('rev'), int):
@@ -194,13 +197,13 @@ async def sync(client: Optional[discord.Client] = None) -> bool:
             return False
         await _note(client, True)
 
-        changes = [c for c in data.get('changes') or [] if isinstance(c, dict) and c.get('id') not in _posted]
+        changes = [c for c in data.get('changes') or [] if isinstance(c, dict) and (c.get('id') is None or c['id'] not in _posted)]
         posted = True
         for chunk in _chunks(changes):
             posted = await _post(client, changes_view(chunk))
             if not posted:
                 break
-            _posted.update(c.get('id') for c in chunk)
+            _posted.update(c['id'] for c in chunk if c.get('id') is not None)
         if posted:
             _posted.clear()
         fresh = {key: data[key] for key in ('seeds', 'tests', 'sanctions') if isinstance(data.get(key), list)}
