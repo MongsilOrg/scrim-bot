@@ -264,7 +264,7 @@ class BSERAPIClient:
         return uid
 
     async def get_user_rank(self, uid: str) -> Optional[Dict]:
-        season_id, previous_id = await self.rank_seasons()
+        season_id, _ = await self.rank_seasons()
         data = await self._request("GET", f"{self.base_url}/rank/uid/{uid}/{season_id}/3")
         if not data:
             return None
@@ -272,14 +272,7 @@ class BSERAPIClient:
         code = data.get("code")
         if code == 200:
             user_rank = data.get("userRank")
-            # 랭크 시즌 기록이 없으면 API가 MMR 0으로 답함. 그 시즌을 아직 하지 않은 선수는 직전 정규 시즌 MMR을 씀
-            if not (user_rank or {}).get("mmr") and previous_id is not None:
-                previous = await self._request("GET", f"{self.base_url}/rank/uid/{uid}/{previous_id}/3")
-                if previous is None:
-                    return None
-                previous_rank = (previous or {}).get("userRank") if (previous or {}).get("code") == 200 else None
-                if (previous_rank or {}).get("mmr"):
-                    return {"userRank": previous_rank}
+            # 랭크 시즌 기록이 없으면 API가 MMR 0으로 답함. 직전 시즌 MMR은 리셋 전 값이라 이번 시즌 값과 비교할 수 없음
             if user_rank:
                 return {"userRank": user_rank}
             logger.warning(f"[API] userRank 데이터 없음 - UID: {uid}")
