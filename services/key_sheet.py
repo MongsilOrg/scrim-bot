@@ -15,7 +15,7 @@ logger = get_logger('key_sheet')
 CHECK_SECONDS = 60
 # Labs에서 할 일이 없어도 시트에 새로 넣은 키와 손으로 고친 이름을 받아 오는 주기
 FULL_SYNC_SECONDS = 600
-# Labs 응답이 잘못돼도 원본 시트의 이름이 한꺼번에 지워지지 않게 하는 상한
+# 비울 칸이 이보다 많으면 Labs 응답이 잘못된 것으로 보고 원본 시트를 하나도 비우지 않는 상한
 WIPE_MAX = 20
 KEY_FORM = re.compile(r'^[A-Z0-9]{5}(-[A-Z0-9]{5}){2}$')
 KEY_HEADER = '토너먼트 키'
@@ -150,8 +150,9 @@ def apply(layout: dict, result: dict) -> int:
             done += 1
     wipes = result.get('wipe') or []
     if len(wipes) > WIPE_MAX:
-        logger.error(f"[서버 키] 비울 칸이 {len(wipes)}개라 {WIPE_MAX}개만 처리")
-    for task in wipes[:WIPE_MAX]:
+        logger.error(f"[서버 키] 비울 칸이 {len(wipes)}개라 비우지 않음")
+        wipes = []
+    for task in wipes:
         row = by_pos.get(task.get('pos'))
         if not row or row['key'] != task.get('key') or not row['name']:
             continue

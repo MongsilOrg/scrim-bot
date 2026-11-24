@@ -119,11 +119,13 @@ class ApplyCase(unittest.TestCase):
         self.assertEqual(key_sheet.apply(self.layout, {'write': [{'pos': 5, 'key': K2, 'name': '나'}], 'wipe': [{'pos': 3, 'key': K1}]}), 0)
         self.assertEqual([r['name'] for r in self.layout['rows']], [' 가 ', '', ''])
 
-    def test_한_번에_비우는_칸은_상한까지만(self):
+    def test_비울_칸이_상한을_넘으면_하나도_비우지_않음(self):
         rows = [{'pos': i, 'key': f'AAAAA-BBBBB-{i:05d}', 'name': '가', 'note': ''} for i in range(3, 33)]
         layout = {**self.layout, 'rows': rows}
-        done = key_sheet.apply(layout, {'wipe': [{'pos': r['pos'], 'key': r['key']} for r in rows]})
-        self.assertEqual(done, key_sheet.WIPE_MAX)
+        wipes = [{'pos': r['pos'], 'key': r['key']} for r in rows]
+        self.assertEqual(key_sheet.apply(layout, {'wipe': wipes}), 0)
+        self.set.assert_not_called()
+        self.assertEqual(key_sheet.apply(layout, {'wipe': wipes[:key_sheet.WIPE_MAX]}), key_sheet.WIPE_MAX)
 
 
 class SyncCase(unittest.IsolatedAsyncioTestCase):
