@@ -25,6 +25,7 @@ DECLINE = 'decline'
 ROLE_REASON = "운영진 조 고르기"
 
 _close_task: Optional[asyncio.Task] = None
+_role_lock = asyncio.Lock()
 
 
 def _mentions(user_ids: List[str]) -> str:
@@ -85,30 +86,31 @@ def pick_view(guild: discord.Guild, schedule_mgr) -> LayoutView:
 
 async def _sync_roles(guild: discord.Guild, schedule_mgr) -> None:
     """고른 조의 역할을 붙이고, 봇이 붙였던 역할 가운데 선택이 바뀐 것은 뺌"""
-    pick = schedule_mgr.pick
-    desired = {uid: letter for letter, uid in pick['choices'].items()}
-    granted = pick['granted']
-    try:
-        for uid, letter in list(granted.items()):
-            if desired.get(uid) == letter:
-                continue
-            member = guild.get_member(int(uid))
-            role = discord.utils.get(guild.roles, name=f"{letter}조")
-            if member and role and role in member.roles:
-                await member.remove_roles(role, reason=ROLE_REASON)
-            # 버튼을 동시에 누르면 기다리는 사이 다른 실행이 먼저 지웠을 수 있음
-            granted.pop(uid, None)
-        for uid, letter in desired.items():
-            if granted.get(uid) == letter:
-                continue
-            member = guild.get_member(int(uid))
-            role = discord.utils.get(guild.roles, name=f"{letter}조")
-            if member and role and role not in member.roles:
-                await member.add_roles(role, reason=ROLE_REASON)
-                granted[uid] = letter
-    except discord.HTTPException as e:
-        logger.warning(f"[조 고르기] 조 역할 변경 실패: {e}")
-    schedule_mgr.save_backup()
+    # 버튼이 동시에 눌려도 한 번에 하나씩 맞춤. 겹치면 기다리는 사이 다른 실행이 적은 기록을 지움
+    async with _role_lock:
+        pick = schedule_mgr.pick
+        desired = {uid: letter for letter, uid in pick['choices'].items()}
+        granted = pick['granted']
+        try:
+            for uid, letter in list(granted.items()):
+                if desired.get(uid) == letter:
+                    continue
+                member = guild.get_member(int(uid))
+                role = discord.utils.get(guild.roles, name=f"{letter}조")
+                if member and role and role in member.roles:
+                    await member.remove_roles(role, reason=ROLE_REASON)
+                del granted[uid]
+            for uid, letter in desired.items():
+                if granted.get(uid) == letter:
+                    continue
+                member = guild.get_member(int(uid))
+                role = discord.utils.get(guild.roles, name=f"{letter}조")
+                if member and role and role not in member.roles:
+                    await member.add_roles(role, reason=ROLE_REASON)
+                    granted[uid] = letter
+        except discord.HTTPException as e:
+            logger.warning(f"[조 고르기] 조 역할 변경 실패: {e}")
+        schedule_mgr.save_backup()
 
 
 async def _notify(channel, schedule_mgr, text: str, title: str) -> None:
