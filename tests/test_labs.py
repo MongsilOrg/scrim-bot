@@ -108,7 +108,7 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         channels = settings.GROUP_CHANNEL_IDS
         settings.GROUP_CHANNEL_IDS = {'A': 111, 'B': 222}
         self.addCleanup(setattr, settings, 'GROUP_CHANNEL_IDS', channels)
-        self.request = patch.object(labs_api, '_request', new=AsyncMock()).start()
+        self.request = patch.object(labs_api, 'request', new=AsyncMock()).start()
         self.addCleanup(patch.stopall)
         patch.object(labs_api, 'get_current_kst_time', return_value=SimpleNamespace(date=lambda: TODAY)).start()
 

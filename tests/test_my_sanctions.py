@@ -1,4 +1,3 @@
-import asyncio
 import unittest
 from datetime import date, datetime
 from unittest import mock
@@ -12,33 +11,17 @@ ME = '123456789012345678'
 OTHER = '999'
 
 
-def penalty(target_id, row_type, restricted_until='', target='나', reason='사유', admin='관리자A'):
+def row(target_id, kind, day='2026-10-01', until=None, merged_into=None, released=0, reason='사유', name='나'):
     return {
-        '날짜': '2026-10-01 21:00:00', '대상': target, '대상ID': target_id, '유형': row_type,
-        '사유': reason, '경고일': '', '제한해제일': restricted_until, '관리자ID': admin, '비고': '',
+        'id': 1, 'target_id': target_id, 'target_name': name, 'kind': kind, 'reason': reason,
+        'admin': '관리자A', 'day': day, 'until': until, 'merged_into': merged_into, 'released': released,
     }
 
 
-def log(target_id, row_type, day, reason='사유', restricted_until='', target='나'):
-    return {
-        '대상': target, '날짜': day, '제한해제일': restricted_until,
-        '사유': reason, '유형': row_type, '대상ID': target_id,
-    }
-
-
-def make_manager(penalty_rows, log_rows, now=datetime(2026, 10, 6, 12, 0, tzinfo=KST)):
-    manager = WarningManager.__new__(WarningManager)
-    manager.worksheet = mock.Mock()
-    manager.worksheet.get_all_records.return_value = penalty_rows
-    manager.warning_log_worksheet = mock.Mock()
-    manager.warning_log_worksheet.get_all_records.return_value = log_rows
-    manager._warnings_cache = None
-    manager._cache_timestamp = None
-    manager._cache_ttl = 300
-    manager.ensure_connected = mock.AsyncMock(return_value=True)
-    patcher = mock.patch.object(wm_module, 'get_current_kst_time', return_value=now)
-    patcher.start()
-    return manager
+def make_manager(rows, now=datetime(2026, 10, 6, 12, 0, tzinfo=KST)):
+    mock.patch.object(wm_module.labs_ops, 'sanctions', return_value=rows).start()
+    mock.patch.object(wm_module, 'get_current_kst_time', return_value=now).start()
+    return WarningManager()
 
 
 class MemberSanctionsTest(unittest.IsolatedAsyncioTestCase):
@@ -46,34 +29,27 @@ class MemberSanctionsTest(unittest.IsolatedAsyncioTestCase):
         mock.patch.stopall()
 
     async def test_counts_and_restriction_by_id_only(self):
-        manager = make_manager(
-            [
-                penalty(int(ME), '주의'),
-                penalty('', '주의', target='나'),
-                penalty(OTHER, '주의'),
-                penalty(ME, '경고', restricted_until='2026-10-09'),
-                penalty('', '경고', restricted_until='2026-10-30', target='나'),
-            ],
-            [
-                log(ME, '경고', '2026-10-01', restricted_until='2026-10-08'),
-                log(int(ME), '경고', '2026-09-01'),
-                log('', '경고', '2026-08-01'),
-                log(ME, '주의', '2026-10-05'),
-            ],
-        )
+        manager = make_manager([
+            row(ME, '주의'),
+            row(ME, '주의', merged_into=7),
+            row('', '주의'),
+            row(OTHER, '주의'),
+            row(ME, '경고', until='2026-10-09'),
+            row(ME, '경고', until='2026-10-30', released=1),
+            row('', '경고', until='2026-10-30'),
+        ])
 
         summary = await manager.get_member_sanctions(ME)
 
         self.assertEqual(summary['cautions'], 1)
         self.assertEqual(summary['warnings'], 2)
-        # 패널티 시트는 마스터즈 연장이 반영된 날짜
         self.assertEqual(summary['restricted_until'], date(2026, 10, 9))
         self.assertTrue(summary['has_records'])
 
     async def test_history_latest_first_and_limited(self):
-        rows = [log(ME, '주의', f'2026-09-{day:02d}', reason=f'사유{day}') for day in range(1, 8)]
-        rows.append(log(ME, '경고', '2026-09-10', reason='[주의 누적]\n1회 2026-09-06: 대타\n2회 2026-09-07: 대타'))
-        manager = make_manager([], rows)
+        rows = [row(ME, '주의', f'2026-09-{day:02d}', reason=f'사유{day}') for day in range(1, 8)]
+        rows.append(row(ME, '경고', '2026-09-10', reason='주의  누적'))
+        manager = make_manager(rows)
 
         history = (await manager.get_member_sanctions(ME))['history']
 
@@ -83,52 +59,29 @@ class MemberSanctionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('관리자', repr(history))
 
     async def test_expired_restriction_not_shown(self):
-        manager = make_manager([penalty(ME, '경고', restricted_until='2026-10-05')], [])
+        manager = make_manager([row(ME, '경고', until='2026-10-05')])
         summary = await manager.get_member_sanctions(ME)
         self.assertIsNone(summary['restricted_until'])
 
     async def test_last_day_after_open_hour_judged_for_next_scrim(self):
         manager = make_manager(
-            [penalty(ME, '경고', restricted_until='2026-10-06')], [],
+            [row(ME, '경고', until='2026-10-06')],
             now=datetime(2026, 10, 6, 22, 30, tzinfo=KST),
         )
         summary = await manager.get_member_sanctions(ME)
         self.assertIsNone(summary['restricted_until'])
 
     async def test_name_only_records_mean_no_sanctions(self):
-        manager = make_manager([penalty('', '주의', target='나')], [log('', '경고', '2026-10-01', target='나')])
+        manager = make_manager([row('', '주의'), row('', '경고', until='2026-10-30')])
         summary = await manager.get_member_sanctions(ME)
         self.assertFalse(summary['has_records'])
 
-    async def test_lookup_failure_returns_none(self):
-        manager = make_manager([], [])
-        manager.warning_log_worksheet.get_all_records.side_effect = RuntimeError('quota')
-        with self.assertLogs('scrim-bot.warning_manager', level='ERROR'):
-            self.assertIsNone(await manager.get_member_sanctions(ME))
-
-    async def test_not_connected_returns_none(self):
-        manager = make_manager([], [])
-        manager.ensure_connected.return_value = False
+    async def test_missing_copy_returns_none(self):
+        manager = make_manager(None)
         self.assertIsNone(await manager.get_member_sanctions(ME))
 
-    async def test_uses_ttl_cache_and_invalidation(self):
-        manager = make_manager([penalty(ME, '주의')], [log(ME, '주의', '2026-10-05')])
-
-        await manager.get_member_sanctions(ME)
-        await manager.get_member_sanctions(ME)
-        await asyncio.to_thread(manager.is_restricted, ME, None)
-        self.assertEqual(manager.worksheet.get_all_records.call_count, 1)
-        self.assertEqual(manager.warning_log_worksheet.get_all_records.call_count, 1)
-
-        manager._invalidate_cache()
-        await manager.get_member_sanctions(ME)
-        self.assertEqual(manager.warning_log_worksheet.get_all_records.call_count, 2)
-
-    async def test_is_restricted_still_reads_only_warnings(self):
-        manager = make_manager(
-            [penalty(ME, '주의', restricted_until='2026-10-20'), penalty(ME, '경고', restricted_until='2026-10-08')],
-            [],
-        )
+    async def test_is_restricted_reads_only_warnings(self):
+        manager = make_manager([row(ME, '주의', until='2026-10-20'), row(ME, '경고', until='2026-10-08')])
         self.assertEqual(manager.is_restricted(ME, None), (True, '2026-10-08'))
 
 

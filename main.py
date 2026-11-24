@@ -43,7 +43,10 @@ from discord import app_commands
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from bot.client import ScrimBot
-from bot.events import bootstrap_on_ready, on_app_command_error, on_message as handle_message
+from bot.events import (
+    bootstrap_on_ready, on_app_command_error, on_member_remove as handle_member_remove,
+    on_member_update as handle_member_update, on_message as handle_message,
+)
 from bot.manager import BotManager
 from commands.operator_pick import PickButton
 from commands.room_code import WeatherButton, 방코드
@@ -60,6 +63,14 @@ def _register_client_events(client: ScrimBot) -> None:
     @client.event
     async def on_message(message):
         await handle_message(message)
+
+    @client.event
+    async def on_member_update(before, after):
+        await handle_member_update(before, after)
+
+    @client.event
+    async def on_member_remove(member):
+        await handle_member_remove(member)
 
     client.tree.error(on_app_command_error)
 

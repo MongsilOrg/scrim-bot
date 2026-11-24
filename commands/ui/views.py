@@ -275,7 +275,7 @@ class TeamInputView(LayoutView):
         try:
             team_data = team_data_manager.get_team_data(team_name)
             if not team_data:
-                await send_error_message(interaction, "팀 정보를 찾을 수 없습니다.\n신청 및 수정 버튼을 다시 눌러주세요.")
+                await send_error_message(interaction, "팀 정보를 찾을 수 없습니다.\n신청 및 수정을 다시 시도해주세요.")
                 return
 
             team_mmr = team_data_manager.get_team_mmr(team_name) or 0.0
@@ -341,7 +341,6 @@ class TeamInputView(LayoutView):
         if await check_cooldown(interaction):
             return
         try:
-            # 캐시가 비면 시트 두 장을 읽어 3초를 넘길 수 있음
             await interaction.response.defer(ephemeral=True, thinking=True)
             warning_manager = BotManager.get_instance().get_warning_manager()
             summary = await warning_manager.get_member_sanctions(str(interaction.user.id))

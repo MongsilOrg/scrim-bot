@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from models.team_processor import TeamProcessor
 
@@ -7,65 +7,32 @@ from models.team_processor import TeamProcessor
 def _bare_processor():
     tp = TeamProcessor.__new__(TeamProcessor)
     tp._set_test_accounts({})
-    tp._test_accounts_loaded_at = 0.0
-    tp._test_accounts_attempted_at = 0.0
     return tp
 
 
 class TestEnsureTestAccountsLoaded(unittest.IsolatedAsyncioTestCase):
-    async def test_reloads_when_stale_and_recognizes_new_account(self):
+    async def test_reads_copy_every_time(self):
         tp = _bare_processor()
         self.assertFalse(tp.is_test_account("신규테스트"))
 
-        def fake_load():
-            tp._set_test_accounts({"신규테스트": 6000.0})
-            return True
-
-        with patch.object(tp, "_load_test_accounts_data_sync", side_effect=fake_load) as loader:
-            await tp.ensure_test_accounts_loaded()
-
-        loader.assert_called_once()
+        with patch("models.team_processor.labs_ops.tests", return_value={"신규테스트": 6000.5}):
+            self.assertTrue(await tp.ensure_test_accounts_loaded())
         self.assertTrue(tp.is_test_account("신규테스트"))
-        self.assertEqual(tp._get_test_account_mmr("신규테스트"), 6000.0)
+        self.assertEqual(tp._get_test_account_mmr("신규테스트"), 6000.5)
 
-    async def test_ttl_cache_skips_reload_when_fresh(self):
-        tp = _bare_processor()
-        with patch.object(tp, "_load_test_accounts_data_sync") as loader:
+        with patch("models.team_processor.labs_ops.tests", return_value={}):
             await tp.ensure_test_accounts_loaded()
-            await tp.ensure_test_accounts_loaded()
-        loader.assert_called_once()
+        self.assertFalse(tp.is_test_account("신규테스트"))
 
-    async def test_force_reloads_even_when_fresh(self):
-        tp = _bare_processor()
-        with patch.object(tp, "_load_test_accounts_data_sync") as loader:
-            await tp.ensure_test_accounts_loaded()
-            await tp.ensure_test_accounts_loaded(force=True)
-        self.assertEqual(loader.call_count, 2)
-
-
-class TestLoadFailureKeepsCache(unittest.IsolatedAsyncioTestCase):
-    def test_sheet_error_keeps_previous_accounts(self):
+    async def test_missing_copy_keeps_previous_accounts(self):
         tp = _bare_processor()
         tp._set_test_accounts({"TEST1": 6000.0})
-        tp.gspread_spreadsheet = MagicMock()
-        tp.gspread_spreadsheet.worksheet.side_effect = RuntimeError("503")
 
-        self.assertFalse(tp._load_test_accounts_data_sync())
+        with patch("models.team_processor.labs_ops.tests", return_value=None):
+            self.assertFalse(await tp.ensure_test_accounts_loaded())
+
         self.assertEqual(tp.test_accounts_data, {"TEST1": 6000.0})
         self.assertTrue(tp.is_test_account("test1"))
-
-    async def test_failure_does_not_mark_cache_fresh(self):
-        tp = _bare_processor()
-        with patch.object(tp, "_load_test_accounts_data_sync", return_value=False):
-            self.assertFalse(await tp.ensure_test_accounts_loaded())
-        self.assertEqual(tp._test_accounts_loaded_at, 0.0)
-
-    async def test_failure_cooldown_blocks_immediate_retry(self):
-        tp = _bare_processor()
-        with patch.object(tp, "_load_test_accounts_data_sync", return_value=False) as loader:
-            await tp.ensure_test_accounts_loaded()
-            await tp.ensure_test_accounts_loaded()
-        loader.assert_called_once()
 
 
 class TestFetchAllTeamMmrReloadsTestAccounts(unittest.IsolatedAsyncioTestCase):

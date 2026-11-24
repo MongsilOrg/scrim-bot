@@ -329,8 +329,6 @@ class TeamDataManager:
         if not member_names:
             return []
         warning_manager = BotManager.get_instance().get_warning_manager()
-        if not (warning_manager and await warning_manager.ensure_connected()):
-            return []
 
         # 22시 이후 신청은 다음 날 스크림이라 오늘까지인 제한은 적용하지 않음
         check_time = datetime.combine(effective_scrim_date(current_time), current_time.timetz())
@@ -340,20 +338,16 @@ class TeamDataManager:
         guild = client.get_guild(settings.GUILD_ID) if client else None
         member_map = build_member_lookup(guild)
 
-        def _scan_restricted():
-            found = []
-            for member in member_names:
-                resolved = member_map.get(normalize_nickname_for_comparison(member))
-                target_id = str(resolved.id) if resolved else None
-                restricted, restricted_until = warning_manager.is_restricted(
-                    target_id, member, check_time
-                )
-                if restricted:
-                    found.append((member, format_korean_date(restricted_until)))
-            return found
-
-        # is_restricted는 캐시 미스 때 시트를 동기 조회
-        return await asyncio.to_thread(_scan_restricted)
+        found = []
+        for member in member_names:
+            resolved = member_map.get(normalize_nickname_for_comparison(member))
+            target_id = str(resolved.id) if resolved else None
+            restricted, restricted_until = warning_manager.is_restricted(
+                target_id, member, check_time
+            )
+            if restricted:
+                found.append((member, format_korean_date(restricted_until)))
+        return found
 
     def _should_check_auto_assign(self) -> bool:
         current_time = get_current_kst_time()

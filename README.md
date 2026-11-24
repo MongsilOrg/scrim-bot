@@ -9,14 +9,14 @@
   매일 17시에 등록 마감
 - MMR 기반 자동 조 편성.\
   8팀 단위로 나누고 스네이크 드래프트로 균형을 맞춤.\
-  시드팀 명단은 Google Sheets에서 읽음
+  시드팀 명단은 Labs 운영 화면에서 관리
 - `/방코드`: 조별 채널에 방 코드와 라운드별 날씨를 공지.\
   서브 날씨는 관리자가 버튼으로 고름
 - 조 편성 뒤 Labs 대회를 만들어 조 채널과 연결.\
   점수 집계와 순위표는 Labs가 맡고, 라운드별 게임 ID는 백업 채널에 남김
 - 제재 부여 컨텍스트 메뉴로 주의와 경고를 관리.\
   주의 2회는 경고 1회로 바뀌고, 경고로 제한된 인원이 있는 팀은 등록이 막힘.\
-  기록은 Google Sheets에 남음
+  기록과 기간 계산은 Labs가 맡음
 - 운영진 주간 편성 일정 대시보드.\
   매주 금요일 22시에 다음 주로 넘어감
 
@@ -28,8 +28,7 @@
 
 ## 실행
 
-MMR 표 이미지는 wkhtmltoimage로 그리므로 시스템에 설치되어 있어야 합니다.\
-Google Sheets 서비스 계정 인증 파일은 `credentials/google_sheets_credentials.json`에 둡니다.
+MMR 표 이미지는 wkhtmltoimage로 그리므로 시스템에 설치되어 있어야 합니다.
 
 ```bash
 pip install -r requirements.txt
@@ -46,11 +45,9 @@ python main.py
 | ADMIN_ROLE_IDS | 필수 | 관리자 역할 ID, 쉼표 구분 |
 | NOTICE_CHANNEL_ID | 필수 | 스크림 공지 채널 ID |
 | BACKUP_ANALYSIS_CHANNEL_ID | 필수 | 전적 백업 채널 ID |
-| LABS_SCRIM_TOKEN | 필수 | Labs 대회 생성과 조회에 쓰는 토큰 |
+| LABS_SCRIM_TOKEN | 필수 | Labs 대회와 운영 화면 연동에 쓰는 토큰 |
 | GROUP_CHANNEL_IDS | 필수 | 조별 채널 ID, `A:채널ID,B:채널ID` 형식 |
 | BSER_API_KEY | 필수 | 이터널 리턴 Open API 키 |
-| GOOGLE_SHEETS_MAIN_SPREADSHEET_ID | 필수 | 시드팀, 테스트 계정, 패널티 공용 스프레드시트 ID |
-| GOOGLE_SHEETS_CREDENTIALS_PATH | 선택 | 서비스 계정 인증 파일 경로.<br>기본값 `credentials/google_sheets_credentials.json` |
 | SCRIM_CHANNEL_ID | 선택 | 스크림 대시보드 채널 ID |
 | LOG_CHANNEL_ID | 선택 | 운영 로그 채널 ID |
 | SCHEDULE_CHANNEL_ID | 선택 | 주간 편성 일정 대시보드 채널 ID |

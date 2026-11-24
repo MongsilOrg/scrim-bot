@@ -718,7 +718,7 @@ async def _apply_roster_warnings(
 
     except Exception as e:
         logger.error(f"[로스터주의] 주의 부여 처리 실패: {e}", exc_info=True)
-        return "주의를 부여하지 못했습니다.\n경고 시트를 확인해주세요."
+        return "주의를 부여하지 못했습니다.\n제재 부여 메뉴로 따로 부여해주세요."
 
 
 async def _update_mmr_message_for_individual_team(team_data_manager: "TeamDataManager") -> None:

@@ -2,18 +2,16 @@ import asyncio
 import contextlib
 import heapq
 import json
-import time
 from io import BytesIO
 from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 
 import aiohttp
-import gspread
 from discord.ext import commands
 from config.logging_config import get_logger, log_once
 from config.settings import settings
 from services.bser_api import BSERAPIClient
+from services import labs_ops
 from services.image_generator import ImageGenerator
-from utils.gsheet_client import create_gspread_client
 from utils.helpers import normalize_player_list
 from utils.validators import normalize_nickname_for_comparison
 
@@ -35,16 +33,10 @@ class TeamProcessor:
             raise ValueError("API 키가 설정되지 않았습니다.")
 
         self.seeds_data = None
-        self._seeds_loaded_at: float = 0.0
         self.test_accounts_data: Dict[str, float] = {}
         self._test_accounts_by_key: Dict[str, float] = {}
-        self._test_accounts_loaded_at: float = 0.0
-        self._test_accounts_attempted_at: float = 0.0
-        self.gspread_client: Optional[gspread.Client] = None
-        self.gspread_spreadsheet: Optional[gspread.Spreadsheet] = None
         self.group_image_cache: Dict[str, bytes] = {}
 
-        # 시트 연결과 테스트 계정 로드는 ensure_test_accounts_loaded가 스레드에서 처리
         self._discord_service = DiscordService(self, team_data_manager)
     
     def update_client(self, client: Optional[commands.Bot]) -> None:
@@ -75,88 +67,12 @@ class TeamProcessor:
             logger.error(f"[이미지생성] 조별 이미지 생성 실패 - 조: {group_letter}조: {e}", exc_info=True)
             return None
     
-    def _initialize_gspread_client(self) -> None:
-        self.gspread_client, self.gspread_spreadsheet = create_gspread_client(caller='구글시트')
-    
-    async def _load_seeds_data(self) -> bool:
-        return await asyncio.to_thread(self._load_seeds_data_sync)
-
-    def _load_seeds_data_sync(self) -> bool:
-        """실패 시 seeds_data를 비우면 TTL 동안 시드팀 우선 선발을 하지 않음."""
-        try:
-            if not self.gspread_spreadsheet:
-                self._initialize_gspread_client()
-                if not self.gspread_spreadsheet:
-                    logger.warning("[구글시트] 스프레드시트를 열 수 없음")
-                    return False
-
-            try:
-                worksheet = self.gspread_spreadsheet.worksheet(settings.GOOGLE_SHEETS_SEEDS_WORKSHEET_NAME)
-            except gspread.exceptions.WorksheetNotFound:
-                logger.warning(f"[구글시트] 시드팀 시트를 찾을 수 없음 - 시트명: {settings.GOOGLE_SHEETS_SEEDS_WORKSHEET_NAME}")
-                return False
-
-            all_values = worksheet.get_all_records()
-            
-            all_seeds = []
-            
-            for row in all_values:
-                team_name = str(row.get('team_name', '')).strip()
-                
-                players = []
-                for i in range(1, 5):
-                    player_col = f'player{i}'
-                    if player_col in row and row[player_col] and str(row[player_col]).strip():
-                        players.append(str(row[player_col]).strip())
-                
-                if team_name and players:
-                    team_data = {
-                        "team_name": team_name,
-                        "players": players
-                    }
-                    all_seeds.append(team_data)
-            
-            self.seeds_data = {
-                "seeds": all_seeds
-            }
-            return True
-
-        except Exception as e:
-            logger.error(f"[조편성] 시드 데이터 로드 실패, 기존 데이터 유지: {e}", exc_info=True)
+    def _load_seeds_data(self) -> bool:
+        """사본이 없으면 기존 seeds_data 유지."""
+        seeds = labs_ops.seeds()
+        if seeds is None:
             return False
-    
-    def _load_test_accounts_data_sync(self) -> bool:
-        """실패 시 test_accounts_data를 비우면 등록된 테스트 계정의 신청이 반려됨."""
-        if not self.gspread_spreadsheet:
-            self._initialize_gspread_client()
-            if not self.gspread_spreadsheet:
-                logger.warning("[구글시트] 스프레드시트를 열 수 없음")
-                return False
-
-        try:
-            worksheet = self.gspread_spreadsheet.worksheet(settings.GOOGLE_SHEETS_TEST_ACCOUNTS_WORKSHEET_NAME)
-            all_values = worksheet.get_all_records()
-        except gspread.exceptions.WorksheetNotFound:
-            logger.warning(f"[구글시트] 테스트 계정 시트를 찾을 수 없음 - 시트명: {settings.GOOGLE_SHEETS_TEST_ACCOUNTS_WORKSHEET_NAME}")
-            return False
-        except Exception as e:
-            logger.error(f"[구글시트] 테스트 계정 데이터 로드 실패: {e}", exc_info=True)
-            return False
-
-        test_accounts = {}
-        for row in all_values:
-            nickname = str(row.get('nickname', '')).strip()
-            mmr_str = str(row.get('mmr', '0')).strip()
-
-            if nickname:
-                try:
-                    mmr = float(mmr_str) if mmr_str else 0.0
-                    test_accounts[nickname] = mmr
-                except (ValueError, TypeError):
-                    logger.warning(f"[구글시트] 테스트 계정 MMR 파싱 실패 - 닉네임: {nickname}, MMR: {mmr_str}")
-                    test_accounts[nickname] = 0.0
-
-        self._set_test_accounts(test_accounts)
+        self.seeds_data = {"seeds": seeds}
         return True
 
     def _set_test_accounts(self, accounts: Dict[str, float]) -> None:
@@ -166,32 +82,13 @@ class TeamProcessor:
             for nickname, mmr in accounts.items()
         }
 
-    TEST_ACCOUNTS_TTL_SECONDS = 300
-    TEST_ACCOUNTS_RETRY_COOLDOWN_SECONDS = 30
-
-    async def ensure_test_accounts_loaded(self, force: bool = False) -> bool:
-        now = time.monotonic()
-        is_fresh = bool(
-            self._test_accounts_loaded_at
-            and (now - self._test_accounts_loaded_at) < self.TEST_ACCOUNTS_TTL_SECONDS
-        )
-        in_cooldown = bool(
-            self._test_accounts_attempted_at
-            and (now - self._test_accounts_attempted_at) < self.TEST_ACCOUNTS_RETRY_COOLDOWN_SECONDS
-        )
-        if not force and (is_fresh or in_cooldown):
-            return is_fresh
-
-        self._test_accounts_attempted_at = now
-        try:
-            loaded = await asyncio.to_thread(self._load_test_accounts_data_sync)
-        except Exception as e:
-            logger.error(f"[테스트계정] 시트 재로드 실패, 기존 데이터 유지: {e}", exc_info=True)
-            loaded = False
-
-        if loaded:
-            self._test_accounts_loaded_at = now
-        return loaded
+    async def ensure_test_accounts_loaded(self) -> bool:
+        """사본이 없으면 기존 목록 유지, 목록을 비우면 등록된 테스트 계정의 신청이 반려됨."""
+        accounts = labs_ops.tests()
+        if accounts is None:
+            return False
+        self._set_test_accounts(accounts)
+        return True
 
     def is_test_account(self, nickname: str) -> bool:
         return normalize_nickname_for_comparison(nickname) in self._test_accounts_by_key
@@ -204,7 +101,7 @@ class TeamProcessor:
         for player in players:
             mmr = self._get_test_account_mmr(player)
             if mmr is None:
-                logger.warning(f"[MMR조회] 테스트 계정 시트에 없음 - 플레이어: {player}")
+                logger.warning(f"[MMR조회] 테스트 계정 목록에 없음 - 플레이어: {player}")
                 continue
             mmr_list.append(mmr)
 
@@ -227,13 +124,8 @@ class TeamProcessor:
         norm_players2 = set(normalize_player_list(players2))
         return norm_players1 == norm_players2 and len(norm_players1) in (3, 4)
     
-    SEEDS_TTL_SECONDS = 3600
-
     async def ensure_seeds_marked(self, teams: Dict[str, TeamData]) -> None:
-        now = time.monotonic()
-        if self.seeds_data is None or (now - self._seeds_loaded_at) >= self.SEEDS_TTL_SECONDS:
-            if await self._load_seeds_data():
-                self._seeds_loaded_at = now
+        self._load_seeds_data()
         await self._identify_seeded_teams(teams)
 
     async def _identify_seeded_teams(self, teams: Dict[str, TeamData]) -> Dict[str, int]:
@@ -302,7 +194,7 @@ class TeamProcessor:
                             if self.is_test_account(player):
                                 mmr = self._get_test_account_mmr(player)
                                 if mmr is None:
-                                    logger.warning(f"[MMR조회] 테스트 계정 시트에 없음 - 플레이어: {player}")
+                                    logger.warning(f"[MMR조회] 테스트 계정 목록에 없음 - 플레이어: {player}")
                                 return mmr
                             uid = await api_client.get_user_uid(player)
                             if not uid:
@@ -341,8 +233,7 @@ class TeamProcessor:
         try:
             self.group_image_cache.clear()
 
-            if await self._load_seeds_data():
-                self._seeds_loaded_at = time.monotonic()
+            self._load_seeds_data()
 
             if not (self.seeds_data and self.seeds_data.get("seeds")):
                 logger.warning("[조편성] 시드 데이터 없음")

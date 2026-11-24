@@ -56,6 +56,7 @@ class Settings:
     LABS_URL: str = os.getenv('LABS_URL', 'https://labs.mongsil.dev')
     LABS_SCRIM_TOKEN: str = os.getenv('LABS_SCRIM_TOKEN', '')
     LABS_STATE_PATH: str = os.getenv('LABS_STATE_PATH', 'data/labs_scrim.json')
+    LABS_OPS_PATH: str = os.getenv('LABS_OPS_PATH', 'data/labs_ops.json')
     # 운영자 PC 감시 창이 보낸 결과 CSV를 이 대회에 받을지. 끄면 디스코드 업로드만 씀
     LABS_AUTO_UPLOAD: bool = os.getenv('LABS_AUTO_UPLOAD', 'true').lower() in ('1', 'true', 'yes')
     # 스크림 서버에서 이 역할을 가진 사람을 Labs 대회 운영자로 넣음
@@ -87,17 +88,6 @@ class Settings:
         "(https://www.notion.so/mongsildev/30125b3fe9fb8082b0e4f286d2f45512?source=copy_link)"
     )
 
-    GOOGLE_SHEETS_CREDENTIALS_PATH: str = os.getenv(
-        'GOOGLE_SHEETS_CREDENTIALS_PATH',
-        'credentials/google_sheets_credentials.json'
-    )
-    GOOGLE_SHEETS_MAIN_SPREADSHEET_ID: str = os.getenv(
-        'GOOGLE_SHEETS_MAIN_SPREADSHEET_ID', ''
-    )
-    GOOGLE_SHEETS_WARNING_WORKSHEET_NAME: str = '패널티'
-    GOOGLE_SHEETS_WARNING_LOG_WORKSHEET_NAME: str = '패널티로그'
-    GOOGLE_SHEETS_SEEDS_WORKSHEET_NAME: str = '시드팀'
-    GOOGLE_SHEETS_TEST_ACCOUNTS_WORKSHEET_NAME: str = '테스트'
     MASTERS_STATE_PATH: str = os.getenv('MASTERS_STATE_PATH', 'data/masters_state.json')
 
     @classmethod
@@ -107,7 +97,6 @@ class Settings:
         required_str_vars = {
             'DISCORD_TOKEN': cls.DISCORD_TOKEN,
             'BSER_API_KEY': cls.BSER_API_KEY,
-            'GOOGLE_SHEETS_MAIN_SPREADSHEET_ID': cls.GOOGLE_SHEETS_MAIN_SPREADSHEET_ID,
             'LABS_SCRIM_TOKEN': cls.LABS_SCRIM_TOKEN,
         }
 
@@ -129,12 +118,6 @@ class Settings:
             errors.append("환경변수 'ADMIN_ROLE_IDS'이(가) 설정되지 않았습니다")
         if not cls.GROUP_CHANNEL_IDS:
             errors.append("환경변수 'GROUP_CHANNEL_IDS'이(가) 설정되지 않았습니다")
-
-        if cls.GOOGLE_SHEETS_CREDENTIALS_PATH:
-            if not os.path.exists(cls.GOOGLE_SHEETS_CREDENTIALS_PATH):
-                errors.append(
-                    f"Google Sheets 인증 파일을 찾을 수 없습니다: {cls.GOOGLE_SHEETS_CREDENTIALS_PATH}"
-                )
 
         return (len(errors) == 0, errors)
 

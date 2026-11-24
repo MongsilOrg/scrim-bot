@@ -71,7 +71,7 @@ def operator_ids(guild: discord.Guild) -> List[str]:
     return sorted({str(m.id) for role in guild.roles if role.name in names for m in role.members if not m.bot})
 
 
-async def _request(method: str, path: str, body: Optional[dict] = None) -> Optional[dict]:
+async def request(method: str, path: str, body: Optional[dict] = None) -> Optional[dict]:
     headers = {'x-bot-token': settings.LABS_SCRIM_TOKEN, 'User-Agent': 'agent-local'}
     url = f"{settings.LABS_URL.rstrip('/')}{path}"
     try:
@@ -126,7 +126,7 @@ async def create_scrim(guild: discord.Guild, letters: List[str], today: Optional
         'links': links,
         'autoUpload': settings.LABS_AUTO_UPLOAD,
     }
-    result = await _request('POST', '/api/bot/t', body)
+    result = await request('POST', '/api/bot/t', body)
     if not result or result.get('status') != 'ok' or not isinstance(result.get('code'), str):
         return None
     state = load_state()
@@ -145,7 +145,7 @@ async def delete_previous(guild: discord.Guild, today: Optional[date] = None) ->
     if any(letter not in state.get('posted', []) for letter in state.get('groups', [])):
         logger.warning(f"[Labs] 게임 ID를 보내지 못한 조가 있어 {code} 대회를 남김")
         return
-    result = await _request('DELETE', f"/api/bot/t/{code}", {'owner': str(guild.owner_id)})
+    result = await request('DELETE', f"/api/bot/t/{code}", {'owner': str(guild.owner_id)})
     if not result:
         return
     state['deleted'] = True
@@ -154,7 +154,7 @@ async def delete_previous(guild: discord.Guild, today: Optional[date] = None) ->
 
 
 async def fetch_board(code: str, group_letter: str) -> Optional[dict]:
-    return await _request('GET', f"/api/bot/t/{code}?group={group_letter}")
+    return await request('GET', f"/api/bot/t/{code}?group={group_letter}")
 
 
 def backup_view(day: str, group_letter: str, replays: list) -> discord.ui.LayoutView:

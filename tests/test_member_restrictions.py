@@ -9,12 +9,8 @@ from models.team_data_manager import TeamDataManager
 
 class FakeWarningManager:
     def __init__(self, restricted):
-        self.worksheet = object()
         self._restricted = {name.lower() for name in restricted}
         self.checked = []
-
-    async def ensure_connected(self):
-        return True
 
     def is_restricted(self, target_id=None, target_name=None, check_date=None):
         self.checked.append(target_name)

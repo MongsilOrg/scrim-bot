@@ -9,14 +9,9 @@ from models.team_data_manager import TeamDataManager, format_korean_date
 
 
 class DateAwareWarningManager:
-    worksheet = object()
-
     def __init__(self, restricted_until: date):
         self.restricted_until = restricted_until
         self.check_dates = []
-
-    async def ensure_connected(self):
-        return True
 
     def is_restricted(self, target_id=None, target_name=None, check_date=None):
         self.check_dates.append(check_date)

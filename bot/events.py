@@ -11,7 +11,7 @@ from commands.scrim import setup_scrim_dashboard
 from utils.layout_helpers import error_view, send_response
 from config.logging_config import get_logger
 from config.settings import settings
-from services import labs_api
+from services import labs_api, labs_ops
 from utils import operator_log
 from utils.helpers import get_current_kst_time, get_group_letter, is_admin, is_assignment_window, is_csv_filename
 
@@ -47,8 +47,8 @@ async def bootstrap_on_ready(client: "ScrimBot") -> None:
         else:
             logger.error("[시작] 백업 복구 실패")
 
-    # 시트 연결 재시도는 정리 루프와 사용 시점 몫
-    bot_manager.get_warning_manager().start_cleanup_task()
+    labs_ops.start_sync(client)
+    bot_manager.get_warning_manager().start_masters_task()
 
     try:
         await setup_scrim_dashboard(client)
@@ -99,6 +99,17 @@ async def on_app_command_error(
         await send_response(interaction, error_view("명령어 처리 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요."))
     except Exception:
         pass
+
+
+async def on_member_update(before: discord.Member, after: discord.Member) -> None:
+    # 역할을 잃은 운영진이 다음 주기까지 Labs 운영 화면에 남지 않게 바로 전송
+    if before.roles != after.roles and (labs_ops.is_operator(before) or labs_ops.is_operator(after)):
+        await labs_ops.sync()
+
+
+async def on_member_remove(member: discord.Member) -> None:
+    if labs_ops.is_operator(member):
+        await labs_ops.sync()
 
 
 async def on_message(message: discord.Message) -> None:

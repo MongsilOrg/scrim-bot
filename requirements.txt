@@ -13,10 +13,6 @@ imgkit>=1.2.0
 # 환경변수 관리
 python-dotenv>=1.0.0
 
-# 구글 시트 API
-gspread>=5.12.0
-google-auth>=2.23.0
-
 # 에러 추적
 sentry-sdk>=2.0.0
 

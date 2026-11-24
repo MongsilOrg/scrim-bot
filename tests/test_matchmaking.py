@@ -1,4 +1,3 @@
-import time
 import unittest
 from unittest import mock
 
@@ -9,7 +8,6 @@ from models.team_processor import TeamProcessor
 def make_processor():
     processor = TeamProcessor.__new__(TeamProcessor)
     processor.seeds_data = None
-    processor._seeds_loaded_at = 0.0
     processor._set_test_accounts({})
     return processor
 
@@ -233,10 +231,19 @@ class PlayersMatchingTest(unittest.TestCase):
 class EnsureSeedsMarkedTest(unittest.IsolatedAsyncioTestCase):
     def make_fresh_processor(self, seeds):
         processor = make_processor()
-        processor.seeds_data = {'seeds': seeds}
-        processor._seeds_loaded_at = time.monotonic()
-        processor._load_seeds_data = mock.AsyncMock()
+        patcher = mock.patch('models.team_processor.labs_ops.seeds', return_value=seeds)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         return processor
+
+    async def test_missing_copy_keeps_previous_seeds(self):
+        processor = self.make_fresh_processor(None)
+        processor.seeds_data = {'seeds': [{'team_name': '시드팀A', 'players': ['Alpha', 'Bravo', 'Charlie']}]}
+        team = TeamData(name='우리팀', players=['Alpha', 'Bravo', 'Charlie'])
+
+        await processor.ensure_seeds_marked({'우리팀': team})
+
+        self.assertTrue(team.is_seed)
 
     async def test_matching_team_marked_with_seed_name(self):
         processor = self.make_fresh_processor([
@@ -255,7 +262,6 @@ class EnsureSeedsMarkedTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(teams['우리팀'].seed_name, '시드팀A')
         self.assertFalse(teams['남의팀'].is_seed)
         self.assertIsNone(teams['남의팀'].seed_name)
-        processor._load_seeds_data.assert_not_awaited()
 
     async def test_normalization_variants_match_through_full_path(self):
         processor = self.make_fresh_processor([

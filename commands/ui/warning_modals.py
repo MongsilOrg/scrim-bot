@@ -131,7 +131,7 @@ def _follow_up_fields(target_user: discord.Member, dm_sent: bool, restricted: bo
     return fields
 
 
-MISSING_DETAIL_TEXT = "기타를 고르면 상세 사유를 적어야 합니다."
+MISSING_DETAIL_TEXT = "기타를 선택했다면 상세 사유를 입력해주세요."
 
 
 def _missing_detail_view(target_user: discord.Member, reason_choice: str) -> TimeoutEditView:
@@ -267,4 +267,4 @@ class WarningReasonModal(Modal):
 
         except Exception as e:
             logger.error(f"[모달] 제재 모달 처리 실패 - 대상: {self.target_user.display_name if self.target_user else 'Unknown'}, 오류: {e}", exc_info=True)
-            await send_response(interaction, error_view("제재를 처리하지 못했습니다.\n시트에 기록됐는지 확인한 뒤 다시 시도해주세요."))
+            await send_response(interaction, error_view("제재를 처리하지 못했습니다.\n운영툴에 기록됐는지 확인한 뒤 다시 시도해주세요."))

@@ -10,10 +10,7 @@ def make_processor(mmr_by_nick: dict, test_accounts: dict = None) -> TeamProcess
     proc = TeamProcessor.__new__(TeamProcessor)
     proc.test_accounts_data = dict(test_accounts or {})
     proc._test_accounts_by_key = {k.lower(): v for k, v in (test_accounts or {}).items()}
-    proc._test_accounts_loaded_at = 0.0
-    proc._test_accounts_attempted_at = 0.0
     proc.seeds_data = None
-    proc._seeds_loaded_at = 0.0
 
     class FakeAPI:
         async def __aenter__(self):
