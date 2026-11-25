@@ -8,10 +8,10 @@ from utils.helpers import KST
 
 
 class ReserveSwapTest(unittest.IsolatedAsyncioTestCase):
-    async def test_roster_change_into_reserve_keeps_reserve_applicant(self):
+    async def test_roster_change_into_reserve_keeps_reserve_applicant_and_mmr_fallback(self):
         applied = datetime(2026, 11, 25, 12, 0, tzinfo=KST)
-        cancelled = TeamData(name='취소팀', players=['a', 'b', 'c'], user_id='1')
-        reserve = TeamData(name='예비팀', players=['s1', 's2', 's3'], user_id='2', created_at=applied)
+        cancelled = TeamData(name='취소팀', players=['a', 'b', 'c'], user_id='1', mmr=7000.0)
+        reserve = TeamData(name='예비팀', players=['s1', 's2', 's3'], user_id='2', created_at=applied, mmr=6000.0)
         edited = TeamData(name='예비팀', players=['s1', 's2', 's3'])
         bot = mock.Mock()
         mgr = bot.get_team_data_manager.return_value
@@ -22,7 +22,7 @@ class ReserveSwapTest(unittest.IsolatedAsyncioTestCase):
         interaction = mock.Mock()
         interaction.user.id = 9
         with mock.patch.object(team_pipeline, 'BotManager') as bm, \
-                mock.patch.object(team_pipeline, '_fetch_team_mmr_or', mock.AsyncMock(return_value=0.0)), \
+                mock.patch.object(team_pipeline, '_fetch_team_mmr_or', mock.AsyncMock(return_value=0.0)) as fetch, \
                 mock.patch.object(team_pipeline, '_save_user_cache'), \
                 mock.patch.object(team_pipeline, '_update_changed_team', mock.AsyncMock()), \
                 mock.patch.object(team_pipeline, '_record_roster_change'), \
@@ -44,6 +44,7 @@ class ReserveSwapTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((edited.user_id, edited.created_at), ('2', applied))
         self.assertEqual(mgr.replace_team.await_args.kwargs, {'enforce_rules': False})
         mgr.mark_unverified.assert_called_once_with('예비팀')
+        self.assertEqual(fetch.await_args.args[2], 6000.0)
 
 
 if __name__ == '__main__':

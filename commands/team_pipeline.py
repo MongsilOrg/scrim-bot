@@ -344,11 +344,11 @@ async def process_team_edit(
             if not passed:
                 return
 
-        new_team_mmr = await _fetch_team_mmr_or(team_processor, new_team_data, original_team_data.mmr)
-
-        # 관리자가 수정해도 신청자 user_id 유지, 예비팀으로 바꾸면 예비팀 신청자
+        # 관리자가 수정해도 신청자 user_id 유지, 예비팀으로 바꾸면 신청자와 MMR 대체값은 예비팀 것
         reserve = team_data_manager.find_reserve(new_team_name) if is_roster_change else None
         owner = reserve or original_team_data
+        new_team_mmr = await _fetch_team_mmr_or(team_processor, new_team_data, owner.mmr)
+
         new_team_data.user_id = owner.user_id or str(interaction.user.id)
         new_team_data.created_at = owner.created_at
         new_team_data.updated_at = get_current_kst_time()
