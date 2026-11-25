@@ -9,6 +9,7 @@ from commands.ui.roster_views import GroupRosterView, build_rest_day_guide_view
 from utils.layout_helpers import error_view, format_kr_date
 from config.logging_config import get_logger
 from config.settings import settings
+from models import role_requests
 from services.notion_api import get_server_info
 from utils.helpers import (
     get_current_kst_time, get_group_letter,
@@ -344,6 +345,9 @@ class DiscordService:
 
             participants = self._team_participants(group_teams)
             role_updates = self._build_role_updates(guild, {group_letter: group_role}, {group_letter: participants})
+            # 승인받은 대타와 스태프는 로스터에 없어 그대로 두면 조 역할을 잃음
+            granted = role_requests.granted_ids(group_letter)
+            role_updates = [update for update in role_updates if update[0].id not in granted or not update[1]]
             await self._apply_role_updates(role_updates)
 
             logger.info(f"[Discord] 조별 역할 업데이트 완료 - 조: {group_letter}조, 변경된 멤버: {len(role_updates)}명")

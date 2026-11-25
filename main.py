@@ -49,6 +49,7 @@ from bot.events import (
 )
 from bot.manager import BotManager
 from commands.operator_pick import PickButton
+from commands.role_request import DecisionButton, RequestButton
 from commands.room_code import WeatherButton, 방코드
 from commands.warning import 제재부여
 from config.logging_config import ScrimbotLogger
@@ -109,7 +110,7 @@ async def main():
 
         client = ScrimBot()
         BotManager.get_instance().set_client(client)
-        client.add_dynamic_items(WeatherButton, PickButton)
+        client.add_dynamic_items(WeatherButton, PickButton, RequestButton, DecisionButton)
 
         _register_client_events(client)
         _register_app_commands(client)

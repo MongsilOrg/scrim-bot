@@ -398,7 +398,7 @@ async def process_team_edit(
         )
 
         if is_roster_change and apply_warning:
-            sanction_line = await _apply_roster_warnings(
+            sanction_line = await apply_roster_warnings(
                 interaction, original_team_name, original_team_data.players, warning_reason
             )
             if sanction_line:
@@ -662,13 +662,15 @@ async def _update_group_announcement(group_letter: str) -> None:
         logger.error(f"[팀수정] 조별 공지 업데이트 실패: {e}", exc_info=True)
 
 
-async def _apply_roster_warnings(
+async def apply_roster_warnings(
     interaction: discord.Interaction,
     original_team_name: str,
     original_players: List[str],
     reason: str,
+    *,
+    kind: str = REASON_TYPE["대타"],
 ) -> str:
-    """반환: 결과 카드에 추가할 주의 부여 결과, 처리 실패면 실패 안내 문구."""
+    """반환: 결과 카드에 추가할 제재 부여 결과, 처리 실패면 실패 안내 문구."""
     try:
         admin_name = interaction.user.display_name or interaction.user.name
         warning_manager = BotManager.get_instance().get_warning_manager()
@@ -689,7 +691,7 @@ async def _apply_roster_warnings(
             success, message, auto_warning, converted_cautions = await warning_manager.add_warning(
                 target=target_name,
                 target_id=target_id,
-                warning_type=REASON_TYPE["대타"],
+                warning_type=kind,
                 reason=reason,
                 admin_display_name=admin_name,
             )
@@ -697,7 +699,7 @@ async def _apply_roster_warnings(
             if success:
                 success_count += 1
                 delivered = bool(discord_member) and await send_sanction_dm(
-                    discord_member, REASON_TYPE["대타"], reason,
+                    discord_member, kind, reason,
                     auto_warning=auto_warning,
                     converted_cautions=converted_cautions,
                 )
@@ -705,9 +707,9 @@ async def _apply_roster_warnings(
                     no_dm_names.append(target_name)
             else:
                 fail_names.append(target_name)
-                logger.error(f"[로스터주의] 주의 부여 실패 - 대상: {target_name}, 메시지: {message}")
+                logger.error(f"[로스터주의] {kind} 부여 실패 - 대상: {target_name}, 메시지: {message}")
 
-        result_text = f"{success_count}명에게 주의를 부여했습니다."
+        result_text = f"{success_count}명에게 {kind}를 부여했습니다."
         if fail_names:
             result_text += f"\n부여하지 못한 닉네임: {', '.join(fail_names)}\n제재 부여 메뉴로 따로 부여해주세요."
         if no_dm_names:
@@ -717,8 +719,8 @@ async def _apply_roster_warnings(
         return result_text
 
     except Exception as e:
-        logger.error(f"[로스터주의] 주의 부여 처리 실패: {e}", exc_info=True)
-        return "주의를 부여하지 못했습니다.\n제재 부여 메뉴로 따로 부여해주세요."
+        logger.error(f"[로스터주의] {kind} 부여 처리 실패: {e}", exc_info=True)
+        return f"{kind}를 부여하지 못했습니다.\n제재 부여 메뉴로 따로 부여해주세요."
 
 
 async def _update_mmr_message_for_individual_team(team_data_manager: "TeamDataManager") -> None:

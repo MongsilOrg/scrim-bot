@@ -4,6 +4,7 @@ import discord
 from discord import app_commands
 
 from bot.manager import BotManager
+from commands.role_request import move_panel, setup_role_request
 from commands.room_code import get_round_number
 from commands.schedule import setup_schedule_dashboard
 from commands.ticket_cleanup import setup_ticket_cleanup
@@ -61,6 +62,11 @@ async def bootstrap_on_ready(client: "ScrimBot") -> None:
     except Exception as e:
         logger.error(f"[시작] 일정 대시보드 연동 실패: {e}", exc_info=True)
 
+    try:
+        await setup_role_request(client)
+    except Exception as e:
+        logger.error(f"[시작] 권한 신청 버튼 연동 실패: {e}", exc_info=True)
+
     setup_ticket_cleanup(client)
     labs_api.resume_backups(client)
 
@@ -115,6 +121,9 @@ async def on_member_remove(member: discord.Member) -> None:
 
 async def on_message(message: discord.Message) -> None:
     if message.author.bot:
+        return
+    if message.channel.id == settings.ROLE_REQUEST_CHANNEL_ID:
+        await move_panel(message.channel)
         return
     if not any(is_csv_filename(att.filename) for att in message.attachments):
         return
