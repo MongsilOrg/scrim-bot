@@ -2,8 +2,9 @@
 권한 신청: 대타와 스태프의 조 역할을 버튼으로 신청받고, 운영진이 승인하면 역할과 대타 제재를 부여
 """
 import asyncio
+from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import discord
 from discord import ButtonStyle, SelectOption
@@ -12,7 +13,7 @@ from discord.ui import (
 )
 
 from bot.manager import BotManager
-from commands.team_pipeline import apply_roster_warnings
+from commands.team_pipeline import apply_roster_warnings, substitute_players
 from config.logging_config import get_logger
 from config.settings import settings
 from models import role_requests
@@ -50,6 +51,7 @@ ROSTER_CHANGED_TEXT = "로스터가 바뀌었습니다.\n다시 신청해주세�
 CLOSED_TEXT = "이미 처리했거나 지난 신청입니다."
 
 _decision_lock = asyncio.Lock()
+_roster_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 _submit_lock = asyncio.Lock()
 _panel_lock = asyncio.Lock()
 
@@ -442,24 +444,48 @@ async def _ask_note(interaction: discord.Interaction, action: str) -> None:
     await interaction.response.send_modal(NoteModal(action, request['kind']))
 
 
+def _sub_names(guild: discord.Guild, request: dict) -> List[str]:
+    """대타의 서버 별명. 로스터에는 게임 닉네임을 넣으므로 서버에 없으면 알 수 없음"""
+    members = [guild.get_member(user_id) for user_id in request['members']]
+    return [member.display_name for member in members if member]
+
+
+def _approval_block(guild: discord.Guild, request: dict) -> str:
+    if _roster_changed(request):
+        return "로스터가 바뀌어 승인할 수 없습니다.\n거절해주세요."
+    if request['kind'] == SUB and len(_sub_names(guild, request)) != len(request['members']):
+        return "대타가 서버에 없어 승인할 수 없습니다.\n거절해주세요."
+    return ''
+
+
 async def _decide(interaction: discord.Interaction, action: str, note: str = '') -> None:
-    member = interaction.user
-    guild = interaction.guild
     if not _is_operator(interaction):
         await send_response(interaction, permission_error_view())
         return
+    pending = _pending(interaction.message.id)
+    if action == REJECT or not pending:
+        await _close(interaction, action, note)
+        return
+    # 승인이 로스터를 바꾸므로 같은 팀의 다음 승인은 바뀐 로스터로 확인
+    async with _roster_locks[pending['team']]:
+        await _close(interaction, action, note)
 
+
+async def _close(interaction: discord.Interaction, action: str, note: str) -> None:
+    member = interaction.user
+    guild = interaction.guild
     async with _decision_lock:
         pending = _pending(interaction.message.id)
-        stale = bool(pending) and action != REJECT and _roster_changed(pending)
-        request = pending and not stale and role_requests.close(
+        block = _approval_block(guild, pending) if pending and action != REJECT else ''
+        subs = _sub_names(guild, pending) if pending and pending['kind'] == SUB else []
+        request = pending and not block and role_requests.close(
             interaction.message.id,
             REJECTED if action == REJECT else APPROVED,
             sanction=pending['sanction'] if action == APPROVE else None,
             note=note,
         )
-    if stale:
-        await send_response(interaction, error_view("로스터가 바뀌어 승인할 수 없습니다.\n거절해주세요."))
+    if block:
+        await send_response(interaction, error_view(block))
         return
     if not request:
         await send_response(interaction, error_view(CLOSED_TEXT))
@@ -478,6 +504,10 @@ async def _decide(interaction: discord.Interaction, action: str, note: str = '')
     failed = await _grant_roles(guild, request)
     if failed:
         notes.append(f"조 역할을 부여하지 못했습니다.\n직접 부여해주세요: {_mentions(failed)}")
+    if request['kind'] == SUB:
+        problem = await substitute_players(interaction, request['letter'], request['team'], request['out'], subs)
+        if problem:
+            notes.append(problem)
     if request['sanction']:
         reason = "대타" if request['sanction'] == '주의' else LATE_REASON
         notes.append(await apply_roster_warnings(

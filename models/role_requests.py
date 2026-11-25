@@ -89,6 +89,17 @@ def is_requested(team: str, kind: str, member_ids: Set[int]) -> bool:
     )
 
 
+def sanctioned_out() -> Set[str]:
+    """승인으로 이미 제재를 받은 선수. 로스터 변경에서 같은 제재를 다시 부여하지 않게 함"""
+    today = _today()
+    return {
+        name
+        for row in _load()['requests'].values()
+        if row.get('date') == today and row.get('status') == APPROVED and row.get('sanction')
+        for name in row.get('out') or []
+    }
+
+
 def granted_ids(letter: str) -> Set[int]:
     today = _today()
     return {

@@ -1,3 +1,4 @@
+import asyncio
 import os
 import tempfile
 import unittest
@@ -530,6 +531,7 @@ class DecisionTest(StoreCase):
         self.sub = _member(20)
         self.guild = SimpleNamespace(roles=[self.role], get_member=lambda uid: self.sub if uid == 20 else None)
         self.warnings = AsyncMock(return_value="2명에게 주의를 부여했습니다.")
+        self.substitute = AsyncMock(return_value="")
         self.alert = AsyncMock(return_value=True)
         self.team = TeamData(name="Team ER", players=["가", "나", "다", "라"])
         self.manager = SimpleNamespace(
@@ -537,6 +539,7 @@ class DecisionTest(StoreCase):
         )
         for target in (
             patch.object(role_request, "apply_roster_warnings", new=self.warnings),
+            patch.object(role_request, "substitute_players", new=self.substitute),
             patch.object(role_request.alerts, "send", new=self.alert),
             patch.object(
                 role_request.BotManager, "get_instance",
@@ -644,6 +647,68 @@ class DecisionTest(StoreCase):
         self.assertNotIn("**제재** ", card)
         self.sub.add_roles.assert_not_awaited()
         self.warnings.assert_not_awaited()
+
+    async def test_approved_sub_replaces_the_absent_players_in_the_roster(self):
+        role_requests.add(500, _request())
+        role_requests.add(501, _request(members=[21]))
+        role_requests.add(502, _request(role_request.STAFF, members=[22]))
+        role_requests.add(503, _request(members=[23]))
+        self.sub.display_name = "대타닉"
+        self.guild.get_member = lambda uid: self.sub if uid in (20, 21, 22) else None
+
+        first = self._click()
+        await role_request._decide(first, role_request.APPROVE)
+        await role_request._decide(self._click(message_id=501), role_request.WAIVE, "진단서 확인")
+        await role_request._decide(self._click(message_id=502), role_request.APPROVE)
+        await role_request._decide(self._click(message_id=503), role_request.REJECT, "서버에 없음")
+
+        self.assertEqual(self.substitute.await_count, 2)
+        self.assertEqual(self.substitute.await_args_list[0].args, (first, "A", "Team ER", ["가", "나"], ["대타닉"]))
+
+    async def test_roster_problem_is_told_to_the_operator(self):
+        role_requests.add(500, _request())
+        self.substitute.return_value = "로스터를 바꾸지 못했습니다.\n로스터 변경에서 직접 바꿔주세요."
+        interaction = self._click()
+
+        await role_request._decide(interaction, role_request.APPROVE)
+
+        self.assertEqual(
+            _text(interaction.followup.send.await_args.kwargs['view']),
+            "## 대타 승인\n로스터를 바꾸지 못했습니다.\n로스터 변경에서 직접 바꿔주세요.\n2명에게 주의를 부여했습니다.",
+        )
+
+    async def test_sub_who_left_the_server_is_not_approved(self):
+        role_requests.add(500, _request(members=[23]))
+        interaction = self._click()
+
+        await role_request._decide(interaction, role_request.APPROVE)
+
+        self.assertEqual(_sent_text(interaction), "## 오류\n대타가 서버에 없어 승인할 수 없습니다.\n거절해주세요.")
+        self.assertEqual(role_requests.get(500)['status'], PENDING)
+        self.substitute.assert_not_awaited()
+        self.warnings.assert_not_awaited()
+
+    async def test_next_approval_of_the_team_is_checked_against_the_changed_roster(self):
+        role_requests.add(500, _request())
+        role_requests.add(501, _request(members=[21], out=["나", "다"]))
+        self.guild.get_member = lambda uid: self.sub
+
+        async def substitute(interaction, letter, team, out, subs):
+            await asyncio.sleep(0)
+            self.team.players = [player for player in self.team.players if player not in out] + subs
+            return ""
+
+        self.substitute.side_effect = substitute
+        second = self._click(message_id=501)
+
+        await asyncio.gather(
+            role_request._decide(self._click(), role_request.APPROVE),
+            role_request._decide(second, role_request.APPROVE),
+        )
+
+        self.assertEqual(_sent_text(second), "## 오류\n로스터가 바뀌어 승인할 수 없습니다.\n거절해주세요.")
+        self.assertEqual(role_requests.get(501)['status'], PENDING)
+        self.assertEqual(self.warnings.await_count, 1)
 
     async def test_request_is_not_approved_after_the_group_or_roster_changed(self):
         role_requests.add(500, _request())

@@ -1,3 +1,4 @@
+import dataclasses
 import time
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
 
@@ -8,6 +9,7 @@ from commands.ui.warning_modals import REASON_TYPE, send_sanction_dm
 from utils.scrim_history import record_assignment
 from config.logging_config import get_logger
 from config.settings import settings
+from models import role_requests
 from models.team_data import TeamData
 from models.user_team_cache import UserTeamCache
 from utils.helpers import build_member_lookup, get_current_kst_time
@@ -374,14 +376,7 @@ async def process_team_edit(
 
         if is_roster_change and group_letter:
             await _update_changed_team(group_letter, team_data_manager, original_team_name, new_team_name, new_team_mmr)
-            # 대타가 시즌 통계에 포함되도록 바뀐 조 구성을 한 줄 더 남김
-            client = BotManager.get_instance().get_client()
-            team_data_manager.spawn_task(record_assignment(
-                team_data_manager.groups, None, registered=None,
-                guild=client.get_guild(settings.GUILD_ID) if client else None,
-                is_test=team_processor.is_test_account,
-                source='roster_change', changed_team=new_team_name,
-            ))
+            _record_roster_change(team_data_manager, team_processor, new_team_name)
 
         roster_warnings: List[str] = []
         if is_roster_change:
@@ -395,9 +390,13 @@ async def process_team_edit(
         )
 
         if is_roster_change and apply_warning:
-            sanction_line = await apply_roster_warnings(
-                interaction, original_team_name, original_team_data.players, warning_reason
-            )
+            # 권한 신청 승인으로 이미 제재를 받은 선수는 뺌
+            sanctioned = {normalize_nickname_for_comparison(name) for name in role_requests.sanctioned_out()}
+            targets = [
+                player for player in original_team_data.players
+                if normalize_nickname_for_comparison(player) not in sanctioned
+            ]
+            sanction_line = await apply_roster_warnings(interaction, original_team_name, targets, warning_reason)
             if sanction_line:
                 await _send_edit_result(
                     temp_message, team_processor, original_team_name, new_team_data, new_team_mmr,
@@ -424,6 +423,55 @@ async def process_team_edit(
                 forget_failed_input(user_id)
             else:
                 remember_failed_input(user_id, new_team_data, original_team_name=original_team_name)
+
+
+def _record_roster_change(
+    team_data_manager: "TeamDataManager", team_processor: "TeamProcessor", team_name: str,
+) -> None:
+    # 대타가 시즌 통계에 포함되도록 바뀐 조 구성을 한 줄 더 남김
+    client = BotManager.get_instance().get_client()
+    team_data_manager.spawn_task(record_assignment(
+        team_data_manager.groups, None, registered=None,
+        guild=client.get_guild(settings.GUILD_ID) if client else None,
+        is_test=team_processor.is_test_account,
+        source='roster_change', changed_team=team_name,
+    ))
+
+
+ROSTER_NOT_CHANGED_TEXT = "로스터를 바꾸지 못했습니다.\n로스터 변경에서 직접 바꿔주세요."
+
+
+async def substitute_players(
+    interaction: discord.Interaction, group_letter: str, team_name: str, out: List[str], subs: List[str],
+) -> str:
+    """권한 신청 승인: 출전하지 않는 선수를 빼고 대타를 넣음. 반환: 운영진에게 알릴 문제, 없으면 빈 문자열."""
+    try:
+        team_data_manager = BotManager.get_instance().get_team_data_manager()
+        team_processor = BotManager.get_instance().get_team_processor()
+        original = team_data_manager.get_team_data(team_name)
+        if original is None:
+            return ROSTER_NOT_CHANGED_TEXT
+
+        players = [player for player in original.players if player not in out] + subs
+        new_team = dataclasses.replace(original, players=players, updated_at=get_current_kst_time())
+        await team_processor.ensure_test_accounts_loaded()
+        fetched_mmr = await _fetch_team_mmr_or(team_processor, new_team, 0.0)
+        # 조편성이 끝난 뒤라 MMR은 표시에만 쓰임, 조회에 실패해도 대타가 조 채널에 들어가야 함
+        new_mmr = fetched_mmr or original.mmr
+        replaced, _ = await team_data_manager.replace_team(team_name, new_team, new_mmr, enforce_rules=False)
+        if not replaced:
+            return ROSTER_NOT_CHANGED_TEXT
+
+        _log_edit_diff(interaction, team_data_manager, team_name, original, new_team, new_mmr)
+        await _update_changed_team(group_letter, team_data_manager, team_name, team_name, new_mmr)
+        _record_roster_change(team_data_manager, team_processor, team_name)
+        await _update_group_announcement(group_letter)
+        if fetched_mmr:
+            return ""
+        return f"MMR을 조회하지 못했습니다.\n로스터 변경에서 닉네임을 확인해주세요: {', '.join(subs)}"
+    except Exception as e:
+        logger.error(f"[권한신청] 로스터 변경 실패 - 팀: {team_name}: {e}", exc_info=True)
+        return ROSTER_NOT_CHANGED_TEXT
 
 
 def _apply_unverified_transition(
