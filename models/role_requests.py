@@ -104,6 +104,21 @@ def sanctioned_out() -> Set[str]:
     }
 
 
+def rename_team(letter: str, old: str, new: str) -> None:
+    """팀명만 고친 팀의 그날 승인 기록을 새 팀명으로 옮김"""
+    today = _today()
+    rows = [
+        row for row in _load()['requests'].values()
+        if row.get('date') == today and row.get('status') == APPROVED
+        and row.get('letter') == letter and row.get('team') == old
+    ]
+    if old == new or not rows:
+        return
+    for row in rows:
+        row['team'] = new
+    _save()
+
+
 def approved_members(letter: str, *, except_team: str) -> Set[int]:
     """그날 그 조의 다른 팀에 대타나 스태프로 승인된 사람"""
     today = _today()

@@ -377,7 +377,11 @@ async def process_team_edit(
             interaction, team_data_manager, original_team_name, original_team_data, new_team_data, new_team_mmr
         )
 
+        swapped = bool(reserve) or _is_team_swap(original_team_data, new_team_data)
         if is_roster_change and group_letter:
+            if not swapped:
+                # 승인 기록이 새 팀명을 따라가야 조별 이미지의 대타 표시와 조 역할 유지가 이어짐
+                role_requests.rename_team(group_letter, original_team_name, new_team_name)
             # 대타로 빠진 선수의 조 역할은 남기고, 취소팀 자리에 들어온 예비팀이면 취소팀의 조 역할을 회수
             await _update_changed_team(
                 group_letter, team_data_manager, original_team_name, new_team_name, new_team_mmr,
@@ -413,7 +417,7 @@ async def process_team_edit(
         if is_roster_change:
             if group_letter:
                 await update_group_announcement(group_letter)
-                if reserve or _is_team_swap(original_team_data, new_team_data):
+                if swapped:
                     await _announce_team_swap(group_letter, original_team_name, new_team_name)
         else:
             await _update_mmr_message_for_individual_team(team_data_manager)

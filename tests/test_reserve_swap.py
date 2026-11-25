@@ -31,6 +31,7 @@ class ReserveSwapTest(unittest.IsolatedAsyncioTestCase):
                 mock.patch.object(team_pipeline, '_fetch_team_mmr_or', mock.AsyncMock(return_value=0.0)) as fetch, \
                 mock.patch.object(team_pipeline, '_save_user_cache'), \
                 mock.patch.object(team_pipeline, '_update_changed_team', mock.AsyncMock()) as changed, \
+                mock.patch.object(team_pipeline.role_requests, 'rename_team') as renamed, \
                 mock.patch.object(team_pipeline, '_record_roster_change'), \
                 mock.patch.object(team_pipeline, '_collect_roster_warnings', mock.AsyncMock(return_value=[])), \
                 mock.patch.object(team_pipeline, '_send_edit_result', mock.AsyncMock()), \
@@ -48,6 +49,7 @@ class ReserveSwapTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(changed.await_args.kwargs, {'revoke_previous': True})
+        renamed.assert_not_called()
         announced.assert_awaited_once_with('B', '취소팀', '예비팀')
 
         mgr.find_reserve.assert_called_once_with('예비팀')
@@ -69,6 +71,7 @@ class ReserveSwapTest(unittest.IsolatedAsyncioTestCase):
                 mock.patch.object(team_pipeline, '_fetch_team_mmr_or', mock.AsyncMock(return_value=6900.0)), \
                 mock.patch.object(team_pipeline, '_save_user_cache'), \
                 mock.patch.object(team_pipeline, '_update_changed_team', mock.AsyncMock()) as changed, \
+                mock.patch.object(team_pipeline.role_requests, 'rename_team') as renamed, \
                 mock.patch.object(team_pipeline, '_record_roster_change'), \
                 mock.patch.object(team_pipeline, '_collect_roster_warnings', mock.AsyncMock(return_value=[])), \
                 mock.patch.object(team_pipeline, '_send_edit_result', mock.AsyncMock()), \
@@ -86,6 +89,7 @@ class ReserveSwapTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(changed.await_args.kwargs, {'revoke_previous': False})
+        renamed.assert_called_once_with('A', '알파팀', '알파팀')
         redrawn.assert_awaited_once_with('A')
         announced.assert_not_awaited()
 

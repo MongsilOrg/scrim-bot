@@ -684,6 +684,11 @@ class DecisionTest(StoreCase):
         self.assertEqual(role_requests.approved_members("A", except_team="Other"), {20, 21})
         self.assertEqual(role_requests.approved_members("A", except_team="Team ER"), set())
 
+        role_requests.rename_team("A", "Team ER", "Team ER2")
+        self.assertEqual(list(role_requests.roster_marks("A")), ["Team ER2"])
+        self.assertEqual(role_requests.approved_members("A", except_team="Team ER2"), set())
+        self.assertEqual(role_requests.get(502)['team'], "Team ER")
+
     async def test_roster_problem_is_told_to_the_operator(self):
         role_requests.add(500, _request())
         self.substitute.return_value = "로스터를 바꾸지 못했습니다.\n로스터 변경에서 직접 바꿔주세요."
