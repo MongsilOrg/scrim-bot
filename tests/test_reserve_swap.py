@@ -27,7 +27,7 @@ class ReserveSwapTest(unittest.IsolatedAsyncioTestCase):
         with mock.patch.object(team_pipeline, 'BotManager') as bm, \
                 mock.patch.object(team_pipeline, '_fetch_team_mmr_or', mock.AsyncMock(return_value=0.0)) as fetch, \
                 mock.patch.object(team_pipeline, '_save_user_cache'), \
-                mock.patch.object(team_pipeline, '_update_changed_team', mock.AsyncMock()), \
+                mock.patch.object(team_pipeline, '_update_changed_team', mock.AsyncMock()) as changed, \
                 mock.patch.object(team_pipeline, '_record_roster_change'), \
                 mock.patch.object(team_pipeline, '_collect_roster_warnings', mock.AsyncMock(return_value=[])), \
                 mock.patch.object(team_pipeline, '_send_edit_result', mock.AsyncMock()), \
@@ -43,6 +43,7 @@ class ReserveSwapTest(unittest.IsolatedAsyncioTestCase):
                 is_roster_change=True,
             )
 
+        self.assertEqual(changed.await_args.kwargs, {'revoke_previous': True})
         mgr.find_reserve.assert_called_once_with('예비팀')
         self.assertEqual((edited.user_id, edited.created_at), ('2', applied))
         self.assertEqual(mgr.replace_team.await_args.kwargs, {'enforce_rules': False})

@@ -377,7 +377,11 @@ async def process_team_edit(
         )
 
         if is_roster_change and group_letter:
-            await _update_changed_team(group_letter, team_data_manager, original_team_name, new_team_name, new_team_mmr)
+            # 대타로 빠진 선수의 조 역할은 남기고, 취소팀 자리에 들어온 예비팀이면 취소팀의 조 역할을 회수
+            await _update_changed_team(
+                group_letter, team_data_manager, original_team_name, new_team_name, new_team_mmr,
+                revoke_previous=bool(reserve),
+            )
             _record_roster_change(team_data_manager, team_processor, new_team_name)
 
         roster_warnings: List[str] = []
