@@ -471,6 +471,19 @@ class SubmitTest(StoreCase):
                 else:
                     self.assertEqual(role_requests.get(2)['members'], [20])
 
+    async def test_roster_staff_who_was_also_requested_takes_one_place(self):
+        self.team.staff = ["코치", "분석가"]
+        role_requests.add(1, _request(role_request.STAFF, members=[30]))
+        staff = role_request.StaffModal("A", "Team ER")
+        staff.staff_select._values = [_member(20)]
+        interaction = _interaction(_member(10))
+        interaction.guild.get_member = {30: _member(30, "분석가")}.get
+        interaction.channel.send = AsyncMock(return_value=SimpleNamespace(id=2))
+
+        await staff.on_submit(interaction)
+
+        self.assertEqual(role_requests.get(2)['members'], [20])
+
     async def test_rejected_staff_request_frees_the_place(self):
         self.team.staff = ["코치", "분석가"]
         role_requests.add(1, _request(role_request.STAFF, members=[30]))

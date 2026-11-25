@@ -4,7 +4,7 @@
 import asyncio
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import discord
 from discord import ButtonStyle, SelectOption
@@ -314,7 +314,7 @@ class StaffModal(Modal):
             'reason': _one_line(self.reason.value),
             'sanction': None,
             'status': PENDING,
-        }, room=STAFF_LIMIT - len(found[2].staff))
+        }, roster_staff=found[2].staff)
 
 
 class NoteModal(Modal):
@@ -367,8 +367,15 @@ def _staff_full_text(left: int) -> str:
     return f"{head}\n스태프를 바꾸려면 운영진에게 문의해주세요."
 
 
-async def _submit(interaction: discord.Interaction, request: dict, *, room: Optional[int] = None) -> None:
-    """room은 그 팀이 권한 신청으로 더 둘 수 있는 스태프 수"""
+def _roster_staff_ids(guild: Optional[discord.Guild], roster_staff: List[str], member_ids: Set[int]) -> Set[int]:
+    """로스터 스태프로 이미 적힌 사람. 한도를 셀 때 로스터와 신청에서 두 번 세지 않음"""
+    keys = {normalize_nickname_for_comparison(name) for name in roster_staff}
+    members = [guild.get_member(member_id) for member_id in member_ids] if guild else []
+    return {member.id for member in members if isinstance(member, discord.Member) and member_name_keys(member) & keys}
+
+
+async def _submit(interaction: discord.Interaction, request: dict, *, roster_staff: Optional[List[str]] = None) -> None:
+    """roster_staff는 스태프 권한 신청일 때 그 팀의 로스터 스태프"""
     channel = interaction.channel
     try:
         # 신청 카드가 채널에 올라오므로 신청자에게 따로 답하지 않음. 앞 신청을 기다리다 응답 기한을 넘기지 않게 먼저 응답
@@ -381,9 +388,12 @@ async def _submit(interaction: discord.Interaction, request: dict, *, room: Opti
         if role_requests.is_requested(request['team'], request['kind'], set(request['members'])):
             await send_response(interaction, error_view("이미 신청한 사람은 다시 선택할 수 없습니다."))
             return
-        if room is not None:
-            left = room - len(role_requests.requested_ids(request['team'], request['kind']))
-            if len(request['members']) > left:
+        if roster_staff is not None:
+            earlier = role_requests.requested_ids(request['team'], request['kind'])
+            asked = set(request['members'])
+            listed = _roster_staff_ids(interaction.guild, roster_staff, earlier | asked)
+            left = STAFF_LIMIT - len(roster_staff) - len(earlier - listed)
+            if len(asked - listed) > left:
                 await send_response(interaction, error_view(_staff_full_text(left)))
                 return
         try:
