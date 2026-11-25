@@ -14,6 +14,8 @@ def make_manager(teams=None, *, started=False) -> TeamDataManager:
     mgr.teams = {}
     mgr.team_by_member = {}
     mgr._mmr_dirty = False
+    mgr.groups = None
+    mgr.unverified_teams = set()
     mgr.is_team_assignment_started = started
     mgr.scrim_day = None
     mgr.scrim_month = None
@@ -110,6 +112,44 @@ class ReplaceTeamRulesTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(ok)
         self.assertEqual(mgr.teams['베타팀'].players, ['b1', 'b2', 'b3'])
+
+    def _grouped(self):
+        alpha = TeamData(name='알파팀', players=['a1', 'a2', 'a3'])
+        beta = TeamData(name='베타팀', players=['b1', 'b2', 'b3'])
+        spare = TeamData(name='예비팀', players=['s1', 's2', 's3'])
+        mgr = make_manager({'알파팀': alpha, '베타팀': beta, '예비팀': spare}, started=True)
+        mgr.groups = [[('알파팀', alpha, 0.0), ('베타팀', beta, 0.0)]]
+        return mgr
+
+    async def test_roster_change_moves_reserve_into_slot(self):
+        mgr = self._grouped()
+        mgr.unverified_teams = {'알파팀'}
+        edited = TeamData(name='예비팀 ', players=['s1', 's2', 's4'])
+
+        ok, _ = await mgr.replace_team('알파팀', edited, 0.0, enforce_rules=False)
+
+        self.assertTrue(ok)
+        self.assertEqual(sorted(mgr.teams), ['베타팀', '예비팀 '])
+        self.assertEqual(mgr.team_by_member, {
+            'b1': '베타팀', 'b2': '베타팀', 'b3': '베타팀', 's1': '예비팀 ', 's2': '예비팀 ', 's4': '예비팀 ',
+        })
+        self.assertEqual(mgr.unverified_teams, set())
+
+    async def test_roster_change_rejects_name_of_grouped_team(self):
+        mgr = self._grouped()
+        edited = TeamData(name='베타팀', players=['a1', 'a2', 'a3'])
+
+        ok, _ = await mgr.replace_team('알파팀', edited, 0.0, enforce_rules=False)
+
+        self.assertFalse(ok)
+        self.assertEqual(sorted(mgr.teams), ['베타팀', '알파팀', '예비팀'])
+
+    async def test_find_reserve_ignores_grouped_team(self):
+        mgr = self._grouped()
+
+        self.assertIs(mgr.find_reserve(' 예비팀'), mgr.teams['예비팀'])
+        self.assertIsNone(mgr.find_reserve('베타팀'))
+        self.assertIsNone(mgr.find_reserve('없는팀'))
 
 
 if __name__ == '__main__':

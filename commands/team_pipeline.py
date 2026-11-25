@@ -346,9 +346,11 @@ async def process_team_edit(
 
         new_team_mmr = await _fetch_team_mmr_or(team_processor, new_team_data, original_team_data.mmr)
 
-        # 관리자가 수정해도 신청자 user_id 유지
-        new_team_data.user_id = original_team_data.user_id or str(interaction.user.id)
-        new_team_data.created_at = original_team_data.created_at
+        # 관리자가 수정해도 신청자 user_id 유지, 예비팀으로 바꾸면 예비팀 신청자
+        reserve = team_data_manager.find_reserve(new_team_name) if is_roster_change else None
+        owner = reserve or original_team_data
+        new_team_data.user_id = owner.user_id or str(interaction.user.id)
+        new_team_data.created_at = owner.created_at
         new_team_data.updated_at = get_current_kst_time()
         replaced, replace_reason = await team_data_manager.replace_team(
             original_team_name, new_team_data, new_team_mmr, enforce_rules=not is_roster_change
@@ -365,7 +367,7 @@ async def process_team_edit(
             is_maintenance=is_maintenance,
             old_members=original_team_data.all_members,
             new_members=new_team_data.all_members,
-            old_name=original_team_name,
+            old_name=reserve.name if reserve else original_team_name,
             new_name=new_team_name,
             validated=not is_roster_change,
         )

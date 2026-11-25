@@ -479,6 +479,20 @@ class TeamDataManager:
                 team.mmr_updated_at = get_current_kst_time()
 
 
+    def is_reserve(self, team_name: str) -> bool:
+        """조편성 뒤 어느 조에도 들지 못한 신청팀."""
+        if not self.groups or team_name not in self.teams:
+            return False
+        key = normalize_team_name(team_name)
+        return all(normalize_team_name(name) != key for group in self.groups for name, _, _ in group)
+
+    def find_reserve(self, team_name: str) -> Optional[TeamData]:
+        key = normalize_team_name(team_name)
+        return next(
+            (team for name, team in self.teams.items() if normalize_team_name(name) == key and self.is_reserve(name)),
+            None,
+        )
+
     async def replace_team(
         self,
         old_team_name: str,
@@ -506,16 +520,24 @@ class TeamDataManager:
                     return False, reason
 
             new_key = normalize_team_name(new_team.name)
-            if any(
-                name != old_team_name and normalize_team_name(name) == new_key
-                for name in self.teams
-            ):
+            clash = next(
+                (name for name in self.teams if name != old_team_name and normalize_team_name(name) == new_key),
+                None,
+            )
+            # 조편성 뒤 취소팀 자리에 예비팀을 넣는 로스터 변경은 예비팀 신청을 그 자리로 옮김
+            reserve = clash if clash and not enforce_rules and self.is_reserve(clash) else None
+            if clash and not reserve:
                 logger.info(f"[팀데이터] 교체 거부 - 이미 있는 팀명: {new_team.name}")
                 return False, f"이미 신청된 팀명입니다: **{new_team.name}**\n다른 팀명을 입력해주세요."
 
             old_team = self.teams[old_team_name]
             self._remove_member_index(old_team_name, old_team)
             del self.teams[old_team_name]
+            if reserve:
+                logger.info(f"[팀데이터] 예비팀 교체 - {old_team_name} 자리에 {reserve}")
+                self._remove_member_index(reserve, self.teams[reserve])
+                del self.teams[reserve]
+                self.unverified_teams.discard(old_team_name)
 
             self.teams[new_team.name] = new_team
             new_team.mmr = new_mmr

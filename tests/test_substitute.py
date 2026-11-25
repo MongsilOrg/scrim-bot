@@ -144,6 +144,7 @@ class RosterChangeSanctionTest(unittest.IsolatedAsyncioTestCase):
         bot = mock.Mock()
         bot.get_team_data_manager.return_value.replace_team = mock.AsyncMock(return_value=(True, ""))
         bot.get_team_data_manager.return_value.unverified_teams = set()
+        bot.get_team_data_manager.return_value.find_reserve.return_value = None
         bot.get_team_processor.return_value.ensure_test_accounts_loaded = mock.AsyncMock()
         warnings = mock.AsyncMock(return_value="2명에게 주의를 부여했습니다.")
         interaction = mock.Mock()

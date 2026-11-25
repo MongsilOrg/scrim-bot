@@ -8,11 +8,12 @@ import asyncio
 import json
 import os
 from datetime import datetime
+from typing import Optional
 
 from config.logging_config import get_logger
 from services.bser_api import BSERAPIClient
 from utils.helpers import get_current_kst_time
-from utils.validators import member_name_keys, normalize_nickname_for_comparison
+from utils.validators import member_name_keys, normalize_nickname_for_comparison, normalize_team_name
 
 logger = get_logger('scrim_history')
 
@@ -76,6 +77,12 @@ def _last_row(date: str):
     return None
 
 
+def _still_reserve(previous: Optional[dict], groups) -> list:
+    # 로스터 변경으로 조에 들어간 예비팀은 예비 목록에서 뺌
+    placed = {normalize_team_name(name) for group in groups for name, _, _ in group}
+    return [team for team in (previous or {}).get('reserve', []) if normalize_team_name(team['team']) not in placed]
+
+
 async def record_assignment(groups, reserve, *, registered, guild=None, is_test=lambda name: False,
                             source: str = 'assignment', changed_team: str = None) -> None:
     """같은 날 다시 편성하거나 로스터를 바꾸면 줄이 하나 더 생기고, 통계는 그날 마지막 줄을 씀
@@ -100,7 +107,7 @@ async def record_assignment(groups, reserve, *, registered, guild=None, is_test=
                     list(await asyncio.gather(*[_team(api, members, is_test, t, letter, i + 1) for i, t in enumerate(group)]))
                     for letter, group in zip(letters, groups)
                 ],
-                'reserve': (previous or {}).get('reserve', []) if reserve is None else list(await asyncio.gather(
+                'reserve': _still_reserve(previous, groups) if reserve is None else list(await asyncio.gather(
                     *[_team(api, members, is_test, t, None, i + 1) for i, t in enumerate(reserve)])),
             }
             if changed_team:

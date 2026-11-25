@@ -42,6 +42,19 @@ class ScrimHistoryTest(unittest.IsolatedAsyncioTestCase):
         sub = second["groups"][0][0]["players"][2]
         self.assertEqual((sub["name"], sub["discord_id"]), ("대타", "7"))
 
+    async def test_reserve_moved_into_group_leaves_reserve_list(self):
+        path = os.path.join(tempfile.mkdtemp(), "history.jsonl")
+        team = TeamData(name="A팀", players=["p1", "p2", "p3"])
+        moved = TeamData(name="B팀", players=["q1", "q2", "q3"])
+        spare = TeamData(name="C팀", players=["r1", "r2", "r3"])
+        with patch.object(scrim_history, "HISTORY_FILE", path), patch.object(scrim_history, "BSERAPIClient", _FakeAPI):
+            await scrim_history.record_assignment(
+                [[("A팀", team, 9000)]], [("B팀", moved, 8000), ("C팀", spare, 7000)], registered=3)
+            await scrim_history.record_assignment([[("B팀", moved, 8000)]], None, registered=None,
+                                                  source="roster_change", changed_team="B팀")
+        second = [json.loads(line) for line in open(path, encoding="utf-8")][1]
+        self.assertEqual([row["team"] for row in second["reserve"]], ["C팀"])
+
 
 if __name__ == "__main__":
     unittest.main()
