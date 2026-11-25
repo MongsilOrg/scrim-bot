@@ -46,6 +46,7 @@ STATUS_COLOR = {
 
 NOT_ASSIGNED_TEXT = "조편성 뒤에 신청할 수 있습니다."
 NOT_IN_TEAM_TEXT = "오늘 조에 편성된 팀의 선수와 스태프만 신청할 수 있습니다."
+ROSTER_CHANGED_TEXT = "로스터가 바뀌었습니다.\n다시 신청해주세요."
 CLOSED_TEXT = "이미 처리했거나 지난 신청입니다."
 
 _decision_lock = asyncio.Lock()
@@ -84,6 +85,15 @@ def find_team(manager, member: discord.Member) -> Optional[Tuple[str, str, TeamD
             if team_name == name:
                 return chr(ord('A') + index), team_name, team
     return None
+
+
+def _applicant_team(interaction: discord.Interaction) -> Tuple[Optional[Tuple[str, str, TeamData]], str]:
+    """반환: 신청자의 조와 팀, 신청할 수 없으면 그 이유."""
+    manager = BotManager.get_instance().get_team_data_manager()
+    if not manager.is_team_assignment_started or not manager.groups:
+        return None, NOT_ASSIGNED_TEXT
+    found = find_team(manager, interaction.user) if isinstance(interaction.user, discord.Member) else None
+    return found, '' if found else NOT_IN_TEAM_TEXT
 
 
 def _operator_ids(letter: str) -> List[int]:
@@ -203,9 +213,9 @@ class SubModal(Modal):
             min_values=least,
             max_values=least + 1,
         )
-        self.add_item(Label(
-            text="출전하지 않는 선수", description=sanction_notice(get_current_kst_time()), component=self.out_select,
-        ))
+        now = get_current_kst_time()
+        self.sanction = sanction_kind(now)
+        self.add_item(Label(text="출전하지 않는 선수", description=sanction_notice(now), component=self.out_select))
 
         self.reason = _reason_input(required=False)
         self.add_item(Label(text="사유", component=self.reason))
@@ -213,6 +223,13 @@ class SubModal(Modal):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         subs = list(self.sub_select.values)
         out = [player for player in self.players if player in self.out_select.values]
+        # 창을 열어 둔 사이 운영진이 로스터를 바꾸면 로스터에 없는 선수가 제재를 받음
+        found, reason = _applicant_team(interaction)
+        if found and (found[1] != self.team_name or found[2].players != self.players):
+            reason = ROSTER_CHANGED_TEXT
+        if reason:
+            await send_response(interaction, error_view(reason))
+            return
         blocked = await _blocked_reason(subs)
         if blocked:
             await send_response(interaction, error_view(blocked))
@@ -227,6 +244,12 @@ class SubModal(Modal):
                 f"대타가 {len(subs)}명이면 출전하지 않는 선수는 {need}명입니다.\n다시 신청해주세요."
             ))
             return
+        now = get_current_kst_time()
+        if sanction_kind(now) != self.sanction:
+            await send_response(interaction, error_view(
+                f"시작 {LATE_MINUTES}분 전이 지나 선택한 선수가 경고를 받습니다.\n다시 신청해주세요."
+            ))
+            return
 
         manager = BotManager.get_instance().get_team_data_manager()
         others = []
@@ -235,7 +258,6 @@ class SubModal(Modal):
             if found and found[1] != self.team_name:
                 others.append([user.id, found[0], found[1]])
 
-        now = get_current_kst_time()
         await _submit(interaction, {
             'kind': SUB,
             'date': now.date().isoformat(),
@@ -246,7 +268,7 @@ class SubModal(Modal):
             'out': out,
             'others': others,
             'reason': _one_line(self.reason.value),
-            'sanction': sanction_kind(now),
+            'sanction': self.sanction,
             'status': PENDING,
         })
 
@@ -265,6 +287,12 @@ class StaffModal(Modal):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         staff = list(self.staff_select.values)
+        found, reason = _applicant_team(interaction)
+        if found and found[1] != self.team_name:
+            reason = ROSTER_CHANGED_TEXT
+        if reason:
+            await send_response(interaction, error_view(reason))
+            return
         blocked = await _blocked_reason(staff)
         if blocked:
             await send_response(interaction, error_view(blocked))
@@ -317,13 +345,9 @@ async def _blocked_reason(users: list) -> Optional[str]:
 
 
 async def _open(interaction: discord.Interaction, kind: str) -> None:
-    manager = BotManager.get_instance().get_team_data_manager()
-    if not manager.is_team_assignment_started or not manager.groups:
-        await send_response(interaction, error_view(NOT_ASSIGNED_TEXT))
-        return
-    found = find_team(manager, interaction.user) if isinstance(interaction.user, discord.Member) else None
+    found, reason = _applicant_team(interaction)
     if found is None:
-        await send_response(interaction, error_view(NOT_IN_TEAM_TEXT))
+        await send_response(interaction, error_view(reason))
         return
     letter, team_name, team = found
     modal = SubModal(letter, team_name, team.players) if kind == SUB else StaffModal(letter, team_name)

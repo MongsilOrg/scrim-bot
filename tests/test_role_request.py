@@ -266,9 +266,15 @@ class SubmitTest(StoreCase):
     def setUp(self):
         super().setUp()
         other = TeamData(name="Other", players=["마", "바", "사"])
+        self.team = TeamData(name="Team ER")
+        self.applicant_team = "Team ER"
+        self.sub_team = None
         self.manager = SimpleNamespace(
-            groups=[[("Team ER", TeamData(name="Team ER"), 0.0)], [("Other", other, 0.0)]],
-            find_user_team=MagicMock(return_value=None),
+            is_team_assignment_started=True,
+            groups=[[("Team ER", self.team, 0.0)], [("Other", other, 0.0)]],
+            find_user_team=MagicMock(
+                side_effect=lambda user_id, member=None: self.applicant_team if user_id == "10" else self.sub_team,
+            ),
             find_restricted_members=AsyncMock(return_value=[]),
             log_action=MagicMock(),
         )
@@ -283,6 +289,7 @@ class SubmitTest(StoreCase):
         self.addCleanup(target.stop)
 
     def _modal(self, players, subs, out):
+        self.team.players = list(players)
         modal = role_request.SubModal("A", "Team ER", players)
         modal.sub_select._values = subs
         modal.out_select._values = out
@@ -346,6 +353,49 @@ class SubmitTest(StoreCase):
             await modal.on_submit(_interaction(_member(10)))
 
         self.assertEqual(submit.await_args.args[1]['reason'], "병원 진료")
+
+    async def test_roster_changed_while_the_modal_was_open_sends_the_request_back(self):
+        modal = self._modal(["가", "나", "다"], [_member(20)], ["나"])
+        self.team.players = ["가", "다", "마"]
+        interaction = _interaction(_member(10))
+
+        with patch.object(role_request, "_submit", new=AsyncMock()) as submit:
+            await modal.on_submit(interaction)
+
+        submit.assert_not_awaited()
+        self.assertEqual(_sent_text(interaction), f"## 오류\n{role_request.ROSTER_CHANGED_TEXT}")
+
+    async def test_applicant_must_still_be_in_the_team_on_submit(self):
+        for team, started, text in (
+            ("Other", True, role_request.ROSTER_CHANGED_TEXT),
+            (None, True, role_request.NOT_IN_TEAM_TEXT),
+            ("Team ER", False, role_request.NOT_ASSIGNED_TEXT),
+        ):
+            self.applicant_team, self.manager.is_team_assignment_started = team, started
+            staff = role_request.StaffModal("A", "Team ER")
+            staff.staff_select._values = [_member(20)]
+            for modal in (self._modal(["가", "나", "다"], [_member(20)], ["나"]), staff):
+                interaction = _interaction(_member(10))
+
+                with self.subTest(text=text, modal=type(modal).__name__):
+                    with patch.object(role_request, "_submit", new=AsyncMock()) as submit:
+                        await modal.on_submit(interaction)
+
+                    submit.assert_not_awaited()
+                    self.assertEqual(_sent_text(interaction), f"## 오류\n{text}")
+
+    async def test_request_is_sent_back_when_the_told_sanction_no_longer_holds(self):
+        modal = self._modal(["가", "나", "다"], [_member(20)], ["나"])
+        self.now = LATE
+        interaction = _interaction(_member(10))
+
+        with patch.object(role_request, "_submit", new=AsyncMock()) as submit:
+            await modal.on_submit(interaction)
+
+        submit.assert_not_awaited()
+        self.assertEqual(
+            _sent_text(interaction), "## 오류\n시작 30분 전이 지나 선택한 선수가 경고를 받습니다.\n다시 신청해주세요.",
+        )
 
     async def test_wrong_number_of_absent_players_is_rejected(self):
         modal = self._modal(["가", "나", "다", "라"], [_member(20)], ["가", "나", "다"])
@@ -414,7 +464,7 @@ class SubmitTest(StoreCase):
         )
 
     async def test_card_shows_the_other_team_of_a_sub_until_it_is_decided(self):
-        self.manager.find_user_team.return_value = "Other"
+        self.sub_team = "Other"
         modal = self._modal(["가", "나", "다"], [_member(20)], ["나"])
 
         with patch.object(role_request, "_submit", new=AsyncMock()) as submit:
