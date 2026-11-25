@@ -484,6 +484,32 @@ class SubmitTest(StoreCase):
 
         self.assertEqual(role_requests.get(2)['members'], [20])
 
+    async def test_one_roster_staff_name_frees_one_place_only(self):
+        self.team.staff = ["코치"]
+        staff = role_request.StaffModal("A", "Team ER")
+        staff.staff_select._values = [_member(uid, "코치") for uid in (20, 21, 22, 23)]
+        interaction = _interaction(_member(10))
+        interaction.guild.get_member = {uid: _member(uid, "코치") for uid in (20, 21, 22, 23)}.get
+        interaction.channel.send = AsyncMock()
+
+        await staff.on_submit(interaction)
+
+        interaction.channel.send.assert_not_awaited()
+        self.assertIn("2명만 선택해 다시 신청해주세요.", _text(interaction.followup.send.await_args.kwargs['view']))
+
+    async def test_roster_staff_can_request_the_role_when_the_team_is_full(self):
+        self.team.staff = ["코치", "분석가", "매니저"]
+        role_requests.add(1, _request(role_request.STAFF, members=[30]))
+        staff = role_request.StaffModal("A", "Team ER")
+        staff.staff_select._values = [_member(20, "코치")]
+        interaction = _interaction(_member(10))
+        interaction.guild.get_member = {20: _member(20, "코치")}.get
+        interaction.channel.send = AsyncMock(return_value=SimpleNamespace(id=2))
+
+        await staff.on_submit(interaction)
+
+        self.assertEqual(role_requests.get(2)['members'], [20])
+
     async def test_rejected_staff_request_frees_the_place(self):
         self.team.staff = ["코치", "분석가"]
         role_requests.add(1, _request(role_request.STAFF, members=[30]))

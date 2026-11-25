@@ -367,11 +367,18 @@ def _staff_full_text(left: int) -> str:
     return f"{head}\n스태프를 바꾸려면 운영진에게 문의해주세요."
 
 
-def _roster_staff_ids(guild: Optional[discord.Guild], roster_staff: List[str], member_ids: Set[int]) -> Set[int]:
-    """로스터 스태프로 이미 적힌 사람. 한도를 셀 때 로스터와 신청에서 두 번 세지 않음"""
+def _roster_staff_ids(guild: Optional[discord.Guild], roster_staff: List[str], member_ids: List[int]) -> Set[int]:
+    """로스터 스태프로 이미 적힌 사람. 이름을 맞춘 여러 명이 한도를 벗어나지 않게 로스터 이름 하나에 앞선 한 명만 짝지음"""
     keys = {normalize_nickname_for_comparison(name) for name in roster_staff}
-    members = [guild.get_member(member_id) for member_id in member_ids] if guild else []
-    return {member.id for member in members if isinstance(member, discord.Member) and member_name_keys(member) & keys}
+    found: Dict[str, int] = {}
+    for member_id in member_ids:
+        member = guild.get_member(member_id) if guild else None
+        if not isinstance(member, discord.Member):
+            continue
+        key = next((key for key in sorted(member_name_keys(member) & keys) if key not in found), None)
+        if key is not None:
+            found[key] = member.id
+    return set(found.values())
 
 
 async def _submit(interaction: discord.Interaction, request: dict, *, roster_staff: Optional[List[str]] = None) -> None:
@@ -391,9 +398,10 @@ async def _submit(interaction: discord.Interaction, request: dict, *, roster_sta
         if roster_staff is not None:
             earlier = role_requests.requested_ids(request['team'], request['kind'])
             asked = set(request['members'])
-            listed = _roster_staff_ids(interaction.guild, roster_staff, earlier | asked)
+            listed = _roster_staff_ids(interaction.guild, roster_staff, [*sorted(earlier), *request['members']])
             left = STAFF_LIMIT - len(roster_staff) - len(earlier - listed)
-            if len(asked - listed) > left:
+            # 로스터 스태프 본인의 신청은 자리를 더 쓰지 않음
+            if len(asked - listed) > max(left, 0):
                 await send_response(interaction, error_view(_staff_full_text(left)))
                 return
         try:
