@@ -531,10 +531,9 @@ class DecisionTest(StoreCase):
         self.guild = SimpleNamespace(roles=[self.role], get_member=lambda uid: self.sub if uid == 20 else None)
         self.warnings = AsyncMock(return_value="2명에게 주의를 부여했습니다.")
         self.alert = AsyncMock(return_value=True)
-        self.roster = ["가", "나", "다", "라"]
+        self.team = TeamData(name="Team ER", players=["가", "나", "다", "라"])
         self.manager = SimpleNamespace(
-            is_team_assignment_started=True, log_action=MagicMock(),
-            get_team_data=lambda name: TeamData(name=name, players=self.roster) if name == "Team ER" else None,
+            is_team_assignment_started=True, log_action=MagicMock(), groups=[[("Team ER", self.team, 0.0)]],
         )
         for target in (
             patch.object(role_request, "apply_roster_warnings", new=self.warnings),
@@ -547,8 +546,8 @@ class DecisionTest(StoreCase):
             target.start()
             self.addCleanup(target.stop)
 
-    def _click(self, *, admin=True):
-        interaction = _interaction(_member(1, admin=admin))
+    def _click(self, *, admin=True, message_id=500):
+        interaction = _interaction(_member(1, admin=admin), message_id)
         interaction.guild = self.guild
         return interaction
 
@@ -646,15 +645,27 @@ class DecisionTest(StoreCase):
         self.sub.add_roles.assert_not_awaited()
         self.warnings.assert_not_awaited()
 
-    async def test_request_is_not_approved_after_its_absent_player_left_the_roster(self):
+    async def test_request_is_not_approved_after_the_group_or_roster_changed(self):
         role_requests.add(500, _request())
-        self.roster = ["가", "다", "라", "마"]
+        role_requests.add(501, _request(role_request.STAFF, members=[21]))
+        stale = "## 오류\n로스터가 바뀌어 승인할 수 없습니다.\n거절해주세요."
 
-        for action, note in ((role_request.APPROVE, ''), (role_request.WAIVE, "진단서 확인")):
-            interaction = self._click()
-            await role_request._decide(interaction, action, note)
-            self.assertEqual(_sent_text(interaction), "## 오류\n로스터가 바뀌어 승인할 수 없습니다.\n거절해주세요.")
+        # 출전하지 않는 선수가 빠짐, 선수가 늘어 출전하지 않는 선수 수가 맞지 않음
+        for players in (["가", "다", "라", "마"], ["가", "나", "다"]):
+            self.team.players = players
+            for action, note in ((role_request.APPROVE, ''), (role_request.WAIVE, "진단서 확인")):
+                interaction = self._click()
+                await role_request._decide(interaction, action, note)
+                self.assertEqual(_sent_text(interaction), stale)
+
+        self.team.players = ["가", "나", "다", "라"]
+        self.manager.groups = [[], [("Team ER", self.team, 0.0)]]
+        for message_id in (500, 501):
+            interaction = self._click(message_id=message_id)
+            await role_request._decide(interaction, role_request.APPROVE)
+            self.assertEqual(_sent_text(interaction), stale)
         self.assertEqual(role_requests.get(500)['status'], PENDING)
+        self.assertEqual(role_requests.get(501)['status'], PENDING)
         self.warnings.assert_not_awaited()
 
         await role_request._decide(self._click(), role_request.REJECT, "로스터 변경")

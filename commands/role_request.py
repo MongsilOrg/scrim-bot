@@ -77,14 +77,17 @@ def _plain(text: str) -> str:
     return discord.utils.escape_markdown(discord.utils.escape_mentions(text))
 
 
-def find_team(manager, member: discord.Member) -> Optional[Tuple[str, str, TeamData]]:
-    """반환: 조, 팀 이름, 팀. 조에 편성된 팀에 없으면 None."""
-    name = manager.find_user_team(str(member.id), member=member)
-    for index, group in enumerate(manager.groups):
+def _assigned(manager, name: Optional[str]) -> Optional[Tuple[str, str, TeamData]]:
+    for index, group in enumerate(manager.groups or []):
         for team_name, team, _ in group:
             if team_name == name:
                 return chr(ord('A') + index), team_name, team
     return None
+
+
+def find_team(manager, member: discord.Member) -> Optional[Tuple[str, str, TeamData]]:
+    """반환: 조, 팀 이름, 팀. 조에 편성된 팀에 없으면 None."""
+    return _assigned(manager, manager.find_user_team(str(member.id), member=member))
 
 
 def _applicant_team(interaction: discord.Interaction) -> Tuple[Optional[Tuple[str, str, TeamData]], str]:
@@ -418,9 +421,14 @@ def _pending(message_id: int) -> Optional[dict]:
 
 
 def _roster_changed(request: dict) -> bool:
-    """신청 뒤 운영진이 로스터를 바꾸면 로스터에 없는 선수가 제재를 받음"""
-    team = BotManager.get_instance().get_team_data_manager().get_team_data(request['team'])
-    return team is None or not set(request['out']) <= set(team.players)
+    """신청 뒤 운영진이 조나 로스터를 바꾸면 다른 조 역할이 붙거나 로스터에 없는 선수가 제재를 받음"""
+    found = _assigned(BotManager.get_instance().get_team_data_manager(), request['team'])
+    if not found or found[0] != request['letter']:
+        return True
+    if request['kind'] != SUB:
+        return False
+    players, out = found[2].players, request['out']
+    return not set(out) <= set(players) or len(out) != len(players) - SLOTS + len(request['members'])
 
 
 async def _ask_note(interaction: discord.Interaction, action: str) -> None:
