@@ -817,7 +817,7 @@ class DecisionTest(StoreCase):
 
 
 class GroupRoleGrantTest(unittest.IsolatedAsyncioTestCase):
-    async def test_roster_change_grants_the_role_and_takes_none_away(self):
+    async def _change(self, *names):
         role = FakeRole(name="A조")
         joined, holder, left, other_team = _member(20, "새선수"), _member(21, "새선수2"), _member(22, "나"), _member(23, "취소팀원")
         joined.roles = []
@@ -826,9 +826,15 @@ class GroupRoleGrantTest(unittest.IsolatedAsyncioTestCase):
         service = DiscordService(processor=SimpleNamespace(client=None), team_data_manager=SimpleNamespace())
         service._apply_role_updates = AsyncMock()
 
-        await service.grant_group_role(guild, 'A', ["새선수", "새선수2"])
+        await service.change_group_role(guild, 'A', *names)
 
-        self.assertEqual(service._apply_role_updates.await_args.args[0], [(joined, set(), {role})])
+        return [(member.id, bool(add)) for member, _, add in service._apply_role_updates.await_args.args[0]]
+
+    async def test_roster_change_grants_the_role_and_takes_none_away(self):
+        self.assertEqual(await self._change(["새선수", "새선수2"]), [(20, True)])
+
+    async def test_replaced_team_loses_the_role_and_other_teams_keep_it(self):
+        self.assertEqual(await self._change(["새선수", "새선수2"], ["나", "새선수2"]), [(20, True), (22, False)])
 
 
 if __name__ == '__main__':
