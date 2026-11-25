@@ -303,7 +303,10 @@ class SubmitTest(StoreCase):
         with patch.object(role_request.BotManager, "get_instance", return_value=manager):
             await role_request._submit(interaction, _request())
             interaction.channel.send.assert_not_awaited()
-            self.assertEqual(_sent_text(interaction), "## 오류\n이미 신청한 사람은 다시 선택할 수 없습니다.")
+            self.assertEqual(
+                _text(interaction.followup.send.await_args.kwargs['view']),
+                "## 오류\n이미 신청한 사람은 다시 선택할 수 없습니다.",
+            )
 
             role_requests.close(1, REJECTED, sanction=None)
             await role_request._submit(interaction, _request())

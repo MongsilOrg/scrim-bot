@@ -267,14 +267,18 @@ async def _open(interaction: discord.Interaction, kind: str) -> None:
 
 async def _submit(interaction: discord.Interaction, request: dict) -> None:
     channel = interaction.channel
+    try:
+        # 신청 카드가 채널에 올라오므로 신청자에게 따로 답하지 않음. 앞 신청을 기다리다 응답 기한을 넘기지 않게 먼저 응답
+        await interaction.response.defer()
+    except discord.HTTPException as e:
+        logger.warning(f"[권한신청] 신청 응답 실패: {e}")
+        return
     # 같은 사람의 신청 두 건이 함께 올라와 둘 다 승인되면 제재가 두 번 부여됨
     async with _submit_lock:
         if role_requests.is_requested(request['team'], request['kind'], set(request['members'])):
             await send_response(interaction, error_view("이미 신청한 사람은 다시 선택할 수 없습니다."))
             return
         try:
-            # 신청 카드가 채널에 올라오므로 신청자에게 따로 답하지 않음
-            await interaction.response.defer()
             operators = _operator_ids(request['letter'])
             message = await channel.send(
                 view=request_view(request, operators=operators),
