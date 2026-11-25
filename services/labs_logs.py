@@ -68,7 +68,9 @@ def record(kind: str, user: discord.abc.User, team: str, *, players: Iterable[st
         'staff': _names(staff),
         'detail': change,
     })
-    del queue[:-QUEUE_MAX]
+    if len(queue) > QUEUE_MAX:
+        logger.error(f"[기록] Labs에 보내지 못한 기록이 {QUEUE_MAX}건을 넘어 오래된 {len(queue) - QUEUE_MAX}건을 버림")
+        del queue[:-QUEUE_MAX]
     _save()
 
 
@@ -82,6 +84,7 @@ async def flush() -> bool:
             batch = queue[:BATCH]
             data = await labs_api.request('POST', '/api/bot/scrim-logs', {'logs': batch})
             if not data or data.get('status') != 'ok':
+                logger.warning(f"[기록] Labs에 보내지 못해 다음 주기에 다시 보냄 - 남은 기록 {len(queue)}건")
                 return False
             sent = {r['key'] for r in batch}
             queue[:] = [r for r in queue if r['key'] not in sent]

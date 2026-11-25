@@ -13,7 +13,7 @@ async def send(client: Optional[discord.Client], view: discord.ui.LayoutView) ->
     """다시 보내도 소용없는 실패는 True"""
     channel = client.get_channel(settings.ALERT_CHANNEL_ID) if client else None
     if channel is None:
-        logger.warning(f"[알림] 알림 채널을 찾지 못해 건너뜀 - 채널 ID: {settings.ALERT_CHANNEL_ID}")
+        logger.error(f"[알림] 알림 채널을 찾지 못해 건너뜀 - 채널 ID: {settings.ALERT_CHANNEL_ID}")
         return True
     try:
         await channel.send(view=view, allowed_mentions=discord.AllowedMentions.none())
