@@ -54,6 +54,13 @@ class LabsLogsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.request.await_args.args[2]['logs'][0]['key'], key)
         self.assertEqual(self.saved(), [])
 
+    async def test_overflow_keeps_game_ids(self):
+        with patch.object(labs_logs, 'QUEUE_MAX', 2):
+            labs_logs.record_games('K3PQ8M', '2025-11-24', 'A', [{'roundNo': 1, 'gameId': 11}])
+            labs_logs.record('신청', USER, '팀A')
+            labs_logs.record('수정', USER, '팀A')
+        self.assertEqual([r['kind'] for r in self.saved()], ['게임 ID', '수정'])
+
     async def test_pending_finds_only_that_tournament(self):
         labs_logs.record_games('K3PQ8M', '2025-11-24', 'B', [{'roundNo': 1, 'gameId': 11}])
         self.assertTrue(labs_logs.pending('g:K3PQ8M:'))

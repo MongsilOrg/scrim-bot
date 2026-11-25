@@ -110,7 +110,10 @@ def _push(entry: dict) -> None:
     queue.append(entry)
     if len(queue) > QUEUE_MAX:
         logger.error(f"[기록] Labs에 보내지 못한 기록이 {QUEUE_MAX}건을 넘어 오래된 {len(queue) - QUEUE_MAX}건을 버림")
-        del queue[:-QUEUE_MAX]
+        # 게임 ID는 대회를 지우면 다른 사본이 없어 남김
+        extra = len(queue) - QUEUE_MAX
+        drop = {id(r) for r in queue if not r['key'].startswith('g:')}
+        queue[:] = [r for r in queue if id(r) not in drop or (extra := extra - 1) < 0]
     _save()
 
 
