@@ -2,6 +2,7 @@ import asyncio
 import os
 import tempfile
 import unittest
+from collections import defaultdict
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -69,6 +70,7 @@ def _interaction(user, message_id=500):
     interaction.response.edit_message = AsyncMock(side_effect=lambda **_: done.append(True))
     interaction.response.defer = AsyncMock(side_effect=lambda **_: done.append(True))
     interaction.original_response = AsyncMock()
+    interaction.edit_original_response = AsyncMock()
     interaction.followup.send = AsyncMock()
     return interaction
 
@@ -540,6 +542,8 @@ class DecisionTest(StoreCase):
         for target in (
             patch.object(role_request, "apply_roster_warnings", new=self.warnings),
             patch.object(role_request, "substitute_players", new=self.substitute),
+            # 잠금은 처음 기다린 테스트의 이벤트 루프에 묶임
+            patch.object(role_request, "_roster_locks", defaultdict(asyncio.Lock)),
             patch.object(role_request.alerts, "send", new=self.alert),
             patch.object(
                 role_request.BotManager, "get_instance",
@@ -706,9 +710,34 @@ class DecisionTest(StoreCase):
             role_request._decide(second, role_request.APPROVE),
         )
 
-        self.assertEqual(_sent_text(second), "## 오류\n로스터가 바뀌어 승인할 수 없습니다.\n거절해주세요.")
+        self.assertEqual(
+            _text(second.followup.send.await_args.kwargs['view']),
+            "## 오류\n로스터가 바뀌어 승인할 수 없습니다.\n거절해주세요.",
+        )
         self.assertEqual(role_requests.get(501)['status'], PENDING)
         self.assertEqual(self.warnings.await_count, 1)
+
+    async def test_approval_waiting_for_the_team_answers_before_the_deadline(self):
+        role_requests.add(500, _request())
+        role_requests.add(501, _request(role_request.STAFF, members=[21]))
+        self.guild.get_member = lambda uid: self.sub
+
+        async def substitute(*_):
+            return await asyncio.sleep(0, "")
+
+        self.substitute.side_effect = substitute
+        first, second = self._click(), self._click(message_id=501)
+
+        await asyncio.gather(
+            role_request._decide(first, role_request.APPROVE),
+            role_request._decide(second, role_request.APPROVE),
+        )
+
+        first.response.defer.assert_not_awaited()
+        second.response.defer.assert_awaited_once()
+        second.response.edit_message.assert_not_awaited()
+        self.assertIn("승인", _text(second.edit_original_response.await_args.kwargs['view']))
+        self.assertEqual(role_requests.get(501)['status'], APPROVED)
 
     async def test_request_is_not_approved_after_the_group_or_roster_changed(self):
         role_requests.add(500, _request())

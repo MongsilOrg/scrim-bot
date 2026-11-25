@@ -467,7 +467,14 @@ async def _decide(interaction: discord.Interaction, action: str, note: str = '')
         await _close(interaction, action, note)
         return
     # 승인이 로스터를 바꾸므로 같은 팀의 다음 승인은 바뀐 로스터로 확인
-    async with _roster_locks[pending['team']]:
+    lock = _roster_locks[pending['team']]
+    if lock.locked():
+        # 앞선 승인을 기다리는 동안 응답 기한 3초가 지남
+        try:
+            await interaction.response.defer()
+        except discord.HTTPException as e:
+            logger.warning(f"[권한신청] 응답 미루기 실패: {e}")
+    async with lock:
         await _close(interaction, action, note)
 
 
@@ -525,7 +532,10 @@ async def _close(interaction: discord.Interaction, action: str, note: str) -> No
 async def _update_card(interaction: discord.Interaction, request: dict) -> None:
     view = request_view(request)
     try:
-        await interaction.response.edit_message(view=view, allowed_mentions=discord.AllowedMentions.none())
+        if interaction.response.is_done():
+            await interaction.edit_original_response(view=view, allowed_mentions=discord.AllowedMentions.none())
+        else:
+            await interaction.response.edit_message(view=view, allowed_mentions=discord.AllowedMentions.none())
     except discord.HTTPException as e:
         # 이미 승인으로 기록했으므로 응답이 실패해도 역할과 제재는 이어서 처리
         logger.warning(f"[권한신청] 카드 응답 실패, 메시지를 직접 고침: {e}")

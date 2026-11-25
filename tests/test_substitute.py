@@ -71,6 +71,25 @@ class SubstituteTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.manager.replace_team.await_args.args[2], 7000.0)
         self.announced.assert_awaited_once_with("A")
 
+    async def test_roster_change_saved_by_an_operator_meanwhile_is_kept(self):
+        async def fetch(*_):
+            self.manager.get_team_data.return_value = TeamData(name="Team ER", players=["가", "나", "다", "마"])
+            return 7200.0
+
+        self.fetch.side_effect = fetch
+
+        self.assertEqual(await self._substitute(), team_pipeline.ROSTER_NOT_CHANGED_TEXT)
+
+        self.manager.replace_team.assert_not_awaited()
+
+    async def test_roster_without_the_absent_player_is_not_changed(self):
+        self.original.players = ["가", "다", "라", "마"]
+
+        self.assertEqual(await self._substitute(), team_pipeline.ROSTER_NOT_CHANGED_TEXT)
+
+        self.fetch.assert_not_awaited()
+        self.manager.replace_team.assert_not_awaited()
+
     async def test_operator_is_told_when_the_roster_is_not_changed(self):
         for prepare in (
             lambda: setattr(self.manager.get_team_data, "return_value", None),

@@ -449,7 +449,7 @@ async def substitute_players(
         team_data_manager = BotManager.get_instance().get_team_data_manager()
         team_processor = BotManager.get_instance().get_team_processor()
         original = team_data_manager.get_team_data(team_name)
-        if original is None:
+        if original is None or not set(out) <= set(original.players):
             return ROSTER_NOT_CHANGED_TEXT
 
         players = [player for player in original.players if player not in out] + subs
@@ -458,6 +458,9 @@ async def substitute_players(
         fetched_mmr = await _fetch_team_mmr_or(team_processor, new_team, 0.0)
         # 조편성이 끝난 뒤라 MMR은 표시에만 쓰임, 조회에 실패해도 대타가 조 채널에 들어가야 함
         new_mmr = fetched_mmr or original.mmr
+        # MMR을 조회하는 동안 운영진이 저장한 로스터 변경을 덮어쓰지 않음
+        if team_data_manager.get_team_data(team_name) is not original:
+            return ROSTER_NOT_CHANGED_TEXT
         replaced, _ = await team_data_manager.replace_team(team_name, new_team, new_mmr, enforce_rules=False)
         if not replaced:
             return ROSTER_NOT_CHANGED_TEXT
