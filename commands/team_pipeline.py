@@ -466,7 +466,8 @@ async def substitute_players(
             return ROSTER_NOT_CHANGED_TEXT
 
         _log_edit_diff(interaction, team_data_manager, team_name, original, new_team, new_mmr)
-        await _update_changed_team(group_letter, team_data_manager, team_name, team_name, new_mmr)
+        # 대타의 역할은 승인이 직접 부여함, 조 전체를 다시 맞추면 운영진이 손으로 바꾼 역할이 되돌아감
+        await _update_changed_team(group_letter, team_data_manager, team_name, team_name, new_mmr, sync_roles=False)
         _record_roster_change(team_data_manager, team_processor, team_name)
         await _update_group_announcement(group_letter)
         if fetched_mmr:
@@ -633,6 +634,8 @@ async def _update_changed_team(
     original_team_name: str,
     new_team_name: str,
     new_team_mmr: float,
+    *,
+    sync_roles: bool = True,
 ) -> None:
     try:
         current_teams = _get_group_teams(team_data_manager, group_letter)
@@ -665,7 +668,8 @@ async def _update_changed_team(
             return
 
         team_processor = BotManager.get_instance().get_team_processor()
-        await team_processor.discord_service.update_group_roles(guild, group_letter, group_teams)
+        if sync_roles:
+            await team_processor.discord_service.update_group_roles(guild, group_letter, group_teams)
 
         await team_processor.discord_service.rename_group_voice_channel(
             guild, group_letter, changed_index, new_team_name
