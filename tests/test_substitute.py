@@ -128,12 +128,12 @@ class GroupRoleSyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_roster_change_by_an_operator_grants_the_role_to_the_players_who_joined(self):
         change = await self._update()
 
-        self.assertEqual(change.await_args.args[1:], ("A", ["대타닉"], ()))
+        self.assertEqual(change.await_args.args[1:], ("A", ["대타닉"], (), ["가", "다", "대타닉"]))
 
     async def test_replaced_team_loses_the_role(self):
         change = await self._update(revoke_previous=True)
 
-        self.assertEqual(change.await_args.args[1:], ("A", ["대타닉"], {"나"}))
+        self.assertEqual(change.await_args.args[1:], ("A", ["대타닉"], {"가", "나", "다"}, ["가", "다", "대타닉"]))
 
 
 class RosterChangeSanctionTest(unittest.IsolatedAsyncioTestCase):

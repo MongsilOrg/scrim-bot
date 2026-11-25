@@ -333,9 +333,13 @@ class DiscordService:
             logger.error(f"[Discord] 역할 처리 실패: {e}", exc_info=True)
 
     async def change_group_role(
-        self, guild: discord.Guild, group_letter: str, joined: Iterable[str], left: Iterable[str] = (),
+        self, guild: discord.Guild, group_letter: str, joined: Iterable[str],
+        left: Iterable[str] = (), staying: Iterable[str] = (),
     ) -> None:
-        """joined에게 부여하고 left에게서 회수. 조 전체를 로스터에 맞추면 운영진이 손으로 바꾼 역할과 대타로 빠진 선수의 역할이 회수됨"""
+        """joined에게 부여하고, left 가운데 조에 남는 staying이 아닌 사람에게서 회수.
+
+        조 전체를 로스터에 맞추면 운영진이 손으로 바꾼 역할과 대타로 빠진 선수의 역할이 회수됨
+        """
         try:
             guild = self._resolve_guild(guild)
 
@@ -346,14 +350,16 @@ class DiscordService:
                 return
 
             grant = {normalize_nickname_for_comparison(nickname) for nickname in joined}
-            revoke = {normalize_nickname_for_comparison(nickname) for nickname in left} - grant
+            revoke = {normalize_nickname_for_comparison(nickname) for nickname in left}
+            # 한 사람이 팀마다 다른 이름(별명, 계정명)으로 적힐 수 있어 멤버 단위로 거름
+            keep = grant | {normalize_nickname_for_comparison(nickname) for nickname in staying}
             role_updates = []
             for member in guild.members:
                 keys = member_name_keys(member)
                 if keys & grant:
                     if group_role not in member.roles:
                         role_updates.append((member, set(), {group_role}))
-                elif keys & revoke and group_role in member.roles:
+                elif keys & revoke and not keys & keep and group_role in member.roles:
                     role_updates.append((member, {group_role}, set()))
             await self._apply_role_updates(role_updates)
 

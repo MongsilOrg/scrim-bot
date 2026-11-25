@@ -836,6 +836,9 @@ class GroupRoleGrantTest(unittest.IsolatedAsyncioTestCase):
     async def test_replaced_team_loses_the_role_and_other_teams_keep_it(self):
         self.assertEqual(await self._change(["새선수", "새선수2"], ["나", "새선수2"]), [(20, True), (22, False)])
 
+    async def test_member_listed_under_another_name_in_the_group_keeps_the_role(self):
+        self.assertEqual(await self._change([], ["user22", "취소팀원"], ["나"]), [(23, False)])
+
 
 if __name__ == '__main__':
     unittest.main()

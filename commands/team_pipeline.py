@@ -677,12 +677,9 @@ async def _update_changed_team(
                 if normalize_nickname_for_comparison(member) not in previous
             ]
             # 선수 교체로 빠진 선수는 조 역할을 유지, 팀이 통째로 바뀌면 이전 팀은 회수
-            staying = {
-                normalize_nickname_for_comparison(member)
-                for _, team_data, _ in group_teams for member in team_data.all_members
-            }
-            left = previous - staying if revoke_previous else ()
-            await team_processor.discord_service.change_group_role(guild, group_letter, joined, left)
+            staying = [member for _, team_data, _ in group_teams for member in team_data.all_members]
+            left = previous if revoke_previous else ()
+            await team_processor.discord_service.change_group_role(guild, group_letter, joined, left, staying)
 
         await team_processor.discord_service.rename_group_voice_channel(
             guild, group_letter, changed_index, new_team_name
