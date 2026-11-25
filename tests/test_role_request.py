@@ -49,6 +49,7 @@ def _request(kind=role_request.SUB, **changes):
     request = {
         'kind': kind, 'date': '2026-11-25', 'letter': 'A', 'team': 'Team ER', 'applicant': 10,
         'members': [20], 'out': ['가', '나'] if kind == role_request.SUB else [],
+        **({'others': []} if kind == role_request.SUB else {}),
         'sanction': '주의' if kind == role_request.SUB else None, 'status': PENDING,
     }
     request.update(changes)
@@ -58,7 +59,7 @@ def _request(kind=role_request.SUB, **changes):
 def _interaction(user, message_id=500):
     interaction = MagicMock()
     interaction.user = user
-    interaction.message = SimpleNamespace(id=message_id)
+    interaction.message = SimpleNamespace(id=message_id, edit=AsyncMock())
     done = []
     interaction.response.is_done = MagicMock(side_effect=lambda: bool(done))
     interaction.response.send_message = AsyncMock(side_effect=lambda **_: done.append(True))
@@ -228,6 +229,21 @@ class OpenTest(StoreCase):
 
 
 class SubmitTest(StoreCase):
+    def setUp(self):
+        super().setUp()
+        other = TeamData(name="Other", players=["마", "바", "사"])
+        self.manager = SimpleNamespace(
+            groups=[[("Team ER", TeamData(name="Team ER"), 0.0)], [("Other", other, 0.0)]],
+            find_user_team=MagicMock(return_value=None),
+            find_restricted_members=AsyncMock(return_value=[]),
+        )
+        target = patch.object(
+            role_request.BotManager, "get_instance",
+            return_value=SimpleNamespace(get_team_data_manager=lambda: self.manager),
+        )
+        target.start()
+        self.addCleanup(target.stop)
+
     def _modal(self, players, subs, out):
         modal = role_request.SubModal("A", "Team ER", players)
         modal.sub_select._values = subs
@@ -267,7 +283,7 @@ class SubmitTest(StoreCase):
     async def test_roster_player_and_bot_cannot_be_subs(self):
         for sub, text in (
             (_member(20, "가"), "이 팀의 로스터 선수는 대타로 선택할 수 없습니다."),
-            (_member(21, bot=True), "봇은 대타로 선택할 수 없습니다."),
+            (_member(21, bot=True), "봇은 선택할 수 없습니다."),
         ):
             modal = self._modal(["가", "나", "다"], [sub], ["나"])
             interaction = _interaction(_member(10))
@@ -277,6 +293,47 @@ class SubmitTest(StoreCase):
 
             submit.assert_not_awaited()
             self.assertEqual(_sent_text(interaction), f"## 오류\n{text}")
+
+    async def test_same_person_cannot_be_requested_twice_unless_rejected(self):
+        role_requests.add(1, _request())
+        modal = self._modal(["가", "나", "다"], [_member(20)], ["나"])
+        interaction = _interaction(_member(10))
+
+        with patch.object(role_request, "_submit", new=AsyncMock()) as submit:
+            await modal.on_submit(interaction)
+            submit.assert_not_awaited()
+            self.assertEqual(_sent_text(interaction), "## 오류\n이미 신청한 사람은 다시 선택할 수 없습니다.")
+
+            role_requests.close(1, REJECTED, sanction=None)
+            await modal.on_submit(_interaction(_member(10)))
+            submit.assert_awaited_once()
+
+    async def test_restricted_member_cannot_be_requested(self):
+        self.manager.find_restricted_members.return_value = [("user20", "11월 28일")]
+        staff = role_request.StaffModal("A", "Team ER")
+        staff.staff_select._values = [_member(20)]
+        interaction = _interaction(_member(10))
+
+        with patch.object(role_request, "_submit", new=AsyncMock()) as submit:
+            await staff.on_submit(interaction)
+
+        submit.assert_not_awaited()
+        self.assertEqual(
+            _sent_text(interaction),
+            "## 오류\n경고로 참가가 제한된 사람은 선택할 수 없습니다.\n**user20**: 11월 28일까지",
+        )
+
+    async def test_card_shows_the_other_team_of_a_sub_until_it_is_decided(self):
+        self.manager.find_user_team.return_value = "Other"
+        modal = self._modal(["가", "나", "다"], [_member(20)], ["나"])
+
+        with patch.object(role_request, "_submit", new=AsyncMock()) as submit:
+            await modal.on_submit(_interaction(_member(10)))
+
+        request = submit.await_args.args[1]
+        self.assertEqual(request['others'], [[20, "B", "Other"]])
+        self.assertIn("**다른 팀** <@20> B조 `Other`", _text(role_request.request_view(request)))
+        self.assertNotIn("다른 팀", _text(role_request.request_view({**request, 'status': APPROVED})))
 
     async def test_card_mentions_only_the_operator_and_panel_moves_below_it(self):
         role_requests.set_panel_id(400)
@@ -369,6 +426,19 @@ class DecisionTest(StoreCase):
 
         self.assertEqual(_sent_text(interaction), f"## 오류\n{role_request.CLOSED_TEXT}")
         self.sub.add_roles.assert_not_awaited()
+
+    async def test_role_and_sanction_are_given_even_if_the_card_response_fails(self):
+        role_requests.add(500, _request())
+        interaction = self._click()
+        interaction.response.edit_message = AsyncMock(
+            side_effect=discord.HTTPException(MagicMock(status=500, reason=""), "fail"),
+        )
+
+        await role_request._decide(interaction, role_request.APPROVE)
+
+        self.assertIn("## 대타 승인", _text(interaction.message.edit.await_args.kwargs['view']))
+        self.sub.add_roles.assert_awaited_once()
+        self.warnings.assert_awaited_once()
 
     async def test_late_request_gives_warning_with_its_reason(self):
         role_requests.add(500, _request(sanction='경고'))

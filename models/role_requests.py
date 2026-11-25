@@ -78,6 +78,16 @@ def close(message_id: int, status: str, *, sanction: Optional[str]) -> Optional[
     return request
 
 
+def is_requested(team: str, kind: str, member_ids: Set[int]) -> bool:
+    """같은 사람을 두 번 승인하면 출전하지 않는 선수가 제재를 두 번 받음"""
+    today = _today()
+    return any(
+        row.get('date') == today and row.get('team') == team and row.get('kind') == kind
+        and row.get('status') != REJECTED and member_ids & set(row.get('members') or [])
+        for row in _load()['requests'].values()
+    )
+
+
 def granted_ids(letter: str) -> Set[int]:
     today = _today()
     return {

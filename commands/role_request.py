@@ -127,6 +127,10 @@ def request_view(request: dict, *, operators: Optional[List[int]] = None) -> Lay
         lines.append(f"**출전하지 않는 선수** {', '.join(request['out'])}")
         if request['sanction']:
             lines.append(f"**제재** {request['sanction']}")
+        if status == PENDING and request.get('others'):
+            lines.append("**다른 팀** " + ', '.join(
+                f"<@{uid}> {letter}조 `{team}`" for uid, letter, team in request['others']
+            ))
     else:
         lines.append(f"**스태프** {_mentions(request['members'])}")
     lines.append(f"**신청** <@{request['applicant']}>")
@@ -165,8 +169,9 @@ class SubModal(Modal):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         subs = list(self.sub_select.values)
         out = [player for player in self.players if player in self.out_select.values]
-        if any(user.bot for user in subs):
-            await send_response(interaction, error_view("봇은 대타로 선택할 수 없습니다."))
+        blocked = await _blocked_reason(self.team_name, SUB, subs)
+        if blocked:
+            await send_response(interaction, error_view(blocked))
             return
         roster_keys = {normalize_nickname_for_comparison(player) for player in self.players}
         if any(isinstance(user, discord.Member) and member_name_keys(user) & roster_keys for user in subs):
@@ -179,6 +184,13 @@ class SubModal(Modal):
             ))
             return
 
+        manager = BotManager.get_instance().get_team_data_manager()
+        others = []
+        for user in subs:
+            found = find_team(manager, user) if isinstance(user, discord.Member) else None
+            if found and found[1] != self.team_name:
+                others.append([user.id, found[0], found[1]])
+
         now = get_current_kst_time()
         await _submit(interaction, {
             'kind': SUB,
@@ -188,6 +200,7 @@ class SubModal(Modal):
             'applicant': interaction.user.id,
             'members': [user.id for user in subs],
             'out': out,
+            'others': others,
             'sanction': sanction_kind(now),
             'status': PENDING,
         })
@@ -204,8 +217,9 @@ class StaffModal(Modal):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         staff = list(self.staff_select.values)
-        if any(user.bot for user in staff):
-            await send_response(interaction, error_view("봇은 스태프로 선택할 수 없습니다."))
+        blocked = await _blocked_reason(self.team_name, STAFF, staff)
+        if blocked:
+            await send_response(interaction, error_view(blocked))
             return
         await _submit(interaction, {
             'kind': STAFF,
@@ -218,6 +232,23 @@ class StaffModal(Modal):
             'sanction': None,
             'status': PENDING,
         })
+
+
+async def _blocked_reason(team_name: str, kind: str, users: list) -> Optional[str]:
+    """반환: 선택한 사람으로 신청할 수 없는 이유."""
+    if any(user.bot for user in users):
+        return "봇은 선택할 수 없습니다."
+    if role_requests.is_requested(team_name, kind, {user.id for user in users}):
+        return "이미 신청한 사람은 다시 선택할 수 없습니다."
+    manager = BotManager.get_instance().get_team_data_manager()
+    restricted = await manager.find_restricted_members(
+        get_current_kst_time(), [user.display_name for user in users],
+    )
+    if restricted:
+        return "경고로 참가가 제한된 사람은 선택할 수 없습니다.\n" + "\n".join(
+            f"**{name}**: {until}까지" for name, until in restricted
+        )
+    return None
 
 
 async def _open(interaction: discord.Interaction, kind: str) -> None:
@@ -282,9 +313,7 @@ async def _decide(interaction: discord.Interaction, action: str) -> None:
         f"[권한신청] {TITLES[request['kind']]} {STATUS_TEXT[request['status']]} - {request['letter']}조 "
         f"{request['team']}, 운영진: {member.display_name}, 제재: {request['sanction']}"
     )
-    await interaction.response.edit_message(
-        view=request_view(request), allowed_mentions=discord.AllowedMentions.none(),
-    )
+    await _update_card(interaction, request)
     if request['status'] == REJECTED:
         return
 
@@ -299,6 +328,19 @@ async def _decide(interaction: discord.Interaction, action: str) -> None:
         ))
     if notes:
         await send_response(interaction, info_view('\n'.join(notes), title=f"{TITLES[request['kind']]} 승인"))
+
+
+async def _update_card(interaction: discord.Interaction, request: dict) -> None:
+    view = request_view(request)
+    try:
+        await interaction.response.edit_message(view=view, allowed_mentions=discord.AllowedMentions.none())
+    except discord.HTTPException as e:
+        # 이미 승인으로 기록했으므로 응답이 실패해도 역할과 제재는 이어서 처리
+        logger.warning(f"[권한신청] 카드 응답 실패, 메시지를 직접 고침: {e}")
+        try:
+            await interaction.message.edit(view=view, allowed_mentions=discord.AllowedMentions.none())
+        except discord.HTTPException as e:
+            logger.error(f"[권한신청] 카드 수정 실패: {e}")
 
 
 async def _grant_roles(guild: discord.Guild, request: dict) -> List[int]:
