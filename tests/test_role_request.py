@@ -365,6 +365,20 @@ class SubmitTest(StoreCase):
         submit.assert_not_awaited()
         self.assertEqual(_sent_text(interaction), f"## 오류\n{role_request.ROSTER_CHANGED_TEXT}")
 
+    async def test_team_moved_to_another_group_sends_the_request_back(self):
+        staff = role_request.StaffModal("B", "Team ER")
+        staff.staff_select._values = [_member(20)]
+        sub = self._modal(["가", "나", "다"], [_member(20)], ["나"])
+        sub.letter = "B"
+        for modal in (sub, staff):
+            interaction = _interaction(_member(10))
+
+            with patch.object(role_request, "_submit", new=AsyncMock()) as submit:
+                await modal.on_submit(interaction)
+
+            submit.assert_not_awaited()
+            self.assertEqual(_sent_text(interaction), f"## 오류\n{role_request.ROSTER_CHANGED_TEXT}")
+
     async def test_applicant_must_still_be_in_the_team_on_submit(self):
         for team, started, text in (
             ("Other", True, role_request.ROSTER_CHANGED_TEXT),
@@ -394,7 +408,7 @@ class SubmitTest(StoreCase):
 
         submit.assert_not_awaited()
         self.assertEqual(
-            _sent_text(interaction), "## 오류\n시작 30분 전이 지나 선택한 선수가 경고를 받습니다.\n다시 신청해주세요.",
+            _sent_text(interaction), "## 오류\n선택한 선수가 받는 제재가 경고로 바뀌었습니다.\n다시 신청해주세요.",
         )
 
     async def test_wrong_number_of_absent_players_is_rejected(self):
@@ -517,7 +531,11 @@ class DecisionTest(StoreCase):
         self.guild = SimpleNamespace(roles=[self.role], get_member=lambda uid: self.sub if uid == 20 else None)
         self.warnings = AsyncMock(return_value="2명에게 주의를 부여했습니다.")
         self.alert = AsyncMock(return_value=True)
-        self.manager = SimpleNamespace(is_team_assignment_started=True, log_action=MagicMock())
+        self.roster = ["가", "나", "다", "라"]
+        self.manager = SimpleNamespace(
+            is_team_assignment_started=True, log_action=MagicMock(),
+            get_team_data=lambda name: TeamData(name=name, players=self.roster) if name == "Team ER" else None,
+        )
         for target in (
             patch.object(role_request, "apply_roster_warnings", new=self.warnings),
             patch.object(role_request.alerts, "send", new=self.alert),
@@ -627,6 +645,20 @@ class DecisionTest(StoreCase):
         self.assertNotIn("**제재** ", card)
         self.sub.add_roles.assert_not_awaited()
         self.warnings.assert_not_awaited()
+
+    async def test_request_is_not_approved_after_its_absent_player_left_the_roster(self):
+        role_requests.add(500, _request())
+        self.roster = ["가", "다", "라", "마"]
+
+        for action, note in ((role_request.APPROVE, ''), (role_request.WAIVE, "진단서 확인")):
+            interaction = self._click()
+            await role_request._decide(interaction, action, note)
+            self.assertEqual(_sent_text(interaction), "## 오류\n로스터가 바뀌어 승인할 수 없습니다.\n거절해주세요.")
+        self.assertEqual(role_requests.get(500)['status'], PENDING)
+        self.warnings.assert_not_awaited()
+
+        await role_request._decide(self._click(), role_request.REJECT, "로스터 변경")
+        self.assertEqual(role_requests.get(500)['status'], REJECTED)
 
     async def test_approve_button_decides_at_once_and_the_others_ask_for_a_reason(self):
         role_requests.add(500, _request())

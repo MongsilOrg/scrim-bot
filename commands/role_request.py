@@ -225,7 +225,7 @@ class SubModal(Modal):
         out = [player for player in self.players if player in self.out_select.values]
         # 창을 열어 둔 사이 운영진이 로스터를 바꾸면 로스터에 없는 선수가 제재를 받음
         found, reason = _applicant_team(interaction)
-        if found and (found[1] != self.team_name or found[2].players != self.players):
+        if found and (found[:2] != (self.letter, self.team_name) or found[2].players != self.players):
             reason = ROSTER_CHANGED_TEXT
         if reason:
             await send_response(interaction, error_view(reason))
@@ -247,7 +247,7 @@ class SubModal(Modal):
         now = get_current_kst_time()
         if sanction_kind(now) != self.sanction:
             await send_response(interaction, error_view(
-                f"시작 {LATE_MINUTES}분 전이 지나 선택한 선수가 경고를 받습니다.\n다시 신청해주세요."
+                f"선택한 선수가 받는 제재가 {sanction_kind(now)}로 바뀌었습니다.\n다시 신청해주세요."
             ))
             return
 
@@ -288,7 +288,7 @@ class StaffModal(Modal):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         staff = list(self.staff_select.values)
         found, reason = _applicant_team(interaction)
-        if found and found[1] != self.team_name:
+        if found and found[:2] != (self.letter, self.team_name):
             reason = ROSTER_CHANGED_TEXT
         if reason:
             await send_response(interaction, error_view(reason))
@@ -417,6 +417,12 @@ def _pending(message_id: int) -> Optional[dict]:
     return request if request and request.get('status') == PENDING else None
 
 
+def _roster_changed(request: dict) -> bool:
+    """신청 뒤 운영진이 로스터를 바꾸면 로스터에 없는 선수가 제재를 받음"""
+    team = BotManager.get_instance().get_team_data_manager().get_team_data(request['team'])
+    return team is None or not set(request['out']) <= set(team.players)
+
+
 async def _ask_note(interaction: discord.Interaction, action: str) -> None:
     if not _is_operator(interaction):
         await send_response(interaction, permission_error_view())
@@ -437,12 +443,16 @@ async def _decide(interaction: discord.Interaction, action: str, note: str = '')
 
     async with _decision_lock:
         pending = _pending(interaction.message.id)
-        request = pending and role_requests.close(
+        stale = bool(pending) and action != REJECT and _roster_changed(pending)
+        request = pending and not stale and role_requests.close(
             interaction.message.id,
             REJECTED if action == REJECT else APPROVED,
             sanction=pending['sanction'] if action == APPROVE else None,
             note=note,
         )
+    if stale:
+        await send_response(interaction, error_view("로스터가 바뀌어 승인할 수 없습니다.\n거절해주세요."))
+        return
     if not request:
         await send_response(interaction, error_view(CLOSED_TEXT))
         return
