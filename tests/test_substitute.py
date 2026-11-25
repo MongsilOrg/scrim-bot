@@ -105,7 +105,7 @@ class SubstituteTest(unittest.IsolatedAsyncioTestCase):
 
 
 class GroupRoleSyncTest(unittest.IsolatedAsyncioTestCase):
-    async def _update(self, **options):
+    async def _update(self, approved=(), **options):
         team = TeamData(name="Team ER", players=["가", "다", "대타닉"])
         bot = mock.Mock()
         manager = bot.get_team_data_manager.return_value
@@ -114,10 +114,19 @@ class GroupRoleSyncTest(unittest.IsolatedAsyncioTestCase):
         service = bot.get_team_processor.return_value.discord_service
         service.change_group_role = mock.AsyncMock()
         service.rename_group_voice_channel = mock.AsyncMock()
+        bot.get_client.return_value.get_guild.return_value.get_member = {
+            31: mock.Mock(), 32: None,
+        }.get
+        bot.get_client.return_value.get_guild.return_value.get_member(31).name = "staff31"
         with mock.patch.object(team_pipeline, "BotManager") as manager_class, \
+                mock.patch.object(team_pipeline.role_requests, "approved_members", return_value=approved) as asked, \
                 mock.patch.object(team_pipeline, "_get_group_teams", return_value=manager.groups[0]):
             manager_class.get_instance.return_value = bot
             await team_pipeline._update_changed_team("A", manager, "Team ER", "Team ER", 7200.0, **options)
+        if options.get('revoke_previous'):
+            asked.assert_called_once_with("A", except_team="Team ER")
+        else:
+            asked.assert_not_called()
         self.assertEqual(manager.groups[0], [("Team ER", team, 7200.0)])
         service.rename_group_voice_channel.assert_awaited_once()
         return service.change_group_role
@@ -134,6 +143,11 @@ class GroupRoleSyncTest(unittest.IsolatedAsyncioTestCase):
         change = await self._update(revoke_previous=True)
 
         self.assertEqual(change.await_args.args[1:], ("A", ["대타닉"], {"가", "나", "다"}, ["가", "다", "대타닉"]))
+
+    async def test_member_approved_for_another_team_of_the_group_keeps_the_role(self):
+        change = await self._update(approved=[31, 32], revoke_previous=True)
+
+        self.assertEqual(change.await_args.args[4], ["가", "다", "대타닉", "staff31"])
 
 
 class RosterChangeSanctionTest(unittest.IsolatedAsyncioTestCase):

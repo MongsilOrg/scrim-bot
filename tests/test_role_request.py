@@ -681,6 +681,8 @@ class DecisionTest(StoreCase):
             {"Team ER": {'sub': ["대타닉"], 'staff': ["코치"], 'out': ['가', '나']}},
         )
         self.assertEqual(role_requests.roster_marks("B"), {})
+        self.assertEqual(role_requests.approved_members("A", except_team="Other"), {20, 21})
+        self.assertEqual(role_requests.approved_members("A", except_team="Team ER"), set())
 
     async def test_roster_problem_is_told_to_the_operator(self):
         role_requests.add(500, _request())

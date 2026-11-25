@@ -1,3 +1,4 @@
+import asyncio
 import dataclasses
 import time
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
@@ -687,6 +688,10 @@ async def _update_changed_team(
             # 선수 교체로 빠진 선수는 조 역할을 유지, 팀이 통째로 바뀌면 이전 팀은 회수
             staying = [member for _, team_data, _ in group_teams for member in team_data.all_members]
             left = previous if revoke_previous else ()
+            if left:
+                # 다른 팀의 스태프로 승인된 사람은 로스터에 없어도 조에 남음
+                approved = role_requests.approved_members(group_letter, except_team=original_team_name)
+                staying += [member.name for member in map(guild.get_member, approved) if member]
             await team_processor.discord_service.change_group_role(guild, group_letter, joined, left, staying)
 
         await team_processor.discord_service.rename_group_voice_channel(
@@ -695,6 +700,9 @@ async def _update_changed_team(
 
     except Exception as e:
         logger.error(f"[팀수정] 팀 데이터 업데이트 실패: {e}", exc_info=True)
+
+
+_announcement_locks: Dict[str, asyncio.Lock] = {}
 
 
 def _group_channel(group_letter: str) -> Optional[discord.TextChannel]:
@@ -746,16 +754,18 @@ async def update_group_announcement(group_letter: str) -> None:
         if not channel:
             return
 
-        team_data_manager = BotManager.get_instance().get_team_data_manager()
-        updated_group_teams = _get_group_teams(team_data_manager, group_letter)
-        if updated_group_teams is None:
-            logger.warning(f"[팀수정] 조 데이터를 찾을 수 없음: {group_letter}조")
-            return
+        # 같은 조의 갱신이 겹치면 먼저 읽은 로스터로 그린 이미지가 나중에 올라가 최신 공지를 덮음
+        async with _announcement_locks.setdefault(group_letter, asyncio.Lock()):
+            team_data_manager = BotManager.get_instance().get_team_data_manager()
+            updated_group_teams = _get_group_teams(team_data_manager, group_letter)
+            if updated_group_teams is None:
+                logger.warning(f"[팀수정] 조 데이터를 찾을 수 없음: {group_letter}조")
+                return
 
-        team_processor = BotManager.get_instance().get_team_processor()
-        await team_processor.discord_service.update_single_group_announcement(
-            channel, group_letter, list(updated_group_teams)
-        )
+            team_processor = BotManager.get_instance().get_team_processor()
+            await team_processor.discord_service.update_single_group_announcement(
+                channel, group_letter, list(updated_group_teams)
+            )
 
     except Exception as e:
         logger.error(f"[팀수정] 조별 공지 업데이트 실패: {e}", exc_info=True)

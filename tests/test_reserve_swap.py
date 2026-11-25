@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from datetime import datetime
 from types import SimpleNamespace
@@ -113,6 +114,26 @@ class ReserveSwapTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(text, "## 팀 변경\n<@&77>\n오늘 `취소팀` 팀 대타로 `` 예비`팀 `` 팀이 진행합니다.")
         self.assertTrue(sent['allowed_mentions'].roles)
         self.assertFalse(sent['allowed_mentions'].everyone)
+
+    async def test_announcements_of_one_group_are_drawn_one_at_a_time(self):
+        drawing = []
+        overlapped = []
+
+        async def draw(channel, letter, teams):
+            overlapped.append(bool(drawing))
+            drawing.append(letter)
+            await asyncio.sleep(0)
+            drawing.remove(letter)
+
+        bot = mock.Mock()
+        bot.get_team_processor.return_value.discord_service.update_single_group_announcement = draw
+        with mock.patch.object(team_pipeline, 'BotManager') as manager_class, \
+                mock.patch.object(team_pipeline, '_group_channel', return_value=mock.Mock()), \
+                mock.patch.object(team_pipeline, '_get_group_teams', return_value=[]):
+            manager_class.get_instance.return_value = bot
+            await asyncio.gather(*(team_pipeline.update_group_announcement('B') for _ in range(3)))
+
+        self.assertEqual(overlapped, [False, False, False])
 
     async def test_substitute_request_takes_one_player_from_reserve(self):
         alpha = TeamData(name='알파팀', players=['a1', 'a2', 'a3'], mmr=7000.0)

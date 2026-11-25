@@ -104,6 +104,18 @@ def sanctioned_out() -> Set[str]:
     }
 
 
+def approved_members(letter: str, *, except_team: str) -> Set[int]:
+    """그날 그 조의 다른 팀에 대타나 스태프로 승인된 사람"""
+    today = _today()
+    return {
+        user_id
+        for row in _load()['requests'].values()
+        if row.get('date') == today and row.get('status') == APPROVED
+        and row.get('letter') == letter and row.get('team') != except_team
+        for user_id in row.get('members') or []
+    }
+
+
 def roster_marks(letter: str) -> Dict[str, Dict[str, List[str]]]:
     """그날 승인으로 팀에 들어온 대타(sub)와 스태프(staff), 대타로 빠진 선수(out). 팀명별"""
     today = _today()
