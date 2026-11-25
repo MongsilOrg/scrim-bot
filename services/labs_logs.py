@@ -114,6 +114,11 @@ def _push(entry: dict) -> None:
     _save()
 
 
+def pending(prefix: str) -> bool:
+    """key가 prefix로 시작하는 기록이 아직 대기열에 있는지"""
+    return any(r['key'].startswith(prefix) for r in _load())
+
+
 async def flush() -> bool:
     """대기열을 Labs에 보냄. 모두 보냈으면 True"""
     if not labs_api.enabled():

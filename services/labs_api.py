@@ -146,7 +146,9 @@ async def delete_previous(guild: discord.Guild, today: Optional[date] = None) ->
         logger.warning(f"[Labs] 게임 ID를 보내지 못한 조가 있어 {code} 대회를 남김")
         return
     from services import labs_logs
-    if not await labs_logs.flush():
+    # 다른 기록이 막혀도 이 대회의 게임 ID만 닿았으면 지움
+    await labs_logs.flush()
+    if labs_logs.pending(f'g:{code}:'):
         logger.warning(f"[Labs] 게임 ID 기록이 Labs에 닿지 않아 {code} 대회를 남김")
         return
     result = await request('DELETE', f"/api/bot/t/{code}", {'owner': str(guild.owner_id)})

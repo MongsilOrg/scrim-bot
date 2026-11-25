@@ -112,7 +112,8 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         self.addCleanup(patch.stopall)
         patch.object(labs_api, 'get_current_kst_time', return_value=SimpleNamespace(date=lambda: TODAY)).start()
         self.games = patch.object(labs_logs, 'record_games').start()
-        self.flush = patch.object(labs_logs, 'flush', new=AsyncMock(return_value=True)).start()
+        patch.object(labs_logs, 'flush', new=AsyncMock(return_value=False)).start()
+        self.pending = patch.object(labs_logs, 'pending', return_value=False).start()
 
     def make_guild(self):
         member = lambda i, bot=False: SimpleNamespace(id=i, bot=bot)
@@ -316,8 +317,9 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
 
     async def test_keeps_tournament_until_game_ids_reach_labs(self):
         labs_api.save_state({'date': '2026-10-28', 'code': 'OLD000', 'groups': ['A'], 'posted': ['A']})
-        self.flush.return_value = False
+        self.pending.return_value = True
         await labs_api.delete_previous(self.make_guild(), TODAY)
+        self.pending.assert_called_once_with('g:OLD000:')
         self.request.assert_not_awaited()
         self.assertNotIn('deleted', labs_api.load_state())
 

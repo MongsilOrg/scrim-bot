@@ -54,6 +54,11 @@ class LabsLogsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.request.await_args.args[2]['logs'][0]['key'], key)
         self.assertEqual(self.saved(), [])
 
+    async def test_pending_finds_only_that_tournament(self):
+        labs_logs.record_games('K3PQ8M', '2025-11-24', 'B', [{'roundNo': 1, 'gameId': 11}])
+        self.assertTrue(labs_logs.pending('g:K3PQ8M:'))
+        self.assertFalse(labs_logs.pending('g:OLD000:'))
+
     async def test_games_sent_next_day_keep_their_day(self):
         replays = [{'roundNo': 1, 'gameId': 111}, {'roundNo': 2, 'gameId': 222}]
         with patch.object(labs_logs.time, 'time', return_value=1764000000):  # 2025-11-25 01:00 KST
