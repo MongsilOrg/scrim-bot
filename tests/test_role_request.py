@@ -313,6 +313,14 @@ class SubmitTest(StoreCase):
         self.assertEqual(interaction.channel.send.await_count, 2)
         self.assertEqual(role_requests.get(2)['status'], PENDING)
 
+    async def test_member_selects_are_required(self):
+        sub = role_request.SubModal("A", "Team ER", ["가", "나", "다"])
+        staff = role_request.StaffModal("A", "Team ER")
+
+        self.assertTrue(sub.sub_select.required)
+        self.assertTrue(sub.out_select.required)
+        self.assertTrue(staff.staff_select.required)
+
     async def test_restricted_member_cannot_be_requested(self):
         self.manager.find_restricted_members.return_value = [("user20", "11월 28일")]
         staff = role_request.StaffModal("A", "Team ER")

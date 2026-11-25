@@ -156,7 +156,8 @@ class SubModal(Modal):
         self.team_name = team_name
         self.players = list(players)
 
-        self.sub_select = UserSelect(min_values=1, max_values=2)
+        # UserSelect는 required 기본값이 False라 비운 채 제출됨
+        self.sub_select = UserSelect(min_values=1, max_values=2, required=True)
         self.add_item(Label(text="대타 선수", component=self.sub_select))
 
         # 선수 자리가 3개라 대타 1명이면 4인 로스터에서는 2명이 출전하지 않음
@@ -214,7 +215,7 @@ class StaffModal(Modal):
         self.letter = letter
         self.team_name = team_name
 
-        self.staff_select = UserSelect(min_values=1, max_values=3)
+        self.staff_select = UserSelect(min_values=1, max_values=3, required=True)
         self.add_item(Label(text="스태프", component=self.staff_select))
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
