@@ -8,7 +8,7 @@ from typing import List, Optional, Tuple
 import discord
 from discord import ButtonStyle, SelectOption
 from discord.ui import (
-    ActionRow, Button, Container, DynamicItem, Label, LayoutView, Modal, Select, TextDisplay, UserSelect,
+    ActionRow, Button, Container, DynamicItem, Label, LayoutView, Modal, Select, TextDisplay, TextInput, UserSelect,
 )
 
 from bot.manager import BotManager
@@ -33,6 +33,8 @@ APPROVE, WAIVE, REJECT = 'approve', 'waive', 'reject'
 SLOTS = 3
 LATE_MINUTES = 30
 LATE_REASON = "대타 - 스크림 시작 30분 전이 지난 뒤 신청"
+REASON_MAX = 100
+LOG_KIND = "권한"
 
 TITLES = {SUB: "대타", STAFF: "스태프 권한"}
 STATUS_TEXT = {PENDING: "신청", APPROVED: "승인", REJECTED: "거절"}
@@ -54,6 +56,24 @@ _panel_lock = asyncio.Lock()
 def sanction_kind(now: datetime) -> str:
     start = now.replace(hour=settings.SCRIM_START_HOUR, minute=0, second=0, microsecond=0)
     return '주의' if now <= start - timedelta(minutes=LATE_MINUTES) else '경고'
+
+
+def sanction_notice(now: datetime) -> str:
+    """고른 선수가 제재를 받는다는 것을 신청자가 제출 전에 알게 함"""
+    return f"선택한 선수는 {sanction_kind(now)}를 받습니다."
+
+
+def _reason_input(*, required: bool) -> TextInput:
+    return TextInput(required=required, max_length=REASON_MAX)
+
+
+def _one_line(text: Optional[str]) -> str:
+    return ' '.join((text or '').split())
+
+
+def _plain(text: str) -> str:
+    """사람이 적은 글이 카드의 서식이나 멘션으로 바뀌지 않게 함"""
+    return discord.utils.escape_markdown(discord.utils.escape_mentions(text))
 
 
 def find_team(manager, member: discord.Member) -> Optional[Tuple[str, str, TeamData]]:
@@ -108,7 +128,10 @@ class DecisionButton(DynamicItem[Button], template=r"scrim:role:(?P<action>appro
         return cls(match["action"])
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        await _decide(interaction, self.action)
+        if self.action == APPROVE:
+            await _decide(interaction, APPROVE)
+        else:
+            await _ask_note(interaction, self.action)
 
 
 def panel_view() -> LayoutView:
@@ -118,23 +141,36 @@ def panel_view() -> LayoutView:
     return view
 
 
+def _facts(request: dict, text=str) -> List[Tuple[str, str]]:
+    """카드와 Labs 기록에 함께 쓰는 줄. text는 사람이 적은 글에 적용"""
+    kind, status = request['kind'], request['status']
+    note = text(request.get('note') or '')
+    facts = []
+    if kind == SUB:
+        facts.append(("출전하지 않는 선수", ', '.join(request['out'])))
+    if request.get('reason'):
+        facts.append(("사유", text(request['reason'])))
+    if request['sanction']:
+        facts.append(("제재", request['sanction']))
+    elif kind == SUB and status == APPROVED:
+        facts.append(("제재 없음", note))
+    if status == REJECTED and note:
+        facts.append(("거절 사유", note))
+    return facts
+
+
 def request_view(request: dict, *, operators: Optional[List[int]] = None) -> LayoutView:
     kind, status = request['kind'], request['status']
     lines = [
         f"## {TITLES[kind]} {STATUS_TEXT[status]}",
         f"**{request['letter']}조** `{request['team']}`",
+        f"**{'대타' if kind == SUB else '스태프'}** {_mentions(request['members'])}",
     ]
-    if kind == SUB:
-        lines.append(f"**대타** {_mentions(request['members'])}")
-        lines.append(f"**출전하지 않는 선수** {', '.join(request['out'])}")
-        if request['sanction']:
-            lines.append(f"**제재** {request['sanction']}")
-        if status == PENDING and request.get('others'):
-            lines.append("**다른 팀** " + ', '.join(
-                f"<@{uid}> {letter}조 `{team}`" for uid, letter, team in request['others']
-            ))
-    else:
-        lines.append(f"**스태프** {_mentions(request['members'])}")
+    lines += [f"**{label}** {value}".rstrip() for label, value in _facts(request, _plain)]
+    if status == PENDING and request.get('others'):
+        lines.append("**다른 팀** " + ', '.join(
+            f"<@{uid}> {letter}조 `{team}`" for uid, letter, team in request['others']
+        ))
     lines.append(f"**신청** <@{request['applicant']}>")
 
     children = [TextDisplay(content='\n'.join(lines))]
@@ -167,7 +203,12 @@ class SubModal(Modal):
             min_values=least,
             max_values=least + 1,
         )
-        self.add_item(Label(text="출전하지 않는 선수", component=self.out_select))
+        self.add_item(Label(
+            text="출전하지 않는 선수", description=sanction_notice(get_current_kst_time()), component=self.out_select,
+        ))
+
+        self.reason = _reason_input(required=False)
+        self.add_item(Label(text="사유", component=self.reason))
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         subs = list(self.sub_select.values)
@@ -204,6 +245,7 @@ class SubModal(Modal):
             'members': [user.id for user in subs],
             'out': out,
             'others': others,
+            'reason': _one_line(self.reason.value),
             'sanction': sanction_kind(now),
             'status': PENDING,
         })
@@ -217,6 +259,9 @@ class StaffModal(Modal):
 
         self.staff_select = UserSelect(min_values=1, max_values=3, required=True)
         self.add_item(Label(text="스태프", component=self.staff_select))
+
+        self.reason = _reason_input(required=False)
+        self.add_item(Label(text="사유", component=self.reason))
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         staff = list(self.staff_select.values)
@@ -232,9 +277,28 @@ class StaffModal(Modal):
             'applicant': interaction.user.id,
             'members': [user.id for user in staff],
             'out': [],
+            'reason': _one_line(self.reason.value),
             'sanction': None,
             'status': PENDING,
         })
+
+
+class NoteModal(Modal):
+    """제재를 빼거나 거절한 근거를 카드와 기록에 남김"""
+
+    def __init__(self, action: str, kind: str):
+        super().__init__(title="제재 없이 승인" if action == WAIVE else f"{TITLES[kind]} 거절")
+        self.action = action
+
+        self.note = _reason_input(required=True)
+        self.add_item(Label(text="사유", component=self.note))
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        note = _one_line(self.note.value)
+        if not note:
+            await send_response(interaction, error_view("사유를 입력해주세요."))
+            return
+        await _decide(interaction, self.action, note)
 
 
 async def _blocked_reason(users: list) -> Optional[str]:
@@ -292,6 +356,7 @@ async def _submit(interaction: discord.Interaction, request: dict) -> None:
             await send_response(interaction, error_view("신청을 올리지 못했습니다.\n다시 신청해주세요."))
             return
         role_requests.add(message.id, request)
+    _record(interaction, request)
     logger.info(
         f"[권한신청] {TITLES[request['kind']]} 신청 - {request['letter']}조 {request['team']}, "
         f"신청: {interaction.user.display_name}, 대상: {request['members']}, 제외: {request['out']}"
@@ -299,21 +364,60 @@ async def _submit(interaction: discord.Interaction, request: dict) -> None:
     await move_panel(channel)
 
 
-async def _decide(interaction: discord.Interaction, action: str) -> None:
+def _record(interaction: discord.Interaction, request: dict) -> None:
+    """신청과 처리 결과를 Labs 운영 화면의 기록에 남김"""
+    guild = interaction.guild
+    found = [guild.get_member(uid) for uid in request['members']] if guild else []
+    names = [member.display_name for member in found if member]
+    detail = [f"{TITLES[request['kind']]} {STATUS_TEXT[request['status']]}"]
+    detail += [f"{label} {value}".rstrip() for label, value in _facts(request)]
+    BotManager.get_instance().get_team_data_manager().log_action(
+        LOG_KIND, interaction.user, request['team'],
+        players=names if request['kind'] == SUB else (),
+        staff=names if request['kind'] == STAFF else (),
+        change='\n'.join(detail),
+        applicant_id=None if request['status'] == PENDING else request['applicant'],
+    )
+
+
+def _is_operator(interaction: discord.Interaction) -> bool:
+    member = interaction.user
+    return interaction.guild is not None and isinstance(member, discord.Member) and is_admin(member)
+
+
+def _pending(message_id: int) -> Optional[dict]:
+    # 다음 스크림 신청이 열리면 조 역할이 초기화되므로 그 뒤에는 승인하지 않음
+    if not BotManager.get_instance().get_team_data_manager().is_team_assignment_started:
+        return None
+    request = role_requests.get(message_id)
+    return request if request and request.get('status') == PENDING else None
+
+
+async def _ask_note(interaction: discord.Interaction, action: str) -> None:
+    if not _is_operator(interaction):
+        await send_response(interaction, permission_error_view())
+        return
+    request = _pending(interaction.message.id)
+    if not request:
+        await send_response(interaction, error_view(CLOSED_TEXT))
+        return
+    await interaction.response.send_modal(NoteModal(action, request['kind']))
+
+
+async def _decide(interaction: discord.Interaction, action: str, note: str = '') -> None:
     member = interaction.user
     guild = interaction.guild
-    if guild is None or not isinstance(member, discord.Member) or not is_admin(member):
+    if not _is_operator(interaction):
         await send_response(interaction, permission_error_view())
         return
 
     async with _decision_lock:
-        # 다음 스크림 신청이 열리면 조 역할이 초기화되므로 그 뒤에는 승인하지 않음
-        started = BotManager.get_instance().get_team_data_manager().is_team_assignment_started
-        pending = role_requests.get(interaction.message.id) if started else None
+        pending = _pending(interaction.message.id)
         request = pending and role_requests.close(
             interaction.message.id,
             REJECTED if action == REJECT else APPROVED,
             sanction=pending['sanction'] if action == APPROVE else None,
+            note=note,
         )
     if not request:
         await send_response(interaction, error_view(CLOSED_TEXT))
@@ -323,6 +427,7 @@ async def _decide(interaction: discord.Interaction, action: str) -> None:
         f"[권한신청] {TITLES[request['kind']]} {STATUS_TEXT[request['status']]} - {request['letter']}조 "
         f"{request['team']}, 운영진: {member.display_name}, 제재: {request['sanction']}"
     )
+    _record(interaction, request)
     await _update_card(interaction, request)
     if request['status'] == REJECTED:
         return

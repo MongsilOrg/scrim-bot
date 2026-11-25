@@ -67,13 +67,14 @@ def get(message_id: int) -> Optional[Dict]:
     return request if request and request.get('date') == _today() else None
 
 
-def close(message_id: int, status: str, *, sanction: Optional[str]) -> Optional[Dict]:
+def close(message_id: int, status: str, *, sanction: Optional[str], note: str = '') -> Optional[Dict]:
     """대기 중인 신청만 닫음. 두 운영진이 함께 눌러도 제재가 한 번만 부여됨"""
     request = get(message_id)
     if not request or request.get('status') != PENDING:
         return None
     request['status'] = status
     request['sanction'] = sanction
+    request['note'] = note
     _save()
     return request
 

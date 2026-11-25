@@ -50,6 +50,7 @@ def _request(kind=role_request.SUB, **changes):
         'kind': kind, 'date': '2026-11-25', 'letter': 'A', 'team': 'Team ER', 'applicant': 10,
         'members': [20], 'out': ['가', '나'] if kind == role_request.SUB else [],
         **({'others': []} if kind == role_request.SUB else {}),
+        'reason': '',
         'sanction': '주의' if kind == role_request.SUB else None, 'status': PENDING,
     }
     request.update(changes)
@@ -162,17 +163,50 @@ class ViewTest(unittest.TestCase):
         self.assertEqual(_labels(view), ["승인", "거절"])
 
     def test_closed_card_has_no_buttons_or_operator_mention(self):
-        view = role_request.request_view(_request(status=APPROVED, sanction=None), operators=[30])
+        view = role_request.request_view(_request(status=APPROVED), operators=[30])
 
         self.assertEqual(_text(view), "\n".join([
             "## 대타 승인",
             "**A조** `Team ER`",
             "**대타** <@20>",
             "**출전하지 않는 선수** 가, 나",
+            "**제재** 주의",
             "**신청** <@10>",
         ]))
         self.assertEqual(_labels(view), [])
-        self.assertIn("## 대타 거절", _text(role_request.request_view(_request(status=REJECTED, sanction=None))))
+
+    def test_card_shows_the_reasons_of_the_applicant_and_the_operator(self):
+        request = _request(reason="병원 진료", status=APPROVED, sanction=None, note="진단서 확인")
+        self.assertEqual(_text(role_request.request_view(request)), "\n".join([
+            "## 대타 승인",
+            "**A조** `Team ER`",
+            "**대타** <@20>",
+            "**출전하지 않는 선수** 가, 나",
+            "**사유** 병원 진료",
+            "**제재 없음** 진단서 확인",
+            "**신청** <@10>",
+        ]))
+
+        staff = _request(role_request.STAFF, reason="코치 추가", status=REJECTED, note="다른 팀 선수")
+        self.assertEqual(_text(role_request.request_view(staff)), "\n".join([
+            "## 스태프 권한 거절",
+            "**A조** `Team ER`",
+            "**스태프** <@20>",
+            "**사유** 코치 추가",
+            "**거절 사유** 다른 팀 선수",
+            "**신청** <@10>",
+        ]))
+
+    def test_written_reason_cannot_add_formatting_or_mentions(self):
+        text = _text(role_request.request_view(_request(reason="**굵게** <@123456789012345678> @everyone")))
+
+        self.assertIn(r"**사유** \*\*굵게\*\*", text)
+        self.assertNotIn("<@123456789012345678>", text)
+        self.assertNotIn("@everyone", text)
+
+    def test_absent_player_notice_tells_the_sanction(self):
+        self.assertEqual(role_request.sanction_notice(EARLY), "선택한 선수는 주의를 받습니다.")
+        self.assertEqual(role_request.sanction_notice(LATE), "선택한 선수는 경고를 받습니다.")
 
 
 class OpenTest(StoreCase):
@@ -236,10 +270,14 @@ class SubmitTest(StoreCase):
             groups=[[("Team ER", TeamData(name="Team ER"), 0.0)], [("Other", other, 0.0)]],
             find_user_team=MagicMock(return_value=None),
             find_restricted_members=AsyncMock(return_value=[]),
+            log_action=MagicMock(),
         )
+        self.schedule = SimpleNamespace(pick=None)
         target = patch.object(
             role_request.BotManager, "get_instance",
-            return_value=SimpleNamespace(get_team_data_manager=lambda: self.manager),
+            return_value=SimpleNamespace(
+                get_team_data_manager=lambda: self.manager, get_schedule_manager=lambda: self.schedule,
+            ),
         )
         target.start()
         self.addCleanup(target.stop)
@@ -267,6 +305,47 @@ class SubmitTest(StoreCase):
             await modal.on_submit(_interaction(_member(10)))
 
         self.assertEqual(submit.await_args.args[1], _request(out=["가", "라"], sanction='경고'))
+
+    async def test_absent_player_count_follows_roster_size_and_sub_count(self):
+        three, four = ["가", "나", "다"], ["가", "나", "다", "라"]
+        # 로스터, 대타 수, 골라야 하는 출전하지 않는 선수 수
+        for players, subs, need in ((three, 1, 1), (three, 2, 2), (four, 1, 2), (four, 2, 3)):
+            for picked in range(1, len(players) + 1):
+                with self.subTest(roster=len(players), subs=subs, picked=picked):
+                    modal = self._modal(players, [_member(20 + i) for i in range(subs)], players[:picked])
+                    interaction = _interaction(_member(10))
+
+                    with patch.object(role_request, "_submit", new=AsyncMock()) as submit:
+                        await modal.on_submit(interaction)
+
+                    if picked == need:
+                        self.assertEqual(submit.await_args.args[1]['out'], players[:need])
+                    else:
+                        submit.assert_not_awaited()
+                        self.assertEqual(
+                            _sent_text(interaction),
+                            f"## 오류\n대타가 {subs}명이면 출전하지 않는 선수는 {need}명입니다.\n다시 신청해주세요.",
+                        )
+
+    async def test_select_does_not_allow_fewer_absent_players_than_one_sub_needs(self):
+        three = role_request.SubModal("A", "Team ER", ["가", "나", "다"])
+        four = role_request.SubModal("A", "Team ER", ["가", "나", "다", "라"])
+
+        self.assertEqual((three.out_select.min_values, three.out_select.max_values), (1, 2))
+        self.assertEqual((four.out_select.min_values, four.out_select.max_values), (2, 3))
+
+    async def test_modal_tells_the_sanction_and_carries_the_reason(self):
+        modal = self._modal(["가", "나", "다"], [_member(20)], ["나"])
+        modal.reason._value = "  병원   진료 \n"
+        label = next(item for item in modal.children if getattr(item, 'component', None) is modal.out_select)
+        self.assertEqual(label.description, role_request.sanction_notice(EARLY))
+        self.assertFalse(modal.reason.required)
+        self.assertEqual(modal.reason.max_length, 100)
+
+        with patch.object(role_request, "_submit", new=AsyncMock()) as submit:
+            await modal.on_submit(_interaction(_member(10)))
+
+        self.assertEqual(submit.await_args.args[1]['reason'], "병원 진료")
 
     async def test_wrong_number_of_absent_players_is_rejected(self):
         modal = self._modal(["가", "나", "다", "라"], [_member(20)], ["가", "나", "다"])
@@ -298,18 +377,16 @@ class SubmitTest(StoreCase):
         role_requests.add(1, _request())
         interaction = _interaction(_member(10))
         interaction.channel.send = AsyncMock(return_value=SimpleNamespace(id=2))
-        manager = SimpleNamespace(get_schedule_manager=lambda: SimpleNamespace(pick=None))
 
-        with patch.object(role_request.BotManager, "get_instance", return_value=manager):
-            await role_request._submit(interaction, _request())
-            interaction.channel.send.assert_not_awaited()
-            self.assertEqual(
-                _text(interaction.followup.send.await_args.kwargs['view']),
-                "## 오류\n이미 신청한 사람은 다시 선택할 수 없습니다.",
-            )
+        await role_request._submit(interaction, _request())
+        interaction.channel.send.assert_not_awaited()
+        self.assertEqual(
+            _text(interaction.followup.send.await_args.kwargs['view']),
+            "## 오류\n이미 신청한 사람은 다시 선택할 수 없습니다.",
+        )
 
-            role_requests.close(1, REJECTED, sanction=None)
-            await role_request._submit(interaction, _request())
+        role_requests.close(1, REJECTED, sanction=None)
+        await role_request._submit(interaction, _request())
         self.assertEqual(interaction.channel.send.await_count, 2)
         self.assertEqual(role_requests.get(2)['status'], PENDING)
 
@@ -355,12 +432,16 @@ class SubmitTest(StoreCase):
         channel.send = AsyncMock(side_effect=[SimpleNamespace(id=500), SimpleNamespace(id=501)])
         old_panel = channel.get_partial_message.return_value
         old_panel.delete = AsyncMock()
-        pick = {'date': '2026-11-25', 'choices': {'A': '30'}, 'targets': ['30', '31']}
-        manager = SimpleNamespace(get_schedule_manager=lambda: SimpleNamespace(pick=pick))
+        self.schedule.pick = {'date': '2026-11-25', 'choices': {'A': '30'}, 'targets': ['30', '31']}
+        applicant = interaction.user
+        interaction.guild = SimpleNamespace(get_member=lambda uid: _member(uid, "대타닉") if uid == 20 else None)
 
-        with patch.object(role_request.BotManager, "get_instance", return_value=manager):
-            await role_request._submit(interaction, _request())
+        await role_request._submit(interaction, _request(reason="병원 진료"))
 
+        self.manager.log_action.assert_called_once_with(
+            "권한", applicant, 'Team ER', players=["대타닉"], staff=(),
+            change="대타 신청\n출전하지 않는 선수 가, 나\n사유 병원 진료\n제재 주의", applicant_id=None,
+        )
         card = channel.send.await_args_list[0].kwargs
         self.assertTrue(_text(card['view']).startswith("<@30>\n## 대타 신청"))
         self.assertEqual([user.id for user in card['allowed_mentions'].users], [30])
@@ -371,13 +452,11 @@ class SubmitTest(StoreCase):
         self.assertEqual(role_requests.panel_id(), 501)
 
     async def test_operators_of_the_day_are_mentioned_until_the_group_is_picked(self):
-        pick = {'date': '2026-11-25', 'choices': {'B': '30'}, 'targets': ['30', '31']}
-        manager = SimpleNamespace(get_schedule_manager=lambda: SimpleNamespace(pick=pick))
+        pick = self.schedule.pick = {'date': '2026-11-25', 'choices': {'B': '30'}, 'targets': ['30', '31']}
 
-        with patch.object(role_request.BotManager, "get_instance", return_value=manager):
-            self.assertEqual(role_request._operator_ids('A'), [30, 31])
-            pick['date'] = '2026-11-24'
-            self.assertEqual(role_request._operator_ids('A'), [])
+        self.assertEqual(role_request._operator_ids('A'), [30, 31])
+        pick['date'] = '2026-11-24'
+        self.assertEqual(role_request._operator_ids('A'), [])
 
 
 class DecisionTest(StoreCase):
@@ -388,7 +467,7 @@ class DecisionTest(StoreCase):
         self.guild = SimpleNamespace(roles=[self.role], get_member=lambda uid: self.sub if uid == 20 else None)
         self.warnings = AsyncMock(return_value="2명에게 주의를 부여했습니다.")
         self.alert = AsyncMock(return_value=True)
-        self.manager = SimpleNamespace(is_team_assignment_started=True)
+        self.manager = SimpleNamespace(is_team_assignment_started=True, log_action=MagicMock())
         for target in (
             patch.object(role_request, "apply_roster_warnings", new=self.warnings),
             patch.object(role_request.alerts, "send", new=self.alert),
@@ -469,26 +548,82 @@ class DecisionTest(StoreCase):
             interaction, 'Team ER', ['가', '나'], role_request.LATE_REASON, kind='경고',
         )
 
-    async def test_approval_without_sanction(self):
+    async def test_approval_without_sanction_keeps_the_reason_of_the_operator(self):
         role_requests.add(500, _request())
         interaction = self._click()
 
-        await role_request._decide(interaction, role_request.WAIVE)
+        await role_request._decide(interaction, role_request.WAIVE, "진단서 확인")
 
         self.sub.add_roles.assert_awaited_once()
         self.warnings.assert_not_awaited()
-        self.assertNotIn("제재", _text(interaction.response.edit_message.await_args.kwargs['view']))
+        card = _text(interaction.response.edit_message.await_args.kwargs['view'])
+        self.assertIn("**제재 없음** 진단서 확인", card)
+        self.assertNotIn("**제재** ", card)
         interaction.followup.send.assert_not_awaited()
+        self.manager.log_action.assert_called_once_with(
+            "권한", interaction.user, 'Team ER', players=["user20"], staff=(),
+            change="대타 승인\n출전하지 않는 선수 가, 나\n제재 없음 진단서 확인", applicant_id=10,
+        )
 
     async def test_rejection_changes_nothing_but_the_card(self):
         role_requests.add(500, _request())
         interaction = self._click()
 
-        await role_request._decide(interaction, role_request.REJECT)
+        await role_request._decide(interaction, role_request.REJECT, "로스터에 없는 선수")
 
-        self.assertIn("## 대타 거절", _text(interaction.response.edit_message.await_args.kwargs['view']))
+        card = _text(interaction.response.edit_message.await_args.kwargs['view'])
+        self.assertIn("## 대타 거절", card)
+        self.assertIn("**거절 사유** 로스터에 없는 선수", card)
+        self.assertNotIn("**제재** ", card)
         self.sub.add_roles.assert_not_awaited()
         self.warnings.assert_not_awaited()
+
+    async def test_approve_button_decides_at_once_and_the_others_ask_for_a_reason(self):
+        role_requests.add(500, _request())
+        for action, title in ((role_request.WAIVE, "제재 없이 승인"), (role_request.REJECT, "대타 거절")):
+            interaction = self._click()
+
+            await role_request.DecisionButton(action).callback(interaction)
+
+            modal = interaction.response.send_modal.await_args.args[0]
+            self.assertEqual(modal.title, title)
+            self.assertTrue(modal.note.required)
+            self.assertEqual(role_requests.get(500)['status'], PENDING)
+
+        approve = self._click()
+        await role_request.DecisionButton(role_request.APPROVE).callback(approve)
+        approve.response.send_modal.assert_not_awaited()
+        self.assertEqual(role_requests.get(500)['status'], APPROVED)
+
+    async def test_reason_modal_is_not_opened_for_others_or_closed_requests(self):
+        role_requests.add(500, _request(role_request.STAFF))
+        stranger = self._click(admin=False)
+        await role_request.DecisionButton(role_request.REJECT).callback(stranger)
+        stranger.response.send_modal.assert_not_awaited()
+        self.assertIn("권한 없음", _sent_text(stranger))
+
+        role_requests.close(500, APPROVED, sanction=None)
+        late = self._click()
+        await role_request.DecisionButton(role_request.REJECT).callback(late)
+        late.response.send_modal.assert_not_awaited()
+        self.assertEqual(_sent_text(late), f"## 오류\n{role_request.CLOSED_TEXT}")
+
+    async def test_reason_modal_decides_with_the_written_reason(self):
+        role_requests.add(500, _request(role_request.STAFF))
+        modal = role_request.NoteModal(role_request.REJECT, role_request.STAFF)
+        self.assertEqual(modal.title, "스태프 권한 거절")
+
+        modal.note._value = "   "
+        blank = self._click()
+        await modal.on_submit(blank)
+        self.assertEqual(_sent_text(blank), "## 오류\n사유를 입력해주세요.")
+        self.assertEqual(role_requests.get(500)['status'], PENDING)
+
+        modal.note._value = " 다른 팀  선수 "
+        interaction = self._click()
+        await modal.on_submit(interaction)
+        self.assertEqual(role_requests.get(500)['note'], "다른 팀 선수")
+        self.assertIn("**거절 사유** 다른 팀 선수", _text(interaction.response.edit_message.await_args.kwargs['view']))
 
     async def test_operator_is_told_when_a_role_could_not_be_granted(self):
         role_requests.add(500, _request(role_request.STAFF, members=[20, 21]))
