@@ -112,6 +112,7 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         self.addCleanup(patch.stopall)
         patch.object(labs_api, 'get_current_kst_time', return_value=SimpleNamespace(date=lambda: TODAY)).start()
         self.games = patch.object(labs_logs, 'record_games').start()
+        self.flush = patch.object(labs_logs, 'flush', new=AsyncMock(return_value=True)).start()
 
     def make_guild(self):
         member = lambda i, bot=False: SimpleNamespace(id=i, bot=bot)
@@ -193,7 +194,7 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await labs_api.post_backup(client, 'A'))
         self.assertFalse(await labs_api.post_backup(client, 'A'))
         self.games.assert_called_once()
-        self.games.assert_called_once_with(TODAY.isoformat(), 'A', replays)
+        self.games.assert_called_once_with('K3PQ8M', TODAY.isoformat(), 'A', replays)
         self.assertEqual(self.request.await_args.args[:2], ('GET', '/api/bot/t/K3PQ8M?group=A'))
 
     async def test_last_check_posts_played_rounds(self):
@@ -312,6 +313,13 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
 
         self.request.assert_awaited_once_with('DELETE', '/api/bot/t/OLD000', {'owner': '1'})
         self.assertTrue(labs_api.load_state()['deleted'])
+
+    async def test_keeps_tournament_until_game_ids_reach_labs(self):
+        labs_api.save_state({'date': '2026-10-28', 'code': 'OLD000', 'groups': ['A'], 'posted': ['A']})
+        self.flush.return_value = False
+        await labs_api.delete_previous(self.make_guild(), TODAY)
+        self.request.assert_not_awaited()
+        self.assertNotIn('deleted', labs_api.load_state())
 
     async def test_keeps_today_and_unsent_tournaments(self):
         labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': ['A']})

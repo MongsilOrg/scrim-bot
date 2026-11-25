@@ -136,7 +136,7 @@ async def create_scrim(guild: discord.Guild, letters: List[str], today: Optional
 
 
 async def delete_previous(guild: discord.Guild, today: Optional[date] = None) -> None:
-    """전날 스크림봇이 만든 대회를 지움. 게임 ID를 다 보내지 못한 조가 있으면 Labs 보관 기간에 맡김"""
+    """전날 스크림봇이 만든 대회를 지움. 게임 ID 기록이 Labs에 닿지 않은 조가 있으면 Labs 보관 기간에 맡김"""
     today = today or get_current_kst_time().date()
     state = load_state()
     code = state.get('code')
@@ -144,6 +144,10 @@ async def delete_previous(guild: discord.Guild, today: Optional[date] = None) ->
         return
     if any(letter not in state.get('posted', []) for letter in state.get('groups', [])):
         logger.warning(f"[Labs] 게임 ID를 보내지 못한 조가 있어 {code} 대회를 남김")
+        return
+    from services import labs_logs
+    if not await labs_logs.flush():
+        logger.warning(f"[Labs] 게임 ID 기록이 Labs에 닿지 않아 {code} 대회를 남김")
         return
     result = await request('DELETE', f"/api/bot/t/{code}", {'owner': str(guild.owner_id)})
     if not result:
@@ -179,7 +183,7 @@ async def post_backup(client: discord.Client, group_letter: str, finished_only: 
     if state.get('code') != code or group_letter in state.get('posted', []):
         return False
     from services import labs_logs
-    labs_logs.record_games(state['date'], group_letter, replays)
+    labs_logs.record_games(code, state['date'], group_letter, replays)
     state.setdefault('posted', []).append(group_letter)
     save_state(state)
     logger.info(f"[Labs] {group_letter}조 게임 ID {len(replays)}개 기록")

@@ -91,12 +91,13 @@ def record(kind: str, user: discord.abc.User, team: str, *, players: Iterable[st
     })
 
 
-def record_games(day: str, group_letter: str, replays: list) -> None:
+def record_games(code: str, day: str, group_letter: str, replays: list) -> None:
     """조의 라운드별 게임 ID를 남김. 다음 날 보내는 조도 그날 기록으로 찾게 지난 날이면 그날 23:59로 적음"""
     at = int(time.time() * 1000)
     end = int((datetime.fromisoformat(day).replace(tzinfo=KST) + timedelta(days=1)).timestamp() * 1000) - 60_000
+    # 상태 저장에 실패해 다시 남겨도 Labs가 같은 key를 한 번만 넣음
     _push({
-        'key': uuid.uuid4().hex,
+        'key': f'g:{code}:{group_letter}',
         'at': min(at, end),
         'kind': '게임 ID',
         'team': f'{group_letter}조',
