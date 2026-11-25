@@ -448,6 +448,42 @@ class SubmitTest(StoreCase):
         self.assertEqual(interaction.channel.send.await_count, 2)
         self.assertEqual(role_requests.get(2)['status'], PENDING)
 
+    async def test_staff_request_counts_roster_staff_and_earlier_requests(self):
+        head = "## 오류\n팀 스태프는 로스터에 등록한 스태프를 포함해 3명까지입니다."
+        self.team.staff = ["코치"]
+        role_requests.add(1, _request(role_request.STAFF, members=[30]))
+        for picked, text in (
+            ([20, 21], f"{head}\n1명만 선택해 다시 신청해주세요."),
+            ([20], None),
+            ([21], f"{head}\n스태프를 바꾸려면 운영진에게 문의해주세요."),
+        ):
+            staff = role_request.StaffModal("A", "Team ER")
+            staff.staff_select._values = [_member(uid) for uid in picked]
+            interaction = _interaction(_member(10))
+            interaction.channel.send = AsyncMock(return_value=SimpleNamespace(id=2))
+
+            with self.subTest(picked=picked):
+                await staff.on_submit(interaction)
+
+                if text:
+                    interaction.channel.send.assert_not_awaited()
+                    self.assertEqual(_text(interaction.followup.send.await_args.kwargs['view']), text)
+                else:
+                    self.assertEqual(role_requests.get(2)['members'], [20])
+
+    async def test_rejected_staff_request_frees_the_place(self):
+        self.team.staff = ["코치", "분석가"]
+        role_requests.add(1, _request(role_request.STAFF, members=[30]))
+        role_requests.close(1, REJECTED, sanction=None)
+        staff = role_request.StaffModal("A", "Team ER")
+        staff.staff_select._values = [_member(20)]
+        interaction = _interaction(_member(10))
+        interaction.channel.send = AsyncMock(return_value=SimpleNamespace(id=2))
+
+        await staff.on_submit(interaction)
+
+        self.assertEqual(role_requests.get(2)['members'], [20])
+
     async def test_member_selects_are_required(self):
         sub = role_request.SubModal("A", "Team ER", ["가", "나", "다"])
         staff = role_request.StaffModal("A", "Team ER")

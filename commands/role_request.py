@@ -32,6 +32,7 @@ SUB, STAFF = 'sub', 'staff'
 APPROVE, WAIVE, REJECT = 'approve', 'waive', 'reject'
 
 SLOTS = 3
+STAFF_LIMIT = 3
 LATE_MINUTES = 30
 LATE_REASON = "대타 - 스크림 시작 30분 전이 지난 뒤 신청"
 REASON_MAX = 100
@@ -313,7 +314,7 @@ class StaffModal(Modal):
             'reason': _one_line(self.reason.value),
             'sanction': None,
             'status': PENDING,
-        })
+        }, room=STAFF_LIMIT - len(found[2].staff))
 
 
 class NoteModal(Modal):
@@ -359,7 +360,15 @@ async def _open(interaction: discord.Interaction, kind: str) -> None:
     await interaction.response.send_modal(modal)
 
 
-async def _submit(interaction: discord.Interaction, request: dict) -> None:
+def _staff_full_text(left: int) -> str:
+    head = f"팀 스태프는 로스터에 등록한 스태프를 포함해 {STAFF_LIMIT}명까지입니다."
+    if left > 0:
+        return f"{head}\n{left}명만 선택해 다시 신청해주세요."
+    return f"{head}\n스태프를 바꾸려면 운영진에게 문의해주세요."
+
+
+async def _submit(interaction: discord.Interaction, request: dict, *, room: Optional[int] = None) -> None:
+    """room은 그 팀이 권한 신청으로 더 둘 수 있는 스태프 수"""
     channel = interaction.channel
     try:
         # 신청 카드가 채널에 올라오므로 신청자에게 따로 답하지 않음. 앞 신청을 기다리다 응답 기한을 넘기지 않게 먼저 응답
@@ -372,6 +381,11 @@ async def _submit(interaction: discord.Interaction, request: dict) -> None:
         if role_requests.is_requested(request['team'], request['kind'], set(request['members'])):
             await send_response(interaction, error_view("이미 신청한 사람은 다시 선택할 수 없습니다."))
             return
+        if room is not None:
+            left = room - len(role_requests.requested_ids(request['team'], request['kind']))
+            if len(request['members']) > left:
+                await send_response(interaction, error_view(_staff_full_text(left)))
+                return
         try:
             operators = _operator_ids(request['letter'])
             message = await channel.send(

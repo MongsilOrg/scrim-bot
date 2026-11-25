@@ -83,14 +83,21 @@ def close(
     return request
 
 
+def requested_ids(team: str, kind: str) -> Set[int]:
+    """그날 그 팀이 신청한 사람. 거부된 신청은 뺌"""
+    today = _today()
+    return {
+        member_id
+        for row in _load()['requests'].values()
+        if row.get('date') == today and row.get('team') == team and row.get('kind') == kind
+        and row.get('status') != REJECTED
+        for member_id in row.get('members') or []
+    }
+
+
 def is_requested(team: str, kind: str, member_ids: Set[int]) -> bool:
     """같은 사람을 두 번 승인하면 출전하지 않는 선수가 제재를 두 번 받음"""
-    today = _today()
-    return any(
-        row.get('date') == today and row.get('team') == team and row.get('kind') == kind
-        and row.get('status') != REJECTED and member_ids & set(row.get('members') or [])
-        for row in _load()['requests'].values()
-    )
+    return bool(member_ids & requested_ids(team, kind))
 
 
 def sanctioned_out() -> Set[str]:
