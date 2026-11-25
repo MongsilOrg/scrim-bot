@@ -50,12 +50,19 @@ def _names(names: Iterable[str]) -> List[str]:
 
 def _ids(guild, names: List[str]) -> dict:
     """이름을 조편성 기록처럼 서버 별명, 표시 이름, 사용자명으로 찾음. 같은 이름이 둘 이상이면 비움"""
-    wanted = {normalize_nickname_for_comparison(n): n for n in names}
+    wanted: dict = {}
+    for n in names:
+        wanted.setdefault(normalize_nickname_for_comparison(n), []).append(n)
     found: dict = {}
-    for member in getattr(guild, 'members', None) or []:
-        for key in member_name_keys(member) & wanted.keys():
-            found.setdefault(key, set()).add(str(member.id))
-    return {wanted[k]: next(iter(v)) for k, v in found.items() if len(v) == 1}
+    try:
+        for member in getattr(guild, 'members', None) or []:
+            for key in member_name_keys(member) & wanted.keys():
+                found.setdefault(key, set()).add(str(member.id))
+    except Exception as e:
+        # ID를 못 찾아도 기록은 남김
+        logger.warning(f"[기록] 디스코드 ID 찾기 실패: {e}")
+        return {}
+    return {n: next(iter(v)) for k, v in found.items() if len(v) == 1 for n in wanted[k]}
 
 
 def record(kind: str, user: discord.abc.User, team: str, *, players: Iterable[str] = (), staff: Iterable[str] = (),
