@@ -13,7 +13,7 @@
 - `/방코드`: 조별 채널에 방 코드와 라운드별 날씨를 공지.\
   서브 날씨는 관리자가 버튼으로 고름
 - 조 편성 뒤 Labs 대회를 만들어 조 채널과 연결.\
-  점수 집계와 순위표는 Labs가 맡고, 라운드별 게임 ID는 백업 채널에 남김
+  점수 집계와 순위표는 Labs가 맡고, 라운드별 게임 ID는 Labs 기록 화면에 남김
 - 제재 부여 컨텍스트 메뉴로 주의와 경고를 관리.\
   주의 2회는 경고 1회로 바뀌고, 경고로 제한된 인원이 있는 팀은 등록이 막힘.\
   기록과 기간 계산은 Labs가 맡음
@@ -44,7 +44,6 @@ python main.py
 | GUILD_ID | 필수 | Discord 서버 ID |
 | ADMIN_ROLE_IDS | 필수 | 관리자 역할 ID, 쉼표 구분 |
 | NOTICE_CHANNEL_ID | 필수 | 스크림 공지 채널 ID |
-| BACKUP_ANALYSIS_CHANNEL_ID | 필수 | 전적 백업 채널 ID |
 | LABS_SCRIM_TOKEN | 필수 | Labs 대회와 운영 화면 연동에 쓰는 토큰 |
 | GROUP_CHANNEL_IDS | 필수 | 조별 채널 ID, `A:채널ID,B:채널ID` 형식 |
 | BSER_API_KEY | 필수 | 이터널 리턴 Open API 키 |

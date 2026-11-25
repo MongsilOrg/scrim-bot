@@ -54,6 +54,16 @@ class LabsLogsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.request.await_args.args[2]['logs'][0]['key'], key)
         self.assertEqual(self.saved(), [])
 
+    async def test_games_sent_next_day_keep_their_day(self):
+        replays = [{'roundNo': 1, 'gameId': 111}, {'roundNo': 2, 'gameId': 222}]
+        with patch.object(labs_logs.time, 'time', return_value=1764000000):  # 2025-11-25 01:00 KST
+            labs_logs.record_games('2025-11-24', 'B', replays)
+            labs_logs.record_games('2025-11-25', 'C', replays)
+        late, today = self.saved()
+        self.assertEqual({k: late[k] for k in ('kind', 'team', 'detail', 'at')},
+                         {'kind': '게임 ID', 'team': 'B조', 'detail': '1R 111\n2R 222', 'at': 1763996340000})
+        self.assertEqual(today['at'], 1764000000000)
+
     async def test_odd_applicant_id_is_dropped(self):
         labs_logs.record('강제취소', USER, '팀A', applicant_id='알 수 없음')
         self.assertEqual(self.saved()[0]['applicantId'], '')

@@ -1,8 +1,9 @@
-"""팀 신청, 수정, 취소 기록을 Labs 운영 화면에 남김. 보내지 못한 기록은 파일에 두었다가 동기화 주기마다 다시 보냄."""
+"""팀 신청, 수정, 취소와 조별 게임 ID 기록을 Labs 운영 화면에 남김. 보내지 못한 기록은 파일에 두었다가 동기화 주기마다 다시 보냄."""
 import asyncio
 import json
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Iterable, List, Optional
 
 import discord
@@ -14,6 +15,7 @@ from utils.helpers import save_json_atomic
 from utils.validators import member_name_keys, normalize_nickname_for_comparison
 
 logger = get_logger('labs_logs')
+KST = timezone(timedelta(hours=9))
 
 BATCH = 500
 # Labs가 오래 닫혀 있어도 파일이 끝없이 커지지 않게 오래된 기록부터 버림
@@ -74,8 +76,7 @@ def record(kind: str, user: discord.abc.User, team: str, *, players: Iterable[st
     if not (applicant.isascii() and applicant.isdigit() and len(applicant) <= 20):
         applicant = ''
     players, staff = _names(players), _names(staff)
-    queue = _load()
-    queue.append({
+    _push({
         'key': uuid.uuid4().hex,
         'at': int(time.time() * 1000),
         'kind': kind,
@@ -88,6 +89,24 @@ def record(kind: str, user: discord.abc.User, team: str, *, players: Iterable[st
         'detail': change,
         'ids': _ids(getattr(user, 'guild', None), players + staff),
     })
+
+
+def record_games(day: str, group_letter: str, replays: list) -> None:
+    """조의 라운드별 게임 ID를 남김. 다음 날 보내는 조도 그날 기록으로 찾게 지난 날이면 그날 23:59로 적음"""
+    at = int(time.time() * 1000)
+    end = int((datetime.fromisoformat(day).replace(tzinfo=KST) + timedelta(days=1)).timestamp() * 1000) - 60_000
+    _push({
+        'key': uuid.uuid4().hex,
+        'at': min(at, end),
+        'kind': '게임 ID',
+        'team': f'{group_letter}조',
+        'detail': '\n'.join(f"{r['roundNo']}R {r['gameId']}" for r in replays),
+    })
+
+
+def _push(entry: dict) -> None:
+    queue = _load()
+    queue.append(entry)
     if len(queue) > QUEUE_MAX:
         logger.error(f"[기록] Labs에 보내지 못한 기록이 {QUEUE_MAX}건을 넘어 오래된 {len(queue) - QUEUE_MAX}건을 버림")
         del queue[:-QUEUE_MAX]

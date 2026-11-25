@@ -404,7 +404,7 @@ class ScrimOrchestrator:
             await self._alert(
                 "Labs 대회를 만들지 못했습니다.\n"
                 "Labs에서 오늘 대회를 직접 만들고 조 채널을 연결해주세요.\n"
-                "게임 ID는 경기 뒤 백업 채널에 직접 남겨주세요."
+                "게임 ID는 경기 뒤 Labs 기록 탭에 남겨주세요."
             )
             return
         self._mark_stage(STAGE_LABS)

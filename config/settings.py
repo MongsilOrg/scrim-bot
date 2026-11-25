@@ -45,7 +45,6 @@ class Settings:
     BSER_API_KEY: str = os.getenv('BSER_API_KEY', '')
 
     NOTICE_CHANNEL_ID: int = _parse_int(os.getenv('NOTICE_CHANNEL_ID', ''))
-    BACKUP_ANALYSIS_CHANNEL_ID: int = _parse_int(os.getenv('BACKUP_ANALYSIS_CHANNEL_ID', ''))
     SCRIM_CHANNEL_ID: int = _parse_int(os.getenv('SCRIM_CHANNEL_ID', '1212383364258992128'))
     ALERT_CHANNEL_ID: int = _parse_int(os.getenv('ALERT_CHANNEL_ID', '1390999095962767380'))
     SCHEDULE_CHANNEL_ID: int = _parse_int(os.getenv('SCHEDULE_CHANNEL_ID', '1485653533637476512'))
@@ -112,7 +111,6 @@ class Settings:
         required_int_vars = {
             'GUILD_ID': cls.GUILD_ID,
             'NOTICE_CHANNEL_ID': cls.NOTICE_CHANNEL_ID,
-            'BACKUP_ANALYSIS_CHANNEL_ID': cls.BACKUP_ANALYSIS_CHANNEL_ID,
         }
 
         for name, value in required_int_vars.items():

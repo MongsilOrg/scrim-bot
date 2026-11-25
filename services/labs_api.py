@@ -11,7 +11,7 @@ import discord
 from config.logging_config import get_logger
 from config.settings import settings
 from utils.helpers import get_current_kst_time
-from utils.layout_helpers import custom_view, format_kr_date
+from utils.layout_helpers import format_kr_date
 
 logger = get_logger('labs_api')
 
@@ -157,13 +157,8 @@ async def fetch_board(code: str, group_letter: str) -> Optional[dict]:
     return await request('GET', f"/api/bot/t/{code}?group={group_letter}")
 
 
-def backup_view(day: str, group_letter: str, replays: list) -> discord.ui.LayoutView:
-    lines = [f"**{r['roundNo']}R**: `{r['gameId']}`" for r in replays]
-    return custom_view(f"{format_kr_date(day)} {group_letter}조 게임 ID", "\n".join(lines), discord.Color.blue())
-
-
 async def post_backup(client: discord.Client, group_letter: str, finished_only: bool = True, last: bool = False) -> bool:
-    """백업 분석 채널에 그 조의 게임 ID를 한 번만 보냄. finished_only면 계획한 라운드를 다 치른 뒤에만"""
+    """그 조의 게임 ID를 Labs 기록에 한 번만 남김. finished_only면 계획한 라운드를 다 치른 뒤에만"""
     state = load_state()
     code = state.get('code')
     if not code or group_letter not in state.get('groups', []) or group_letter in state.get('posted', []):
@@ -179,25 +174,15 @@ async def post_backup(client: discord.Client, group_letter: str, finished_only: 
         return False
     if finished_only and not board.get('ended') and board.get('played', 0) < board.get('plannedRounds', settings.TOTAL_ROUNDS):
         return False
-    channel = client.get_channel(settings.BACKUP_ANALYSIS_CHANNEL_ID)
-    if not channel:
-        logger.error(f"[Labs] 백업 분석 채널을 찾을 수 없음 - 채널 ID: {settings.BACKUP_ANALYSIS_CHANNEL_ID}")
-        return False
-    # 보드를 읽는 동안 다른 조가 기록했을 수 있어 다시 읽음. 전송 중 취소돼도 다시 보내지 않도록 먼저 기록
+    # 보드를 읽는 동안 다른 조가 기록했을 수 있어 다시 읽음
     state = load_state()
     if state.get('code') != code or group_letter in state.get('posted', []):
         return False
+    from services import labs_logs
+    labs_logs.record_games(state['date'], group_letter, replays)
     state.setdefault('posted', []).append(group_letter)
     save_state(state)
-    try:
-        await channel.send(view=backup_view(state['date'], group_letter, replays))
-    except Exception:
-        state = load_state()
-        if group_letter in state.get('posted', []):
-            state['posted'].remove(group_letter)
-            save_state(state)
-        raise
-    logger.info(f"[Labs] {group_letter}조 게임 ID {len(replays)}개 백업 채널 전송")
+    logger.info(f"[Labs] {group_letter}조 게임 ID {len(replays)}개 기록")
     try:
         from commands.operator_pick import confirm_group
         await confirm_group(client, state['date'], group_letter)

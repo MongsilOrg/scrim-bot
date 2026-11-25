@@ -181,7 +181,7 @@ def _confirm(schedule_mgr, day: date, letter: str, found: dict) -> bool:
 
 
 def confirm_pending(schedule_mgr) -> bool:
-    """게임 ID 백업을 보내지 못해 확정하지 못한 지난 날의 조를 확정"""
+    """게임 ID를 기록하지 못해 확정하지 못한 지난 날의 조를 확정"""
     today = operator_log.scrim_day()
     pairs = []
     if schedule_mgr.pick:

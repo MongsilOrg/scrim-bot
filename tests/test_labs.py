@@ -11,7 +11,7 @@ import discord
 from bot import events
 from config.settings import settings
 from models import scrim_orchestrator
-from services import labs_api
+from services import labs_api, labs_logs
 from tests.test_lifecycle_assignment import AssignmentHarness
 
 TODAY = date(2026, 10, 29)
@@ -111,6 +111,7 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         self.request = patch.object(labs_api, 'request', new=AsyncMock()).start()
         self.addCleanup(patch.stopall)
         patch.object(labs_api, 'get_current_kst_time', return_value=SimpleNamespace(date=lambda: TODAY)).start()
+        self.games = patch.object(labs_logs, 'record_games').start()
 
     def make_guild(self):
         member = lambda i, bot=False: SimpleNamespace(id=i, bot=bot)
@@ -181,59 +182,38 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
 
     async def test_backup_waits_for_last_round_then_posts_once(self):
         labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
-        channel = MagicMock()
-        channel.send = AsyncMock()
         client = MagicMock()
-        client.get_channel.return_value = channel
         replays = [{'roundNo': 1, 'gameId': 111}, {'roundNo': 2, 'gameId': 222}]
 
         self.request.return_value = {'played': 2, 'plannedRounds': 4, 'ended': False, 'replays': replays}
         self.assertFalse(await labs_api.post_backup(client, 'A'))
-        channel.send.assert_not_awaited()
+        self.games.assert_not_called()
 
         self.request.return_value = {'played': 4, 'plannedRounds': 4, 'ended': True, 'replays': replays}
         self.assertTrue(await labs_api.post_backup(client, 'A'))
         self.assertFalse(await labs_api.post_backup(client, 'A'))
-        channel.send.assert_awaited_once()
-        self.assertIn("**1R**: `111`\n**2R**: `222`", "\n".join(texts(channel.send.await_args.kwargs['view'])))
+        self.games.assert_called_once()
+        self.games.assert_called_once_with(TODAY.isoformat(), 'A', replays)
         self.assertEqual(self.request.await_args.args[:2], ('GET', '/api/bot/t/K3PQ8M?group=A'))
 
     async def test_last_check_posts_played_rounds(self):
         labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
-        channel = MagicMock()
-        channel.send = AsyncMock()
         client = MagicMock()
-        client.get_channel.return_value = channel
         self.request.return_value = {'played': 3, 'plannedRounds': 4, 'ended': False, 'replays': [{'roundNo': 1, 'gameId': 5}]}
         with patch.object(labs_api.asyncio, 'sleep', new=AsyncMock()) as sleep:
             labs_api.schedule_backup(client, 'A')
             await labs_api._backup_tasks['A']
         self.assertEqual([c.args[0] for c in sleep.await_args_list], list(labs_api.BACKUP_CHECK_DELAYS))
-        channel.send.assert_awaited_once()
+        self.games.assert_called_once()
 
     async def test_resumed_check_waits_for_all_rounds(self):
         labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
-        channel = MagicMock()
-        channel.send = AsyncMock()
         client = MagicMock()
-        client.get_channel.return_value = channel
         self.request.return_value = {'played': 2, 'plannedRounds': 4, 'ended': False, 'replays': [{'roundNo': 1, 'gameId': 5}]}
         with patch.object(labs_api.asyncio, 'sleep', new=AsyncMock()):
             labs_api.schedule_backup(client, 'A', unfinished=False)
             await labs_api._backup_tasks['A']
-        channel.send.assert_not_awaited()
-        self.assertEqual(labs_api.load_state()['posted'], [])
-
-    async def test_failed_send_can_retry(self):
-        labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
-        channel = MagicMock()
-        channel.send = AsyncMock(side_effect=ConnectionResetError())
-        client = MagicMock()
-        client.get_channel.return_value = channel
-        self.request.return_value = {'played': 4, 'plannedRounds': 4, 'ended': True, 'replays': [{'roundNo': 1, 'gameId': 5}]}
-
-        with self.assertRaises(ConnectionResetError):
-            await labs_api.post_backup(client, 'A')
+        self.games.assert_not_called()
         self.assertEqual(labs_api.load_state()['posted'], [])
 
     async def test_restart_resumes_unposted_groups(self):
@@ -245,10 +225,7 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
 
     async def test_poll_posts_finished_groups_until_all_sent(self):
         labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A', 'B'], 'posted': []})
-        channel = MagicMock()
-        channel.send = AsyncMock()
         client = MagicMock()
-        client.get_channel.return_value = channel
         boards = {
             'A': [{'played': 2, 'plannedRounds': 4, 'ended': False, 'replays': [{'roundNo': 1, 'gameId': 5}]},
                   {'played': 4, 'plannedRounds': 4, 'ended': True, 'replays': [{'roundNo': 1, 'gameId': 5}]}],
@@ -259,7 +236,7 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
             labs_api._poll_task = None
             labs_api.start_backup_poll(client)
             await labs_api._poll_task
-        self.assertEqual(channel.send.await_count, 2)
+        self.assertEqual(self.games.call_count, 2)
         self.assertEqual(sorted(labs_api.load_state()['posted']), ['A', 'B'])
         self.assertEqual(sleep.await_count, 3)
 
@@ -280,10 +257,7 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
 
     async def test_poll_posts_group_finished_after_midnight(self):
         labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
-        channel = MagicMock()
-        channel.send = AsyncMock()
         client = MagicMock()
-        client.get_channel.return_value = channel
         self.request.side_effect = [
             {'played': 3, 'plannedRounds': 4, 'ended': False, 'replays': [{'roundNo': 1, 'gameId': 5}]},
             {'played': 4, 'plannedRounds': 4, 'ended': False, 'replays': [{'roundNo': 1, 'gameId': 5}]},
@@ -294,15 +268,12 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
             labs_api._poll_task = None
             labs_api.start_backup_poll(client)
             await labs_api._poll_task
-        channel.send.assert_awaited_once()
+        self.games.assert_called_once()
         self.assertEqual(labs_api.load_state()['posted'], ['A'])
 
     async def test_poll_leaves_unfinished_group_to_flush_after_next_day(self):
         labs_api.save_state({'date': TODAY.isoformat(), 'code': 'K3PQ8M', 'groups': ['A'], 'posted': []})
-        channel = MagicMock()
-        channel.send = AsyncMock()
         client = MagicMock()
-        client.get_channel.return_value = channel
         self.request.return_value = {'played': 3, 'plannedRounds': 4, 'ended': False, 'replays': [{'roundNo': 1, 'gameId': 5}]}
         days = iter([TODAY, date(2026, 10, 30), date(2026, 10, 31)])
         with patch.object(labs_api, 'get_current_kst_time', side_effect=lambda: SimpleNamespace(date=lambda d=next(days): d)), \
@@ -311,7 +282,7 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
             labs_api.start_backup_poll(client)
             await labs_api._poll_task
         self.assertEqual(sleep.await_count, 2)
-        channel.send.assert_not_awaited()
+        self.games.assert_not_called()
         self.assertEqual(labs_api.load_state()['posted'], [])
 
     async def test_poll_stops_when_day_changes(self):
@@ -324,15 +295,12 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
 
     async def test_flush_posts_unfinished_groups(self):
         labs_api.save_state({'date': '2026-10-28', 'code': 'K3PQ8M', 'groups': ['A', 'B'], 'posted': ['A']})
-        channel = MagicMock()
-        channel.send = AsyncMock()
         client = MagicMock()
-        client.get_channel.return_value = channel
         self.request.return_value = {'played': 3, 'plannedRounds': 4, 'ended': False, 'replays': [{'roundNo': 1, 'gameId': 5}]}
 
         await labs_api.flush_backups(client)
 
-        channel.send.assert_awaited_once()
+        self.games.assert_called_once()
         self.assertEqual(labs_api.load_state()['posted'], ['A', 'B'])
 
     async def test_deletes_previous_day_after_backups(self):
@@ -363,7 +331,7 @@ class LabsApiTest(LabsStateMixin, unittest.IsolatedAsyncioTestCase):
         client = MagicMock()
         self.request.return_value = {'played': 0, 'plannedRounds': 4, 'ended': False, 'replays': []}
         await labs_api.flush_backups(client)
-        client.get_channel.return_value.send.assert_not_called()
+        self.games.assert_not_called()
         self.assertEqual(labs_api.load_state()['posted'], ['A'])
 
     async def test_flush_skips_today(self):
