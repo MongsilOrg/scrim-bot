@@ -296,17 +296,19 @@ class SubmitTest(StoreCase):
 
     async def test_same_person_cannot_be_requested_twice_unless_rejected(self):
         role_requests.add(1, _request())
-        modal = self._modal(["가", "나", "다"], [_member(20)], ["나"])
         interaction = _interaction(_member(10))
+        interaction.channel.send = AsyncMock(return_value=SimpleNamespace(id=2))
+        manager = SimpleNamespace(get_schedule_manager=lambda: SimpleNamespace(pick=None))
 
-        with patch.object(role_request, "_submit", new=AsyncMock()) as submit:
-            await modal.on_submit(interaction)
-            submit.assert_not_awaited()
+        with patch.object(role_request.BotManager, "get_instance", return_value=manager):
+            await role_request._submit(interaction, _request())
+            interaction.channel.send.assert_not_awaited()
             self.assertEqual(_sent_text(interaction), "## 오류\n이미 신청한 사람은 다시 선택할 수 없습니다.")
 
             role_requests.close(1, REJECTED, sanction=None)
-            await modal.on_submit(_interaction(_member(10)))
-            submit.assert_awaited_once()
+            await role_request._submit(interaction, _request())
+        self.assertEqual(interaction.channel.send.await_count, 2)
+        self.assertEqual(role_requests.get(2)['status'], PENDING)
 
     async def test_restricted_member_cannot_be_requested(self):
         self.manager.find_restricted_members.return_value = [("user20", "11월 28일")]
@@ -374,9 +376,11 @@ class DecisionTest(StoreCase):
         self.sub = _member(20)
         self.guild = SimpleNamespace(roles=[self.role], get_member=lambda uid: self.sub if uid == 20 else None)
         self.warnings = AsyncMock(return_value="2명에게 주의를 부여했습니다.")
+        self.alert = AsyncMock(return_value=True)
         self.manager = SimpleNamespace(is_team_assignment_started=True)
         for target in (
             patch.object(role_request, "apply_roster_warnings", new=self.warnings),
+            patch.object(role_request.alerts, "send", new=self.alert),
             patch.object(
                 role_request.BotManager, "get_instance",
                 return_value=SimpleNamespace(get_team_data_manager=lambda: self.manager),
@@ -439,6 +443,10 @@ class DecisionTest(StoreCase):
         self.assertIn("## 대타 승인", _text(interaction.message.edit.await_args.kwargs['view']))
         self.sub.add_roles.assert_awaited_once()
         self.warnings.assert_awaited_once()
+        client, note = self.alert.await_args.args
+        self.assertIs(client, interaction.client)
+        self.assertEqual(_text(note), "## 대타 승인\n2명에게 주의를 부여했습니다.")
+        interaction.followup.send.assert_not_awaited()
 
     async def test_late_request_gives_warning_with_its_reason(self):
         role_requests.add(500, _request(sanction='경고'))
