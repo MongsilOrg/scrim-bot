@@ -401,13 +401,17 @@ async def process_team_edit(
         )
 
         if is_roster_change and apply_warning:
-            # 권한 신청 승인으로 이미 제재를 받은 선수는 뺌
-            sanctioned = {normalize_nickname_for_comparison(name) for name in role_requests.sanctioned_out()}
+            # 권한 신청 승인으로 이미 제재를 받은 선수는 뺌. 팀이 그대로면 로스터에 남은 선수도 뺌
+            skipped = {normalize_nickname_for_comparison(name) for name in role_requests.sanctioned_out()}
+            if not swapped:
+                skipped |= {normalize_nickname_for_comparison(player) for player in new_team_data.players}
             targets = [
                 player for player in original_team_data.players
-                if normalize_nickname_for_comparison(player) not in sanctioned
+                if normalize_nickname_for_comparison(player) not in skipped
             ]
-            sanction_line = await apply_roster_warnings(interaction, original_team_name, targets, warning_reason)
+            sanction_line = NO_ROSTER_WARNING_TARGET_TEXT
+            if targets:
+                sanction_line = await apply_roster_warnings(interaction, original_team_name, targets, warning_reason)
             if sanction_line:
                 await _send_edit_result(
                     temp_message, team_processor, original_team_name, new_team_data, new_team_mmr,
@@ -451,6 +455,7 @@ def _record_roster_change(
     ))
 
 
+NO_ROSTER_WARNING_TARGET_TEXT = "로스터에서 빠진 선수 가운데 주의를 받을 선수가 없습니다."
 ROSTER_NOT_CHANGED_TEXT = "로스터를 바꾸지 못했습니다.\n로스터 변경에서 직접 바꿔주세요."
 
 

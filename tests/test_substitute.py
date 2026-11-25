@@ -151,16 +151,16 @@ class GroupRoleSyncTest(unittest.IsolatedAsyncioTestCase):
 
 
 class RosterChangeSanctionTest(unittest.IsolatedAsyncioTestCase):
-    async def test_player_sanctioned_by_an_approved_request_is_not_sanctioned_again(self):
+    async def _change(self, original, new, *, reserve=None, requests=()):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
-        original = TeamData(name="Team ER", players=["가", "나 ", "다"], user_id="10")
         bot = mock.Mock()
         bot.get_team_data_manager.return_value.replace_team = mock.AsyncMock(return_value=(True, ""))
         bot.get_team_data_manager.return_value.unverified_teams = set()
-        bot.get_team_data_manager.return_value.find_reserve.return_value = None
+        bot.get_team_data_manager.return_value.find_reserve.return_value = reserve
         bot.get_team_processor.return_value.ensure_test_accounts_loaded = mock.AsyncMock()
-        warnings = mock.AsyncMock(return_value="2명에게 주의를 부여했습니다.")
+        warnings = mock.AsyncMock(return_value="1명에게 주의를 부여했습니다.")
+        result = mock.AsyncMock()
         interaction = mock.Mock()
         with mock.patch.object(role_requests, "PATH", os.path.join(folder.name, "role_requests.json")), \
                 mock.patch.object(role_requests, "_state", None), \
@@ -170,31 +170,67 @@ class RosterChangeSanctionTest(unittest.IsolatedAsyncioTestCase):
                 mock.patch.object(team_pipeline, "_update_changed_team", mock.AsyncMock()), \
                 mock.patch.object(team_pipeline, "_record_roster_change"), \
                 mock.patch.object(team_pipeline, "_collect_roster_warnings", mock.AsyncMock(return_value=[])), \
-                mock.patch.object(team_pipeline, "_send_edit_result", mock.AsyncMock()), \
+                mock.patch.object(team_pipeline, "_send_edit_result", result), \
                 mock.patch.object(team_pipeline, "update_group_announcement", mock.AsyncMock()), \
+                mock.patch.object(team_pipeline, "_announce_team_swap", mock.AsyncMock()), \
                 mock.patch.object(team_pipeline, "apply_roster_warnings", warnings):
             manager_class.get_instance.return_value = bot
-            role_requests.add(500, {
-                'kind': 'sub', 'date': '2026-11-25', 'team': 'Team ER', 'letter': 'A', 'members': [20],
-                'out': ['나'], 'sanction': '주의', 'status': APPROVED,
-            })
-            # 제재 없이 승인한 신청의 선수는 로스터 변경에서 제재를 받을 수 있음
-            role_requests.add(501, {
-                'kind': 'sub', 'date': '2026-11-25', 'team': 'Team ER', 'letter': 'A', 'members': [21],
-                'out': ['다'], 'sanction': None, 'status': APPROVED,
-            })
+            for message_id, request in enumerate(requests, start=500):
+                role_requests.add(message_id, {
+                    'kind': 'sub', 'date': '2026-11-25', 'team': original.name, 'letter': 'A', 'members': [20],
+                    'status': APPROVED, **request,
+                })
             await team_pipeline.process_team_edit(
                 interaction,
                 group_letter="A",
-                original_team_name="Team ER",
+                original_team_name=original.name,
                 original_team_data=original,
-                new_team_data=TeamData(name="Team ER", players=["가", "다", "대타닉"]),
+                new_team_data=new,
                 temp_message=mock.Mock(),
                 is_roster_change=True,
                 apply_warning=True,
             )
+        targets = warnings.await_args.args[2] if warnings.await_args else None
+        return targets, result.await_args.kwargs.get('sanction_line')
 
-        warnings.assert_awaited_once_with(interaction, "Team ER", ["가", "다"], "대타")
+    async def test_only_the_players_who_left_the_roster_are_sanctioned(self):
+        targets, _ = await self._change(
+            TeamData(name="Team ER", players=["가", "나 ", "다", "라"], user_id="10"),
+            TeamData(name="Team ER", players=["가", "나", "다", "대타닉"]),
+        )
+
+        self.assertEqual(targets, ["라"])
+
+    async def test_player_sanctioned_by_an_approved_request_is_not_sanctioned_again(self):
+        # 제재 없이 승인한 신청의 선수는 로스터 변경에서 제재를 받을 수 있음
+        targets, _ = await self._change(
+            TeamData(name="Team ER", players=["가", "나 ", "다"], user_id="10"),
+            TeamData(name="Team ER", players=["가", "대타닉", "대타둘"]),
+            requests=({'out': ['나'], 'sanction': '주의'}, {'out': ['다'], 'sanction': None}),
+        )
+
+        self.assertEqual(targets, ["다"])
+
+    async def test_nobody_is_sanctioned_when_no_player_left(self):
+        targets, line = await self._change(
+            TeamData(name="Team ER", players=["가", "나", "다"], user_id="10"),
+            TeamData(name="Team ER", players=["가", "나", "다"], staff=["코치"]),
+        )
+
+        self.assertIsNone(targets)
+        self.assertEqual(line, team_pipeline.NO_ROSTER_WARNING_TARGET_TEXT)
+
+    async def test_whole_team_is_sanctioned_when_the_team_is_replaced(self):
+        original = TeamData(name="Team ER", players=["가", "나", "다"], user_id="10")
+        for new, reserve in (
+            (TeamData(name="Team New", players=["하나", "둘", "셋"]), None),
+            # 취소팀 선수가 예비팀에도 적혀 있어도 팀 교체라 전원이 대상
+            (TeamData(name="Reserve", players=["가", "둘", "셋"]), TeamData(name="Reserve", players=["가", "둘", "셋"], user_id="30")),
+        ):
+            with self.subTest(new=new.name):
+                targets, _ = await self._change(original, new, reserve=reserve)
+
+                self.assertEqual(targets, ["가", "나", "다"])
 
 
 if __name__ == '__main__':

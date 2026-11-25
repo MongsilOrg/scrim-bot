@@ -120,14 +120,9 @@ class TeamEditModal(Modal):
         self.warning_checkbox = None
         self.warning_reason_input = None
         if is_roster_change:
-            members = ', '.join(original_players)
             self.warning_checkbox = CheckboxGroup(
                 options=[
-                    CheckboxGroupOption(
-                        label="주의 1회 부여",
-                        value="yes",
-                        description=f"{self.original_team_name} 선수 {len(original_players)}명: {members}",
-                    ),
+                    CheckboxGroupOption(label="주의 1회 부여", value="yes"),
                 ],
                 required=False,
             )
