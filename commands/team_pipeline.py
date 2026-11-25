@@ -466,8 +466,8 @@ async def substitute_players(
             return ROSTER_NOT_CHANGED_TEXT
 
         _log_edit_diff(interaction, team_data_manager, team_name, original, new_team, new_mmr)
-        # 대타의 역할은 승인이 직접 부여함, 조 전체를 다시 맞추면 운영진이 손으로 바꾼 역할이 되돌아감
-        await _update_changed_team(group_letter, team_data_manager, team_name, team_name, new_mmr, sync_roles=False)
+        # 대타의 역할은 승인이 멤버 ID로 직접 부여함
+        await _update_changed_team(group_letter, team_data_manager, team_name, team_name, new_mmr, grant_roles=False)
         _record_roster_change(team_data_manager, team_processor, team_name)
         await _update_group_announcement(group_letter)
         if fetched_mmr:
@@ -635,7 +635,7 @@ async def _update_changed_team(
     new_team_name: str,
     new_team_mmr: float,
     *,
-    sync_roles: bool = True,
+    grant_roles: bool = True,
 ) -> None:
     try:
         current_teams = _get_group_teams(team_data_manager, group_letter)
@@ -644,9 +644,11 @@ async def _update_changed_team(
             return
 
         changed_index = None
+        previous = set()
         for i, (team_name, team_data, mmr) in enumerate(current_teams):
             if team_name == original_team_name:
                 changed_index = i
+                previous = {normalize_nickname_for_comparison(member) for member in team_data.all_members}
                 break
 
         if changed_index is None:
@@ -668,8 +670,12 @@ async def _update_changed_team(
             return
 
         team_processor = BotManager.get_instance().get_team_processor()
-        if sync_roles:
-            await team_processor.discord_service.update_group_roles(guild, group_letter, group_teams)
+        if grant_roles:
+            joined = [
+                member for member in updated_team_data.all_members
+                if normalize_nickname_for_comparison(member) not in previous
+            ]
+            await team_processor.discord_service.grant_group_role(guild, group_letter, joined)
 
         await team_processor.discord_service.rename_group_voice_channel(
             guild, group_letter, changed_index, new_team_name

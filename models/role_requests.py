@@ -98,13 +98,3 @@ def sanctioned_out() -> Set[str]:
         if row.get('date') == today and row.get('status') == APPROVED and row.get('sanction')
         for name in row.get('out') or []
     }
-
-
-def granted_ids(letter: str) -> Set[int]:
-    today = _today()
-    return {
-        member_id
-        for row in _load()['requests'].values()
-        if row.get('date') == today and row.get('status') == APPROVED and row.get('letter') == letter
-        for member_id in row.get('members') or []
-    }

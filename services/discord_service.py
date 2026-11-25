@@ -1,6 +1,6 @@
 import asyncio
 import time
-from typing import List, Optional, Tuple, TYPE_CHECKING
+from typing import Iterable, List, Optional, Tuple, TYPE_CHECKING
 
 import discord
 from discord.ui import Container, LayoutView, MediaGallery, TextDisplay
@@ -9,7 +9,6 @@ from commands.ui.roster_views import GroupRosterView, build_rest_day_guide_view
 from utils.layout_helpers import error_view, format_kr_date
 from config.logging_config import get_logger
 from config.settings import settings
-from models import role_requests
 from services.notion_api import get_server_info
 from utils.helpers import (
     get_current_kst_time, get_group_letter,
@@ -333,7 +332,8 @@ class DiscordService:
         except Exception as e:
             logger.error(f"[Discord] 역할 처리 실패: {e}", exc_info=True)
 
-    async def update_group_roles(self, guild: discord.Guild, group_letter: str, group_teams: List[Tuple[str, "TeamData", float]]) -> None:
+    async def grant_group_role(self, guild: discord.Guild, group_letter: str, nicknames: Iterable[str]) -> None:
+        """부여만 함. 조 전체를 로스터에 맞추면 운영진이 손으로 바꾼 역할과 대타로 빠진 선수의 역할이 회수됨"""
         try:
             guild = self._resolve_guild(guild)
 
@@ -343,17 +343,17 @@ class DiscordService:
                 logger.error(f"[Discord] 역할을 찾을 수 없음 - 역할: {role_name}")
                 return
 
-            participants = self._team_participants(group_teams)
-            role_updates = self._build_role_updates(guild, {group_letter: group_role}, {group_letter: participants})
-            # 승인받은 대타와 스태프는 로스터에 없어 그대로 두면 조 역할을 잃음
-            granted = role_requests.granted_ids(group_letter)
-            role_updates = [update for update in role_updates if update[0].id not in granted or not update[1]]
+            names = {normalize_nickname_for_comparison(nickname) for nickname in nicknames}
+            role_updates = [
+                (member, set(), {group_role}) for member in guild.members
+                if group_role not in member.roles and member_name_keys(member) & names
+            ]
             await self._apply_role_updates(role_updates)
 
-            logger.info(f"[Discord] 조별 역할 업데이트 완료 - 조: {group_letter}조, 변경된 멤버: {len(role_updates)}명")
+            logger.info(f"[Discord] 조 역할 부여 완료 - 조: {group_letter}조, 부여한 멤버: {len(role_updates)}명")
 
         except Exception as e:
-            logger.error(f"[Discord] 조별 역할 업데이트 실패: {e}", exc_info=True)
+            logger.error(f"[Discord] 조 역할 부여 실패: {e}", exc_info=True)
 
     @staticmethod
     def _sorted_group_voice_channels(guild: discord.Guild, group_letter: str) -> Optional[List[discord.VoiceChannel]]:

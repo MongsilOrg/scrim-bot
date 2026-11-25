@@ -56,7 +56,7 @@ class SubstituteTest(unittest.IsolatedAsyncioTestCase):
             (["코치"], "10", True, self.original.created_at, NOW),
         )
         self.assertEqual(self.original.players, ["가", "나", "다", "라"])
-        self.changed.assert_awaited_once_with("A", self.manager, "Team ER", "Team ER", 7200.0, sync_roles=False)
+        self.changed.assert_awaited_once_with("A", self.manager, "Team ER", "Team ER", 7200.0, grant_roles=False)
         self.recorded.assert_called_once()
         self.announced.assert_awaited_once_with("A")
         self.assertEqual(self.manager.log_action.call_args.kwargs['change'], "-나, 라 +대타닉")
@@ -109,10 +109,10 @@ class GroupRoleSyncTest(unittest.IsolatedAsyncioTestCase):
         team = TeamData(name="Team ER", players=["가", "다", "대타닉"])
         bot = mock.Mock()
         manager = bot.get_team_data_manager.return_value
-        manager.groups = [[("Team ER", team, 7000.0)]]
+        manager.groups = [[("Team ER", TeamData(name="Team ER", players=["가", "나", "다"]), 7000.0)]]
         manager.teams = {"Team ER": team}
         service = bot.get_team_processor.return_value.discord_service
-        service.update_group_roles = mock.AsyncMock()
+        service.grant_group_role = mock.AsyncMock()
         service.rename_group_voice_channel = mock.AsyncMock()
         with mock.patch.object(team_pipeline, "BotManager") as manager_class, \
                 mock.patch.object(team_pipeline, "_get_group_teams", return_value=manager.groups[0]):
@@ -120,13 +120,15 @@ class GroupRoleSyncTest(unittest.IsolatedAsyncioTestCase):
             await team_pipeline._update_changed_team("A", manager, "Team ER", "Team ER", 7200.0, **options)
         self.assertEqual(manager.groups[0], [("Team ER", team, 7200.0)])
         service.rename_group_voice_channel.assert_awaited_once()
-        return service.update_group_roles
+        return service.grant_group_role
 
-    async def test_approval_leaves_the_roles_adjusted_by_operators(self):
-        (await self._update(sync_roles=False)).assert_not_awaited()
+    async def test_approval_grants_no_role_by_nickname(self):
+        (await self._update(grant_roles=False)).assert_not_awaited()
 
-    async def test_roster_change_by_an_operator_syncs_the_group_roles(self):
-        (await self._update()).assert_awaited_once()
+    async def test_roster_change_by_an_operator_grants_the_role_to_the_players_who_joined(self):
+        grant = await self._update()
+
+        self.assertEqual(grant.await_args.args[1:], ("A", ["대타닉"]))
 
 
 class RosterChangeSanctionTest(unittest.IsolatedAsyncioTestCase):

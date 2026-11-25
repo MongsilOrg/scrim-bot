@@ -119,15 +119,6 @@ class StoreTest(StoreCase):
         role_requests.add(2, _request())
         self.assertEqual(list(role_requests._load()['requests']), ['2'])
 
-    def test_granted_ids_cover_only_approved_requests_of_the_group(self):
-        role_requests.add(1, _request(members=[20, 21]))
-        role_requests.add(2, _request(members=[22]))
-        role_requests.add(3, _request(members=[23], letter='B'))
-        role_requests.close(1, APPROVED, sanction=None)
-        role_requests.close(3, APPROVED, sanction=None)
-
-        self.assertEqual(role_requests.granted_ids('A'), {20, 21})
-
 
 class ViewTest(unittest.TestCase):
     def test_sanction_turns_into_warning_after_thirty_minutes_before_start(self):
@@ -825,20 +816,19 @@ class DecisionTest(StoreCase):
         )
 
 
-class KeptRoleTest(StoreCase):
-    async def test_roster_change_keeps_the_role_of_approved_members(self):
+class GroupRoleGrantTest(unittest.IsolatedAsyncioTestCase):
+    async def test_roster_change_grants_the_role_and_takes_none_away(self):
         role = FakeRole(name="A조")
-        approved, stranger = _member(20), _member(21)
-        approved.roles = stranger.roles = [role]
-        guild = SimpleNamespace(roles=[role], members=[approved, stranger])
-        role_requests.add(500, _request())
-        role_requests.close(500, APPROVED, sanction=None)
+        joined, holder, left, other_team = _member(20, "새선수"), _member(21, "새선수2"), _member(22, "나"), _member(23, "취소팀원")
+        joined.roles = []
+        holder.roles = left.roles = other_team.roles = [role]
+        guild = SimpleNamespace(roles=[role], members=[joined, holder, left, other_team])
         service = DiscordService(processor=SimpleNamespace(client=None), team_data_manager=SimpleNamespace())
         service._apply_role_updates = AsyncMock()
 
-        await service.update_group_roles(guild, 'A', [("Team ER", TeamData(name="Team ER", players=["가"]), 0.0)])
+        await service.grant_group_role(guild, 'A', ["새선수", "새선수2"])
 
-        self.assertEqual([update[0] for update in service._apply_role_updates.await_args.args[0]], [stranger])
+        self.assertEqual(service._apply_role_updates.await_args.args[0], [(joined, set(), {role})])
 
 
 if __name__ == '__main__':
