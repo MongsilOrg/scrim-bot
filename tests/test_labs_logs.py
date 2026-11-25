@@ -64,3 +64,14 @@ class LabsLogsTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await labs_logs.flush())
         self.assertFalse(os.path.exists(self.path))
         self.request.assert_not_awaited()
+
+    def test_record_finds_ids_by_unique_server_name(self):
+        def member(id, nick, name):
+            return SimpleNamespace(id=id, display_name=nick, global_name=None, name=name)
+        guild = SimpleNamespace(members=[member(1, '가나', 'gana'), member(2, '다라', 'dara'), member(3, '다라', 'dara2'), member(4, '별명', 'maba')])
+        user = SimpleNamespace(id=111111111111111111, display_name='신청자', guild=guild)
+        labs_logs.record('신청', user, '팀A', players=['가나', '다라'], staff=['MABA', '없음'])
+        # 같은 별명이 둘이면 누구인지 알 수 없어 빼고, 사용자명으로도 찾음
+        self.assertEqual(self.saved()[0]['ids'], {'가나': '1', 'MABA': '4'})
+        labs_logs.record('신청', USER, '팀A', players=['가나'])
+        self.assertEqual(self.saved()[1]['ids'], {})
