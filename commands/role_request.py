@@ -13,7 +13,7 @@ from discord.ui import (
 )
 
 from bot.manager import BotManager
-from commands.team_pipeline import apply_roster_warnings, substitute_players
+from commands.team_pipeline import apply_roster_warnings, substitute_players, update_group_announcement
 from config.logging_config import get_logger
 from config.settings import settings
 from models import role_requests
@@ -445,7 +445,7 @@ async def _ask_note(interaction: discord.Interaction, action: str) -> None:
 
 
 def _sub_names(guild: discord.Guild, request: dict) -> List[str]:
-    """대타의 서버 별명. 로스터에는 게임 닉네임을 넣으므로 서버에 없으면 알 수 없음"""
+    """대타와 스태프의 서버 별명. 로스터에는 게임 닉네임을 넣으므로 서버에 없으면 알 수 없음"""
     members = [guild.get_member(user_id) for user_id in request['members']]
     return [member.display_name for member in members if member]
 
@@ -484,12 +484,13 @@ async def _close(interaction: discord.Interaction, action: str, note: str) -> No
     async with _decision_lock:
         pending = _pending(interaction.message.id)
         block = _approval_block(guild, pending) if pending and action != REJECT else ''
-        subs = _sub_names(guild, pending) if pending and pending['kind'] == SUB else []
+        names = _sub_names(guild, pending) if pending else []
         request = pending and not block and role_requests.close(
             interaction.message.id,
             REJECTED if action == REJECT else APPROVED,
             sanction=pending['sanction'] if action == APPROVE else None,
             note=note,
+            names=() if action == REJECT else names,
         )
     if block:
         await send_response(interaction, error_view(block))
@@ -512,9 +513,11 @@ async def _close(interaction: discord.Interaction, action: str, note: str) -> No
     if failed:
         notes.append(f"조 역할을 부여하지 못했습니다.\n직접 부여해주세요: {_mentions(failed)}")
     if request['kind'] == SUB:
-        problem = await substitute_players(interaction, request['letter'], request['team'], request['out'], subs)
+        problem = await substitute_players(interaction, request['letter'], request['team'], request['out'], names)
         if problem:
             notes.append(problem)
+    else:
+        await update_group_announcement(request['letter'])
     if request['sanction']:
         reason = "대타" if request['sanction'] == '주의' else LATE_REASON
         notes.append(await apply_roster_warnings(

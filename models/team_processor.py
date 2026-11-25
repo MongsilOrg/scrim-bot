@@ -44,7 +44,7 @@ class TeamProcessor:
     
     async def generate_group_image(
         self, group_letter: str, group_teams: dict,
-        *, sort_by_mmr: bool = True, refresh: bool = False,
+        *, sort_by_mmr: bool = True, refresh: bool = False, marks: Optional[dict] = None,
     ) -> Optional[BytesIO]:
         try:
             cache_key = f"{group_letter}:{'mmr' if sort_by_mmr else 'num'}"
@@ -56,7 +56,7 @@ class TeamProcessor:
             if img_data is not None:
                 return BytesIO(img_data)
 
-            img_io = await ImageGenerator.generate_mmr_image_async(group_teams, sort_by_mmr=sort_by_mmr)
+            img_io = await ImageGenerator.generate_mmr_image_async(group_teams, sort_by_mmr=sort_by_mmr, marks=marks)
             if img_io:
                 self.group_image_cache[cache_key] = img_io.getvalue()
                 img_io.seek(0)

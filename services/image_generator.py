@@ -82,15 +82,17 @@ class ImageGenerator:
 
     @staticmethod
     async def generate_mmr_image_async(teams_data: dict, *, sort_by_mmr: bool = True,
-                                       unverified_teams: set = None, server_info: dict = None) -> Optional[BytesIO]:
+                                       unverified_teams: set = None, server_info: dict = None,
+                                       marks: dict = None) -> Optional[BytesIO]:
         return await asyncio.to_thread(
             ImageGenerator.generate_mmr_image, teams_data,
-            sort_by_mmr=sort_by_mmr, unverified_teams=unverified_teams, server_info=server_info,
+            sort_by_mmr=sort_by_mmr, unverified_teams=unverified_teams, server_info=server_info, marks=marks,
         )
 
     @staticmethod
     def generate_mmr_image(teams_data: dict, *, sort_by_mmr: bool = True,
-                           unverified_teams: set = None, server_info: dict = None) -> Optional[BytesIO]:
+                           unverified_teams: set = None, server_info: dict = None,
+                           marks: dict = None) -> Optional[BytesIO]:
         try:
             if unverified_teams is None:
                 unverified_teams = set()
@@ -108,7 +110,9 @@ class ImageGenerator:
 
             current_time = get_current_kst_time().strftime('%H:%M')
 
-            html_str = ImageGenerator._create_mmr_html_template(ordered_teams, current_time, unverified_teams, server_info=server_info)
+            html_str = ImageGenerator._create_mmr_html_template(
+                ordered_teams, current_time, unverified_teams, server_info=server_info, marks=marks,
+            )
             return _render_html_to_image(html_str, width=1000)
 
         except Exception as e:
@@ -117,7 +121,7 @@ class ImageGenerator:
 
     @staticmethod
     def _create_mmr_html_template(sorted_teams: list, current_time: str, unverified_teams: set = None,
-                                  server_info: dict = None) -> str:
+                                  server_info: dict = None, marks: dict = None) -> str:
         if server_info is None:
             server_info = get_server_info()
         is_tournament = server_info['is_tournament']
@@ -132,7 +136,9 @@ class ImageGenerator:
         rows_html = []
         for idx, (team_name, team_data) in enumerate(sorted_teams):
             is_unverified = team_name in unverified_teams
-            rows_html.append(ImageGenerator._build_team_row_html(idx + 1, team_name, team_data, is_unverified=is_unverified))
+            rows_html.append(ImageGenerator._build_team_row_html(
+                idx + 1, team_name, team_data, is_unverified=is_unverified, marks=(marks or {}).get(team_name),
+            ))
 
         verified_count = sum(1 for name, _ in sorted_teams if name not in unverified_teams)
 
@@ -164,7 +170,9 @@ class ImageGenerator:
         )
 
     @staticmethod
-    def _build_team_row_html(rank: int, team_name: str, team_data, *, is_unverified: bool = False) -> str:
+    def _build_team_row_html(rank: int, team_name: str, team_data, *, is_unverified: bool = False,
+                             marks: dict = None) -> str:
+        """marks는 role_requests.roster_marks의 한 팀 값. 대타로 빠진 선수는 남기고 들어온 사람만 색을 바꿈."""
         mmr = team_data.mmr
         players = list(team_data.players)
         staff = list(team_data.staff)
@@ -184,12 +192,22 @@ class ImageGenerator:
             team_sub = ''
         team_cell = team_main + team_sub
 
+        def _joined(names: list) -> list:
+            return [f'<span class="joined">{_esc(name)}</span>' for name in names]
+
+        marks = marks or {}
+        subs = set(marks.get('sub', ()))
+        out = [name for name in marks.get('out', ()) if name not in players]
+        new_staff = [name for name in marks.get('staff', ()) if name not in staff]
+
         sep = '<span class="separator">,</span>'
-        players_text = sep.join(_esc(p) for p in players) if players else '-'
+        player_cells = [_esc(p) for p in players if p not in subs] + [_esc(p) for p in out]
+        player_cells += _joined([p for p in players if p in subs])
+        players_text = sep.join(player_cells) if player_cells else '-'
         members_main = f'<div class="cell-main">{players_text}</div>'
         members_sub = ''
-        if staff:
-            staff_text = ', '.join(_esc(s) for s in staff)
+        if staff or new_staff:
+            staff_text = ', '.join([_esc(s) for s in staff] + _joined(new_staff))
             members_sub = f'<div class="cell-sub staff">{staff_text}</div>'
         members_cell = members_main + members_sub
 

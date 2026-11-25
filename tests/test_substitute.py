@@ -35,7 +35,7 @@ class SubstituteTest(unittest.IsolatedAsyncioTestCase):
             mock.patch.object(team_pipeline, "_fetch_team_mmr_or", self.fetch),
             mock.patch.object(team_pipeline, "_update_changed_team", self.changed),
             mock.patch.object(team_pipeline, "_record_roster_change", self.recorded),
-            mock.patch.object(team_pipeline, "_update_group_announcement", self.announced),
+            mock.patch.object(team_pipeline, "update_group_announcement", self.announced),
             mock.patch.object(team_pipeline, "get_current_kst_time", return_value=NOW),
         ):
             target.start()
@@ -157,7 +157,7 @@ class RosterChangeSanctionTest(unittest.IsolatedAsyncioTestCase):
                 mock.patch.object(team_pipeline, "_record_roster_change"), \
                 mock.patch.object(team_pipeline, "_collect_roster_warnings", mock.AsyncMock(return_value=[])), \
                 mock.patch.object(team_pipeline, "_send_edit_result", mock.AsyncMock()), \
-                mock.patch.object(team_pipeline, "_update_group_announcement", mock.AsyncMock()), \
+                mock.patch.object(team_pipeline, "update_group_announcement", mock.AsyncMock()), \
                 mock.patch.object(team_pipeline, "apply_roster_warnings", warnings):
             manager_class.get_instance.return_value = bot
             role_requests.add(500, {

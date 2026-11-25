@@ -32,6 +32,10 @@ def format_kr_date(value) -> str:
     return f"{value.month}월 {value.day}일 {_WEEKDAY_NAMES[value.weekday()]}요일"
 
 
+def inline_code(text: str) -> str:
+    return f"`` {text} ``" if '`' in text else f"`{text}`"
+
+
 def _build_view(title: str, description: str, accent_color: discord.Color) -> LayoutView:
     view = LayoutView()
     view.add_item(Container(TextDisplay(content=f"## {title}\n{description}"), accent_colour=accent_color))

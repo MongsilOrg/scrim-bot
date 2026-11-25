@@ -9,6 +9,7 @@ from config.logging_config import get_logger
 from config.settings import settings
 from utils.layout_helpers import (
     error_view,
+    inline_code,
     permission_error_view,
     send_response,
     send_error_message,
@@ -27,10 +28,7 @@ SELECT_OPTION_LIMIT = 25
 
 
 def _team_name_line(team_names: List[str]) -> str:
-    def code(name: str) -> str:
-        return f"`` {name} ``" if '`' in name else f"`{name}`"
-
-    return "  ".join(code(n) for n in team_names)
+    return "  ".join(inline_code(n) for n in team_names)
 
 
 class GroupRosterView(LayoutView):

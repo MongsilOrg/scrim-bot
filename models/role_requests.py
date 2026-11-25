@@ -3,7 +3,7 @@
 """
 import json
 import os
-from typing import Dict, Optional, Set
+from typing import Dict, List, Optional, Sequence, Set
 
 from config.logging_config import get_logger
 from utils.helpers import get_current_kst_time, save_json_atomic
@@ -67,7 +67,9 @@ def get(message_id: int) -> Optional[Dict]:
     return request if request and request.get('date') == _today() else None
 
 
-def close(message_id: int, status: str, *, sanction: Optional[str], note: str = '') -> Optional[Dict]:
+def close(
+    message_id: int, status: str, *, sanction: Optional[str], note: str = '', names: Sequence[str] = (),
+) -> Optional[Dict]:
     """대기 중인 신청만 닫음. 두 운영진이 함께 눌러도 제재가 한 번만 부여됨"""
     request = get(message_id)
     if not request or request.get('status') != PENDING:
@@ -75,6 +77,8 @@ def close(message_id: int, status: str, *, sanction: Optional[str], note: str = 
     request['status'] = status
     request['sanction'] = sanction
     request['note'] = note
+    # 조별 이미지가 서버 별명이 바뀐 뒤에도 승인 때 로스터에 넣은 이름으로 대타를 찾음
+    request['names'] = list(names)
     _save()
     return request
 
@@ -98,3 +102,16 @@ def sanctioned_out() -> Set[str]:
         if row.get('date') == today and row.get('status') == APPROVED and row.get('sanction')
         for name in row.get('out') or []
     }
+
+
+def roster_marks(letter: str) -> Dict[str, Dict[str, List[str]]]:
+    """그날 승인으로 팀에 들어온 대타(sub)와 스태프(staff), 대타로 빠진 선수(out). 팀명별"""
+    today = _today()
+    marks: Dict[str, Dict[str, List[str]]] = {}
+    for row in _load()['requests'].values():
+        if row.get('date') != today or row.get('status') != APPROVED or row.get('letter') != letter:
+            continue
+        mark = marks.setdefault(row.get('team'), {'sub': [], 'staff': [], 'out': []})
+        mark.setdefault(row.get('kind'), []).extend(row.get('names') or [])
+        mark['out'].extend(row.get('out') or [])
+    return marks

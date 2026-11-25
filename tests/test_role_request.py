@@ -525,6 +525,7 @@ class DecisionTest(StoreCase):
         self.guild = SimpleNamespace(roles=[self.role], get_member=lambda uid: self.sub if uid == 20 else None)
         self.warnings = AsyncMock(return_value="2명에게 주의를 부여했습니다.")
         self.substitute = AsyncMock(return_value="")
+        self.announce = AsyncMock()
         self.alert = AsyncMock(return_value=True)
         self.team = TeamData(name="Team ER", players=["가", "나", "다", "라"])
         self.manager = SimpleNamespace(
@@ -533,6 +534,7 @@ class DecisionTest(StoreCase):
         for target in (
             patch.object(role_request, "apply_roster_warnings", new=self.warnings),
             patch.object(role_request, "substitute_players", new=self.substitute),
+            patch.object(role_request, "update_group_announcement", new=self.announce),
             # 잠금은 처음 기다린 테스트의 이벤트 루프에 묶임
             patch.object(role_request, "_roster_locks", defaultdict(asyncio.Lock)),
             patch.object(role_request.alerts, "send", new=self.alert),
@@ -659,6 +661,26 @@ class DecisionTest(StoreCase):
 
         self.assertEqual(self.substitute.await_count, 2)
         self.assertEqual(self.substitute.await_args_list[0].args, (first, "A", "Team ER", ["가", "나"], ["대타닉"]))
+
+    async def test_group_image_marks_come_from_approved_requests_only(self):
+        role_requests.add(500, _request())
+        role_requests.add(501, _request(role_request.STAFF, members=[21]))
+        role_requests.add(502, _request(members=[22], out=['다']))
+        role_requests.add(503, _request(role_request.STAFF, members=[23], letter='B', team='Other'))
+        members = {20: _member(20, "대타닉"), 21: _member(21, "코치"), 22: _member(22, "거절된대타")}
+        self.guild.get_member = members.get
+
+        await role_request._decide(self._click(), role_request.WAIVE, "진단서 확인")
+        self.announce.assert_not_awaited()
+        await role_request._decide(self._click(message_id=501), role_request.APPROVE)
+        await role_request._decide(self._click(message_id=502), role_request.REJECT, "인원 충분")
+
+        self.announce.assert_awaited_once_with("A")
+        self.assertEqual(
+            role_requests.roster_marks("A"),
+            {"Team ER": {'sub': ["대타닉"], 'staff': ["코치"], 'out': ['가', '나']}},
+        )
+        self.assertEqual(role_requests.roster_marks("B"), {})
 
     async def test_roster_problem_is_told_to_the_operator(self):
         role_requests.add(500, _request())

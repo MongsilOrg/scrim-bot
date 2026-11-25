@@ -12,8 +12,8 @@ from config.settings import settings
 from models import role_requests
 from models.team_data import TeamData
 from models.user_team_cache import UserTeamCache
-from utils.helpers import build_member_lookup, get_current_kst_time
-from utils.layout_helpers import send_error_message, update_temp_message
+from utils.helpers import build_member_lookup, get_current_kst_time, get_group_role_mention
+from utils.layout_helpers import info_view, inline_code, send_error_message, update_temp_message
 from utils.validators import (
     build_team_mmr_line,
     build_test_account_notice,
@@ -411,7 +411,9 @@ async def process_team_edit(
                 )
         if is_roster_change:
             if group_letter:
-                await _update_group_announcement(group_letter)
+                await update_group_announcement(group_letter)
+                if reserve or _is_team_swap(original_team_data, new_team_data):
+                    await _announce_team_swap(group_letter, original_team_name, new_team_name)
         else:
             await _update_mmr_message_for_individual_team(team_data_manager)
 
@@ -475,7 +477,7 @@ async def substitute_players(
         # 대타의 역할은 승인이 멤버 ID로 직접 부여함
         await _update_changed_team(group_letter, team_data_manager, team_name, team_name, new_mmr, grant_roles=False)
         _record_roster_change(team_data_manager, team_processor, team_name)
-        await _update_group_announcement(group_letter)
+        await update_group_announcement(group_letter)
         if fetched_mmr:
             return ""
         return f"MMR을 조회하지 못했습니다.\n로스터 변경에서 닉네임을 확인해주세요: {', '.join(subs)}"
@@ -695,24 +697,53 @@ async def _update_changed_team(
         logger.error(f"[팀수정] 팀 데이터 업데이트 실패: {e}", exc_info=True)
 
 
-async def _update_group_announcement(group_letter: str) -> None:
+def _group_channel(group_letter: str) -> Optional[discord.TextChannel]:
+    client = BotManager.get_instance().get_client()
+    guild = client.get_guild(settings.GUILD_ID) if client else None
+    if not guild:
+        logger.warning("[팀수정] 서버 정보를 찾을 수 없음")
+        return None
+
+    channel_id = settings.GROUP_CHANNEL_IDS.get(group_letter)
+    if not channel_id:
+        logger.warning(f"[팀수정] 조별 채널 ID가 설정되지 않음 - 조: {group_letter}조")
+        return None
+
+    channel = guild.get_channel(channel_id)
+    if not channel:
+        logger.warning(f"[팀수정] 조별 채널을 찾을 수 없음 - 조: {group_letter}조")
+    return channel
+
+
+def _is_team_swap(original: TeamData, new: TeamData) -> bool:
+    """팀명만 고친 수정과 구분: 팀명이 바뀌고 남은 선수가 없어야 다른 팀."""
+    if original.name == new.name:
+        return False
+    before = {normalize_nickname_for_comparison(player) for player in original.players}
+    return before.isdisjoint(normalize_nickname_for_comparison(player) for player in new.players)
+
+
+async def _announce_team_swap(group_letter: str, old_name: str, new_name: str) -> None:
     try:
-        client = BotManager.get_instance().get_client()
-        guild = client.get_guild(settings.GUILD_ID)
-
-        if not guild:
-            logger.warning("[팀수정] 서버 정보를 찾을 수 없음")
-            return
-
-        channel_id = settings.GROUP_CHANNEL_IDS.get(group_letter)
-
-        if not channel_id:
-            logger.warning(f"[팀수정] 조별 채널 ID가 설정되지 않음 - 조: {group_letter}조")
-            return
-
-        channel = guild.get_channel(channel_id)
+        channel = _group_channel(group_letter)
         if not channel:
-            logger.warning(f"[팀수정] 조별 채널을 찾을 수 없음 - 조: {group_letter}조")
+            return
+        lines = (
+            get_group_role_mention(channel.guild, group_letter),
+            f"오늘 {inline_code(old_name)} 팀 대타로 {inline_code(new_name)} 팀이 진행합니다.",
+        )
+        await channel.send(
+            view=info_view('\n'.join(line for line in lines if line), title="팀 변경"),
+            allowed_mentions=discord.AllowedMentions(everyone=False, users=False, roles=True),
+        )
+    except Exception as e:
+        logger.error(f"[팀수정] 팀 변경 안내 전송 실패: {e}", exc_info=True)
+
+
+async def update_group_announcement(group_letter: str) -> None:
+    try:
+        channel = _group_channel(group_letter)
+        if not channel:
             return
 
         team_data_manager = BotManager.get_instance().get_team_data_manager()

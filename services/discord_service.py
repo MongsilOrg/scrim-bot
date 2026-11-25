@@ -9,6 +9,7 @@ from commands.ui.roster_views import GroupRosterView, build_rest_day_guide_view
 from utils.layout_helpers import error_view, format_kr_date
 from config.logging_config import get_logger
 from config.settings import settings
+from models import role_requests
 from services.notion_api import get_server_info
 from utils.helpers import (
     get_current_kst_time, get_group_letter,
@@ -172,6 +173,7 @@ class DiscordService:
             teams_by_name = {team_name: team_data for team_name, team_data, _ in group_teams}
             img_io = await self._processor.generate_group_image(
                 group_letter, teams_by_name, sort_by_mmr=False, refresh=True,
+                marks=role_requests.roster_marks(group_letter),
             )
 
             full_message, roster_view = self._build_group_notice(
