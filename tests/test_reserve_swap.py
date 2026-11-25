@@ -87,11 +87,18 @@ class ReservePresetTest(unittest.IsolatedAsyncioTestCase):
         interaction.response.edit_message = mock.AsyncMock()
         return interaction
 
-    async def _pick_team(self, view):
+    async def _pick_team(self, view, *, still_reserve=True):
         interaction = self._interaction()
         with mock.patch.object(roster_views.Select, 'values', new_callable=mock.PropertyMock, return_value=['알파팀']), \
+                mock.patch.object(roster_views, 'BotManager') as bm, \
+                mock.patch.object(roster_views, 'send_response', mock.AsyncMock()) as respond, \
                 mock.patch.object(roster_views, 'TeamEditModal') as modal:
+            manager = bm.get_instance.return_value.get_team_data_manager.return_value
+            manager.find_reserve.return_value = self.spare if still_reserve else None
             await view.team_select_callback(interaction)
+        if not still_reserve:
+            interaction.response.send_modal.assert_not_awaited()
+            return respond
         interaction.response.send_modal.assert_awaited_once()
         return modal.call_args.kwargs
 
@@ -113,6 +120,14 @@ class ReservePresetTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self._pick_team(view))['draft'], {
             'team_name': '예비팀', 'players': ['s1', 's2', 's3'], 'staff': ['코치'],
         })
+
+    async def test_reserve_cancelled_while_menu_open_does_not_fill_modal(self):
+        view = self._view()
+        view.reserve = self.spare
+
+        respond = await self._pick_team(view, still_reserve=False)
+
+        respond.assert_awaited_once()
 
     async def test_clearing_reserve_pick_restores_original_roster(self):
         view = self._view()

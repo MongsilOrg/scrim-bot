@@ -196,6 +196,11 @@ class TeamSelectionView(TimeoutEditView):
             if interaction.response.is_done():
                 logger.warning("[뷰] 이미 응답된 interaction - 팀 수정 모달 표시 불가")
                 return
+            # 메뉴가 열려 있는 동안 취소되었거나 조에 들어간 예비팀의 명단으로 채우지 않음
+            manager = BotManager.get_instance().get_team_data_manager()
+            if self.reserve and manager.find_reserve(self.reserve.name) is not self.reserve:
+                await send_response(interaction, error_view("선택한 예비팀이 예비팀 목록에 없습니다.\n로스터 변경을 다시 시도해주세요."))
+                return
             draft = self.reserve and {
                 "team_name": self.reserve.name,
                 "players": self.reserve.players,
