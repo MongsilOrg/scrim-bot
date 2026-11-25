@@ -135,6 +135,31 @@ class ReplaceTeamRulesTest(unittest.IsolatedAsyncioTestCase):
         })
         self.assertEqual(mgr.unverified_teams, set())
 
+    async def test_roster_change_takes_one_player_from_reserve(self):
+        mgr = self._grouped()
+        spare = mgr.teams['예비팀']
+        edited = TeamData(name='알파팀', players=['a1', 'a2', 's1'])
+
+        ok, _ = await mgr.replace_team('알파팀', edited, 0.0, enforce_rules=False)
+
+        self.assertTrue(ok)
+        self.assertEqual(mgr.teams['알파팀'].players, ['a1', 'a2', 's1'])
+        self.assertEqual(spare.players, ['s1', 's2', 's3'])
+        self.assertEqual([team.name for team in mgr.reserve_teams()], ['예비팀'])
+        self.assertEqual(mgr.team_by_member['s1'], '알파팀')
+        mgr._remove_member_index('예비팀', spare)
+        self.assertEqual(mgr.team_by_member['s1'], '알파팀')
+
+    async def test_reserve_teams_are_sorted_by_mmr(self):
+        mgr = self._grouped()
+        low = TeamData(name='낮은팀', players=['l1', 'l2', 'l3'], mmr=5000.0)
+        mgr.teams['낮은팀'] = low
+        mgr.teams['예비팀'].mmr = 6000.0
+
+        self.assertEqual([team.name for team in mgr.reserve_teams()], ['예비팀', '낮은팀'])
+        mgr.groups = None
+        self.assertEqual(mgr.reserve_teams(), [])
+
     async def test_roster_change_rejects_name_of_grouped_team(self):
         mgr = self._grouped()
         edited = TeamData(name='베타팀', players=['a1', 'a2', 'a3'])

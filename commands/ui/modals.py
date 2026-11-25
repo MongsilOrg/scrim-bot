@@ -88,7 +88,7 @@ class TeamEditModal(Modal):
         is_roster_change: bool,
         draft: Optional[dict] = None,
     ):
-        """draft는 같은 팀의 실패한 수정 입력, 있으면 기본값으로 채움."""
+        """draft는 같은 팀의 실패한 수정 입력이나 넣을 예비팀 명단, 있으면 기본값으로 채움."""
         super().__init__(title="팀 정보 수정")
         self.view = view
         self.is_roster_change = is_roster_change

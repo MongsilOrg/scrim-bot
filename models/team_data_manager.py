@@ -486,6 +486,12 @@ class TeamDataManager:
         key = normalize_team_name(team_name)
         return all(normalize_team_name(name) != key for group in self.groups for name, _, _ in group)
 
+    def reserve_teams(self) -> List[TeamData]:
+        return sorted(
+            (team for name, team in self.teams.items() if self.is_reserve(name)),
+            key=lambda team: -team.mmr,
+        )
+
     def find_reserve(self, team_name: str) -> Optional[TeamData]:
         key = normalize_team_name(team_name)
         return next(

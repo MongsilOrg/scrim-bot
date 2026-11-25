@@ -1,9 +1,10 @@
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Sequence, Tuple
 
 import discord
 from discord import ButtonStyle, Color, SelectOption
 from discord.ui import ActionRow, Button, Container, LayoutView, MediaGallery, Select, TextDisplay
 
+from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
 from utils.layout_helpers import (
@@ -21,6 +22,8 @@ if TYPE_CHECKING:
     from models.team_data import TeamData
 
 logger = get_logger('roster_views')
+
+SELECT_OPTION_LIMIT = 25
 
 
 def _team_name_line(team_names: List[str]) -> str:
@@ -69,7 +72,8 @@ class GroupRosterView(LayoutView):
                 await send_response(interaction, permission_error_view())
                 return
 
-            team_selection_view = TeamSelectionView(self)
+            reserves = BotManager.get_instance().get_team_data_manager().reserve_teams()
+            team_selection_view = TeamSelectionView(self, reserves)
             team_selection_view.message = await send_response(interaction, team_selection_view)
 
         except discord.InteractionResponded:
@@ -113,15 +117,24 @@ def build_rest_day_guide_view(team_name: str, user_id: Optional[str] = None, *, 
 
 class TeamSelectionView(TimeoutEditView):
 
-    def __init__(self, parent_view: 'GroupRosterView'):
+    def __init__(self, parent_view: 'GroupRosterView', reserves: Sequence['TeamData'] = ()):
         super().__init__(timeout=300)
         self.parent_view = parent_view
         self.is_empty = not parent_view.group_teams
+        self.reserves = {team.name: team for team in reserves[:SELECT_OPTION_LIMIT]}
+        self.reserve: Optional['TeamData'] = None
 
         self.add_item(Container(
             TextDisplay(content="## 팀 선택"),
             accent_colour=Color.blue(),
         ))
+
+        self.reserve_select = None
+        if self.reserves and not self.is_empty:
+            # 팀을 선택하면 바로 입력 창이 열려서 예비팀 메뉴를 위에 둠
+            self.reserve_select = Select(placeholder="예비팀으로 교체", min_values=0, options=self._reserve_options())
+            self.reserve_select.callback = self.reserve_select_callback
+            self.add_item(ActionRow(self.reserve_select))
 
         if self.is_empty:
             options = [SelectOption(label="신청한 팀이 없습니다", value="_empty")]
@@ -143,6 +156,29 @@ class TeamSelectionView(TimeoutEditView):
         self.team_select.callback = self.team_select_callback
         self.add_item(ActionRow(self.team_select))
 
+    def _reserve_options(self) -> List[SelectOption]:
+        return [
+            SelectOption(
+                label=f"{name}, MMR {team.mmr:.2f}",
+                value=name,
+                description=f"선수: {', '.join(team.players[:3]) or '정보 없음'}",
+                default=team is self.reserve,
+            )
+            for name, team in self.reserves.items()
+        ]
+
+    async def reserve_select_callback(self, interaction: discord.Interaction) -> None:
+        try:
+            values = self.reserve_select.values
+            self.reserve = self.reserves.get(values[0]) if values else None
+            # 다시 그려야 선택한 예비팀이 남고 팀 메뉴가 선택 전으로 돌아감
+            self.reserve_select.options = self._reserve_options()
+            await interaction.response.edit_message(view=self)
+        except discord.NotFound:
+            pass
+        except Exception as e:
+            logger.error(f"[뷰] 예비팀 선택 콜백 처리 실패: {e}", exc_info=True)
+
     async def team_select_callback(self, interaction: discord.Interaction) -> None:
         try:
             selected_team = self.team_select.values[0]
@@ -160,8 +196,13 @@ class TeamSelectionView(TimeoutEditView):
             if interaction.response.is_done():
                 logger.warning("[뷰] 이미 응답된 interaction - 팀 수정 모달 표시 불가")
                 return
+            draft = self.reserve and {
+                "team_name": self.reserve.name,
+                "players": self.reserve.players,
+                "staff": self.reserve.staff,
+            }
             await interaction.response.send_modal(
-                TeamEditModal(self.parent_view, selected_team_data, is_roster_change=True)
+                TeamEditModal(self.parent_view, selected_team_data, is_roster_change=True, draft=draft)
             )
 
         except discord.InteractionResponded:
