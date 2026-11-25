@@ -1,4 +1,4 @@
-"""Labs 운영 화면 연동. 운영진과 투입 기록을 보내고 시드팀, 테스트 계정, 제재 사본과 화면에서 고친 진행 명단, 자율 진행일을 받음."""
+"""Labs 운영 화면 연동. 운영진과 투입 기록, 팀 기록을 보내고 시드팀, 테스트 계정, 제재 사본과 화면에서 고친 진행 명단, 자율 진행일을 받음."""
 import asyncio
 import hashlib
 import json
@@ -12,17 +12,16 @@ import discord
 from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
-from services import labs_api
+from services import alerts, labs_api, labs_logs
 from utils import operator_log
 from utils.helpers import is_admin, save_json_atomic
-from utils.layout_helpers import custom_view, success_view, warning_view
+from utils.layout_helpers import success_view, warning_view
 
 logger = get_logger('labs_ops')
 
 # Labs는 5분 안에 받은 운영진만 운영 화면에 들여보냄
 SYNC_SECONDS = 60
 FAILURES_BEFORE_NOTICE = 5
-CHANGES_TEXT_LIMIT = 3500
 DEPLOY_DAYS = 7
 UNKNOWN_NAME = '알 수 없음'
 ROSTER_ROLES = {'Lead', 'Staff'}
@@ -37,8 +36,6 @@ _notified = False
 # 응답을 못 받은 제재의 key. 다시 부여할 때 같은 key를 보내 Labs에 두 번 기록되지 않게 함
 _unanswered: Dict[tuple, tuple] = {}
 UNANSWERED_SECONDS = 600
-# rev를 올리지 못한 주기에 이미 게시한 변경의 id. 다음 주기에 다시 받아도 건너뜀
-_posted: set = set()
 # 마지막으로 보낸 구성원 목록의 요약값
 _members_sent = ''
 
@@ -150,53 +147,13 @@ def _body(guild: discord.Guild) -> Optional[dict]:
     return body
 
 
-def _chunks(changes: List[dict]) -> List[List[dict]]:
-    # 디스코드는 메시지 하나의 글자 합계를 4000자로 제한
-    chunks: List[List[dict]] = [[]]
-    size = 0
-    for c in changes:
-        length = len(_line(c)) + 1
-        if chunks[-1] and size + length > CHANGES_TEXT_LIMIT:
-            chunks.append([])
-            size = 0
-        chunks[-1].append(c)
-        size += length
-    return [chunk for chunk in chunks if chunk]
-
-
-def _line(change: dict) -> str:
-    return f"**{change.get('by')}**: {change.get('text')}"[:CHANGES_TEXT_LIMIT]
-
-
-def changes_view(changes: List[dict]) -> discord.ui.LayoutView:
-    return custom_view("운영툴 변경", "\n".join(_line(c) for c in changes), discord.Color.blue())
-
-
-async def _post(client: discord.Client, view: discord.ui.LayoutView) -> bool:
-    """다시 보내도 소용없는 실패는 True"""
-    channel = client.get_channel(settings.LOG_CHANNEL_ID)
-    if channel is None:
-        logger.warning("[운영툴] 로그 채널을 찾지 못해 게시를 건너뜀")
-        return True
-    try:
-        await channel.send(view=view, allowed_mentions=discord.AllowedMentions.none())
-    except discord.HTTPException as e:
-        # 4xx는 같은 내용을 다시 보내도 같은 응답
-        if 400 <= e.status < 500 and e.status != 429:
-            logger.warning(f"[운영툴] 로그 채널 게시 실패: {type(e).__name__} {e.status}")
-            return True
-        logger.warning(f"[운영툴] 로그 채널 게시 실패, 다음 주기에 다시 보냄: {type(e).__name__}")
-        return False
-    return True
-
-
 async def _note(client: discord.Client, ok: bool) -> None:
     global _failures, _notified
     if ok:
         _failures = 0
         if _notified:
             _notified = False
-            await _post(client, success_view("Labs 연결이 복구되었습니다."))
+            await alerts.send(client, success_view("Labs 연결이 복구되었습니다."))
         return
     _failures += 1
     if _failures < FAILURES_BEFORE_NOTICE or _notified:
@@ -205,11 +162,11 @@ async def _note(client: discord.Client, ok: bool) -> None:
     text = "Labs에 연결하지 못하고 있습니다."
     if sanctions() is None:
         text += "\n등록한 팀이 제재를 받았는지 직접 확인해주세요."
-    await _post(client, warning_view(text))
+    await alerts.send(client, warning_view(text))
 
 
 async def sync(client: Optional[discord.Client] = None) -> bool:
-    """운영진과 투입 기록을 보내고 사본을 갱신. 웹에서 바뀐 내용은 로그 채널에 게시"""
+    """운영진과 투입 기록을 보내고 사본을 갱신"""
     global _copy
     client = client or _client
     guild = client.get_guild(settings.GUILD_ID) if client else None
@@ -238,19 +195,9 @@ async def sync(client: Optional[discord.Client] = None) -> bool:
         except Exception as e:
             logger.error(f"[운영툴] 진행 명단 반영 실패: {type(e).__name__}: {e}")
 
-        changes = [c for c in data.get('changes') or [] if isinstance(c, dict) and (c.get('id') is None or c['id'] not in _posted)]
-        posted = True
-        for chunk in _chunks(changes):
-            posted = await _post(client, changes_view(chunk))
-            if not posted:
-                break
-            _posted.update(c['id'] for c in chunk if c.get('id') is not None)
-        if posted:
-            _posted.clear()
         fresh = {key: data[key] for key in ('seeds', 'tests', 'sanctions') if isinstance(data.get(key), list)}
         previous = copy() or {}
-        # 게시하지 못한 변경은 번호를 올리지 않아 다음 주기에 다시 받음
-        rev = data['rev'] if posted else previous.get('rev')
+        rev = data['rev']
         had_free = previous.get('free') or []
         free = sorted(d for d in data['free'] if isinstance(d, str)) if isinstance(data.get('free'), list) else had_free
         if not fresh and rev == previous.get('rev') and free == had_free:
@@ -264,15 +211,20 @@ async def sync(client: Optional[discord.Client] = None) -> bool:
         return True
 
 
+def _avatar(member: discord.Member) -> str:
+    # 운영 화면은 계정 프로필 사진 주소만 만들어 서버별 프로필 사진은 보내지 않음
+    return member.avatar.key if member.avatar else ''
+
+
 async def sync_members(client: Optional[discord.Client] = None) -> bool:
-    """Labs 서버 키 탭에서 받을 사람을 닉네임으로 찾도록 구성원 목록을 보냄. 바뀐 때에만 전송"""
+    """Labs 운영 화면이 닉네임으로 사람을 찾고 프로필 사진과 사용자명을 보여 주도록 구성원 목록을 보냄. 바뀐 때에만 전송"""
     global _members_sent
     client = client or _client
     guild = client.get_guild(settings.GUILD_ID) if client else None
     # 구성원 목록을 다 받기 전에 보내면 Labs에 저장된 목록에서 사람이 빠짐
     if not labs_api.enabled() or guild is None or not guild.chunked:
         return False
-    members = sorted(({'id': str(m.id), 'name': m.display_name, 'username': m.name} for m in guild.members if not m.bot), key=lambda m: m['id'])
+    members = sorted(({'id': str(m.id), 'name': m.display_name, 'username': m.name, 'avatar': _avatar(m)} for m in guild.members if not m.bot), key=lambda m: m['id'])
     if not members:
         return False
     digest = hashlib.sha256(json.dumps(members, ensure_ascii=False).encode()).hexdigest()
@@ -285,6 +237,10 @@ async def sync_members(client: Optional[discord.Client] = None) -> bool:
     return True
 
 
+async def _flush_logs(_client: discord.Client) -> bool:
+    return await labs_logs.flush()
+
+
 def start_sync(client: discord.Client) -> None:
     global _client, _task
     _client = client
@@ -293,7 +249,7 @@ def start_sync(client: discord.Client) -> None:
 
     async def run() -> None:
         while True:
-            for step in (sync, sync_members):
+            for step in (sync, sync_members, _flush_logs):
                 try:
                     await step(client)
                 except asyncio.CancelledError:

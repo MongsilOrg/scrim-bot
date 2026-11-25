@@ -270,10 +270,7 @@ async def process_team_registration(
 
         players_str = ', '.join(team_data.players) if team_data.players else '없음'
         staff_str = ', '.join(team_data.staff) if team_data.staff else '없음'
-        team_data_manager.log_action(
-            "신청", interaction.user, team_name,
-            detail=f"선수: {players_str} / 스태프: {staff_str}",
-        )
+        team_data_manager.log_action("신청", interaction.user, team_name, players=team_data.players, staff=team_data.staff)
         logger.info(f"[팀신청] {team_name} | MMR: {team_mmr:.2f} | 선수: [{players_str}] | 스태프: [{staff_str}]")
 
         if is_maintenance:
@@ -479,8 +476,6 @@ def _log_edit_diff(
 
     new_team_name = new_team_data.name
     if (original_team_name != new_team_name) or added or removed:
-        players_str = ', '.join(new_team_data.players)
-        staff_str = ', '.join(new_team_data.staff) if new_team_data.staff else '없음'
         parts = []
         if original_team_name != new_team_name:
             parts.append(f"이전 팀명 {original_team_name}")
@@ -488,8 +483,10 @@ def _log_edit_diff(
             parts.append(f"-{', '.join(sorted(removed))} +{', '.join(sorted(added))}" if added else f"-{', '.join(sorted(removed))}")
         elif added:
             parts.append(f"+{', '.join(sorted(added))}")
-        detail = ' / '.join(parts) + f" / 선수: {players_str} / 스태프: {staff_str}"
-        team_data_manager.log_action("수정", interaction.user, new_team_name, detail=detail)
+        team_data_manager.log_action(
+            "수정", interaction.user, new_team_name,
+            players=new_team_data.players, staff=new_team_data.staff, change=' / '.join(parts),
+        )
 
     original_players_str = ', '.join(original_team_data.players) if original_team_data.players else '(없음)'
     original_staff_str = ', '.join(original_team_data.staff) if original_team_data.staff else '(없음)'

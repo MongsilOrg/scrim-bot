@@ -76,11 +76,11 @@ class VerifyUnverifiedTeamsTest(unittest.IsolatedAsyncioTestCase):
         self.mgr.clear_unverified = self.mgr.unverified_teams.discard
         self.user = mock.MagicMock()
         self.user.send = mock.AsyncMock()
-        self.log_channel = mock.MagicMock()
-        self.log_channel.send = mock.AsyncMock()
+        self.alert_channel = mock.MagicMock()
+        self.alert_channel.send = mock.AsyncMock()
         self.mgr.client = mock.MagicMock()
         self.mgr.client.get_user.return_value = self.user
-        self.mgr.client.get_channel.return_value = self.log_channel
+        self.mgr.client.get_channel.return_value = self.alert_channel
 
         self.tp = mock.MagicMock()
         self.tp.ensure_test_accounts_loaded = mock.AsyncMock()
@@ -109,7 +109,7 @@ class VerifyUnverifiedTeamsTest(unittest.IsolatedAsyncioTestCase):
         await self._run()
         self.assertEqual(self.mgr.unverified_teams, {'팀'})
         self.user.send.assert_not_awaited()
-        self.log_channel.send.assert_not_awaited()
+        self.alert_channel.send.assert_not_awaited()
 
     async def test_404_during_maintenance_defers(self):
         api = FakeAPI({'나': UID_NOT_FOUND}, maintenance=True)
@@ -126,8 +126,8 @@ class VerifyUnverifiedTeamsTest(unittest.IsolatedAsyncioTestCase):
         text = self._dm_text()
         self.assertIn('**신청 및 수정** 버튼으로', text)
         self.assertIn(f'{mmr_updater.settings.TEAM_REGISTRATION_DEADLINE_HOUR}시 전에 수정해주세요.', text)
-        self.mgr.client.get_channel.assert_called_with(mmr_updater.settings.LOG_CHANNEL_ID)
-        log_text = self.log_channel.send.await_args.kwargs['view'].children[0].children[0].content
+        self.mgr.client.get_channel.assert_called_with(mmr_updater.settings.ALERT_CHANNEL_ID)
+        log_text = self.alert_channel.send.await_args.kwargs['view'].children[0].children[0].content
         self.assertIn('나', log_text)
         self.assertIn('<@42>', log_text)
         self.tp.fetch_team_mmr.assert_not_awaited()
@@ -142,7 +142,7 @@ class VerifyUnverifiedTeamsTest(unittest.IsolatedAsyncioTestCase):
         await self._run()
         self.assertEqual(self.mgr.unverified_teams, set())
         self.assertIn('MMR: **7123.46**', self._dm_text())
-        self.log_channel.send.assert_not_awaited()
+        self.alert_channel.send.assert_not_awaited()
 
     async def test_failed_mmr_fetch_does_not_show_stale_value(self):
         self._setup(FakeAPI({}))

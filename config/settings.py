@@ -47,7 +47,7 @@ class Settings:
     NOTICE_CHANNEL_ID: int = _parse_int(os.getenv('NOTICE_CHANNEL_ID', ''))
     BACKUP_ANALYSIS_CHANNEL_ID: int = _parse_int(os.getenv('BACKUP_ANALYSIS_CHANNEL_ID', ''))
     SCRIM_CHANNEL_ID: int = _parse_int(os.getenv('SCRIM_CHANNEL_ID', '1212383364258992128'))
-    LOG_CHANNEL_ID: int = _parse_int(os.getenv('LOG_CHANNEL_ID', '1487384132035022961'))
+    ALERT_CHANNEL_ID: int = _parse_int(os.getenv('ALERT_CHANNEL_ID', '1390999095962767380'))
     SCHEDULE_CHANNEL_ID: int = _parse_int(os.getenv('SCHEDULE_CHANNEL_ID', '1485653533637476512'))
     ROLE_REQUEST_CHANNEL_ID: int = _parse_int(os.getenv('ROLE_REQUEST_CHANNEL_ID', '1437430323288871012'))
     TICKET_CATEGORY_ID: int = _parse_int(os.getenv('TICKET_CATEGORY_ID', '1255872853107277875'))
@@ -58,6 +58,7 @@ class Settings:
     LABS_SCRIM_TOKEN: str = os.getenv('LABS_SCRIM_TOKEN', '')
     LABS_STATE_PATH: str = os.getenv('LABS_STATE_PATH', 'data/labs_scrim.json')
     LABS_OPS_PATH: str = os.getenv('LABS_OPS_PATH', 'data/labs_ops.json')
+    LABS_LOGS_PATH: str = os.getenv('LABS_LOGS_PATH', 'data/labs_logs.json')
     # 토너먼트 키 시트. ID가 없으면 서버 키 연동을 건너뜀
     GOOGLE_SHEETS_CREDENTIALS_PATH: str = os.getenv('GOOGLE_SHEETS_CREDENTIALS_PATH', 'credentials/google_sheets_credentials.json')
     GOOGLE_SHEETS_KEYS_SPREADSHEET_ID: str = os.getenv('GOOGLE_SHEETS_KEYS_SPREADSHEET_ID', '')

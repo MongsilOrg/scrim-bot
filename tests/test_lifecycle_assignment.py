@@ -66,8 +66,8 @@ class AssignmentHarness(unittest.IsolatedAsyncioTestCase):
         settings.ADMIN_ROLE_IDS = {77}
         self.addCleanup(setattr, settings, 'ADMIN_ROLE_IDS', original_admins)
 
-        self.log_channel = MagicMock()
-        self.log_channel.send = AsyncMock()
+        self.alert_channel = MagicMock()
+        self.alert_channel.send = AsyncMock()
         self.scrim_channel = MagicMock()
         self.scrim_channel.send = AsyncMock()
         group_channels = {
@@ -78,7 +78,7 @@ class AssignmentHarness(unittest.IsolatedAsyncioTestCase):
         self.client = MagicMock()
         self.client.get_guild.side_effect = lambda gid: self.guild if gid == settings.GUILD_ID else None
         self.client.get_channel.side_effect = {
-            settings.LOG_CHANNEL_ID: self.log_channel, SCRIM_CHANNEL: self.scrim_channel,
+            settings.ALERT_CHANNEL_ID: self.alert_channel, SCRIM_CHANNEL: self.scrim_channel,
         }.get
 
         self.processor = MagicMock()
@@ -156,7 +156,7 @@ class FreshAssignmentTest(AssignmentHarness):
             sorted(['global_notice', 'roles', 'group_notices', 'voice', 'operators']),
         )
         self.assertEqual(self.post_pick.await_args.args[2], ['A'])
-        self.log_channel.send.assert_not_awaited()
+        self.alert_channel.send.assert_not_awaited()
 
     async def test_completed_assignment_does_not_resume_after_restart(self):
         mgr = self.make_manager()
@@ -180,7 +180,7 @@ class ResumeAssignmentTest(AssignmentHarness):
 
         self.assertIsNone(mgr.last_auto_assignment)
         self.assertTrue(mgr.is_team_assignment_started)
-        self.log_channel.send.assert_awaited_once()
+        self.alert_channel.send.assert_awaited_once()
         self.scrim_channel.send.assert_not_awaited()
 
         mgr2 = self.restart()
@@ -200,8 +200,8 @@ class ResumeAssignmentTest(AssignmentHarness):
         await mgr.start_team_assignment()
 
         self.assertIsNone(mgr.last_auto_assignment)
-        alert = self.log_channel.send.await_args.kwargs['view'].children[0].children[0].content
-        self.assertIn('<@&77>', alert)
+        alert = self.alert_channel.send.await_args.kwargs['view'].children[0].children[0].content
+        self.assertNotIn('<@&', alert)
         self.assertIn('B조', alert)
 
         service = self.use_service(mgr)
@@ -238,21 +238,12 @@ class AssignmentFailureTest(AssignmentHarness):
         self.assertFalse(mgr.is_team_assignment_started)
         self.assertIsNone(mgr.groups)
         self.assertEqual(service.calls, [])
-        alert = self.log_channel.send.await_args
-        self.assertIn('<@&77>', alert.kwargs['view'].children[0].children[0].content)
-        self.assertTrue(alert.kwargs['allowed_mentions'].roles)
+        alert = self.alert_channel.send.await_args
+        # 역할 멘션 없이 알림만 보냄
+        self.assertNotIn('<@&', alert.kwargs['view'].children[0].children[0].content)
+        self.assertFalse(alert.kwargs['allowed_mentions'].roles)
         self.scrim_channel.send.assert_awaited_once()
         mgr.mmr_update_loop.assert_awaited()
-
-    async def test_alert_without_admin_roles_has_no_mention(self):
-        settings.ADMIN_ROLE_IDS = set()
-        mgr = self.make_manager()
-        self.processor.build_groups.side_effect = RuntimeError("sheet down")
-        self.use_service(mgr)
-
-        await mgr.start_team_assignment()
-
-        self.assertNotIn('<@&', self.log_channel.send.await_args.kwargs['view'].children[0].children[0].content)
 
     async def test_missing_guild_alerts_and_resumes_later(self):
         mgr = self.make_manager()

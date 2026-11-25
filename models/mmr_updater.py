@@ -11,6 +11,7 @@ from config.settings import settings
 from utils.helpers import get_current_kst_time
 from utils.layout_helpers import warning_view
 
+from services import alerts
 from services.bser_api import UID_ERROR, UID_NOT_FOUND, BSERAPIClient
 from services.image_generator import TOURNAMENT_COLOR, ImageGenerator
 from services.notion_api import get_server_info
@@ -346,11 +347,6 @@ class MmrUpdater:
         )
 
     async def _notify_verification_failure(self, team_name: str, team_data, invalid_members: list, dm_sent: bool) -> None:
-        client = self._manager.client
-        channel = client.get_channel(settings.LOG_CHANNEL_ID) if client else None
-        if not channel:
-            logger.warning(f"[점검해제] 로그 채널을 찾을 수 없음 - 채널 ID: {settings.LOG_CHANNEL_ID}")
-            return
         applicant = f"<@{team_data.user_id}>" if team_data.user_id else "없음"
         content = (
             f"팀: **{team_name}**\n"
@@ -360,12 +356,9 @@ class MmrUpdater:
         if not dm_sent:
             content += "\n신청자에게 직접 알려주세요."
         try:
-            await channel.send(
-                view=warning_view(content, title="점검 해제 뒤 닉네임 확인 실패"),
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
+            await alerts.send(self._manager.client, warning_view(content, title="점검 해제 뒤 닉네임 확인 실패"))
         except Exception as e:
-            logger.warning(f"[점검해제] 로그 채널 알림 실패 - {team_name}: {e}")
+            logger.warning(f"[점검해제] 알림 실패 - {team_name}: {e}")
 
     async def _send_verification_dm(self, team_name: str, team_data, invalid_members: list, team_mmr: float = 0.0) -> bool:
         mgr = self._manager

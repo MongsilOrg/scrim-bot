@@ -49,7 +49,7 @@ python main.py
 | GROUP_CHANNEL_IDS | 필수 | 조별 채널 ID, `A:채널ID,B:채널ID` 형식 |
 | BSER_API_KEY | 필수 | 이터널 리턴 Open API 키 |
 | SCRIM_CHANNEL_ID | 선택 | 스크림 대시보드 채널 ID |
-| LOG_CHANNEL_ID | 선택 | 운영 로그 채널 ID |
+| ALERT_CHANNEL_ID | 선택 | 운영진 알림 채널 ID |
 | SCHEDULE_CHANNEL_ID | 선택 | 주간 일정 대시보드 채널 ID |
 | TEST_ACCOUNT_CONTACT_ID | 선택 | 테스트 계정 문의 안내에 표시할 사용자 ID |
 | GROUP_CATEGORY_PATTERN | 선택 | 조별 음성채널 카테고리 이름 패턴.<br>`{letter}` 자리에 조 문자가 들어감 |

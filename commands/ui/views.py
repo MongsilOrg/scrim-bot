@@ -310,10 +310,7 @@ class TeamInputView(LayoutView):
 
             players_str = ', '.join(players) if players else '없음'
             staff_str = ', '.join(staff) if staff else '없음'
-            team_data_manager.log_action(
-                "취소", interaction.user, team_name,
-                detail=f"선수: {players_str} / 스태프: {staff_str}",
-            )
+            team_data_manager.log_action("취소", interaction.user, team_name, players=players, staff=staff)
             logger.info(f"[팀취소] {team_name} | 선수: [{players_str}] | 스태프: [{staff_str}]")
 
             schedule_mmr_refresh(team_data_manager, interaction.channel)
@@ -410,11 +407,8 @@ class TeamInputView(LayoutView):
                 return error_view(failure_reason)
 
             players_str = ', '.join(players) if players else '없음'
-            staff_str = ', '.join(staff) if staff else '없음'
-            applicant = f"<@{applicant_id}>" if applicant_id else "알 수 없음"
             team_data_manager.log_action(
-                "강제취소", interaction.user, team_name,
-                detail=f"신청자: {applicant} / 선수: {players_str} / 스태프: {staff_str}",
+                "강제취소", interaction.user, team_name, players=players, staff=staff, applicant_id=applicant_id,
             )
             logger.info(f"[강제취소] {team_name} | 운영진: {interaction.user} | 선수: [{players_str}]")
 

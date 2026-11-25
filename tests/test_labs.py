@@ -52,7 +52,7 @@ class LabsStageTest(LabsStateMixin, AssignmentHarness):
         self.assertEqual(service.names()[-2:], ['voice', 'labs'])
         self.assertEqual(service.calls[-1], ('labs', ['A', 'B']))
         self.assertIn('labs', mgr.assignment_progress['done'])
-        self.log_channel.send.assert_not_awaited()
+        self.alert_channel.send.assert_not_awaited()
         rosters = self.create.await_args.kwargs['rosters']
         self.assertEqual(sorted(rosters), ['A', 'B'])
         self.assertTrue(all(rosters[k] for k in rosters))
@@ -79,7 +79,7 @@ class LabsStageTest(LabsStateMixin, AssignmentHarness):
         self.assertEqual(self.create.await_count, 3)
         self.assertNotIn('labs', mgr.assignment_progress['done'])
         self.assertEqual(mgr.last_auto_assignment, self.now)
-        self.log_channel.send.assert_awaited_once()
+        self.alert_channel.send.assert_awaited_once()
 
     async def test_state_write_error_still_finishes(self):
         mgr = self.make_manager()
@@ -90,7 +90,7 @@ class LabsStageTest(LabsStateMixin, AssignmentHarness):
         await mgr.start_team_assignment()
 
         self.assertEqual(mgr.last_auto_assignment, self.now)
-        self.log_channel.send.assert_awaited_once()
+        self.alert_channel.send.assert_awaited_once()
 
     async def test_no_labs_stage_when_group_notice_failed(self):
         mgr = self.make_manager()

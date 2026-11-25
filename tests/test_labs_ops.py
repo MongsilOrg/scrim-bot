@@ -25,7 +25,7 @@ def member(uid, name, *roles, joined=2024):
 
 
 def response(**extra):
-    return {'status': 'ok', 'staff': 2, 'added': 0, 'removed': 0, 'rev': 3, 'changes': [], **extra}
+    return {'status': 'ok', 'staff': 2, 'added': 0, 'removed': 0, 'rev': 3, **extra}
 
 
 class LabsOpsCase(unittest.IsolatedAsyncioTestCase):
@@ -33,7 +33,7 @@ class LabsOpsCase(unittest.IsolatedAsyncioTestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.path = os.path.join(tmp.name, 'labs_ops.json')
-        for name, value in (('LABS_SCRIM_TOKEN', 's' * 64), ('LABS_OPS_PATH', self.path), ('GUILD_ID', 1), ('LOG_CHANNEL_ID', 9)):
+        for name, value in (('LABS_SCRIM_TOKEN', 's' * 64), ('LABS_OPS_PATH', self.path), ('GUILD_ID', 1), ('ALERT_CHANNEL_ID', 9)):
             self.addCleanup(setattr, settings, name, getattr(settings, name))
             setattr(settings, name, value)
         for name in ('_copy', '_copy_loaded', '_client', '_failures', '_notified', '_members_sent'):
@@ -41,8 +41,6 @@ class LabsOpsCase(unittest.IsolatedAsyncioTestCase):
         labs_ops._copy, labs_ops._copy_loaded, labs_ops._failures, labs_ops._notified = None, False, 0, False
         labs_ops._unanswered.clear()
         self.addCleanup(labs_ops._unanswered.clear)
-        labs_ops._posted.clear()
-        self.addCleanup(labs_ops._posted.clear)
 
         self.request = patch.object(labs_ops.labs_api, 'request', new=AsyncMock(return_value=response())).start()
         patch.object(labs_ops.labs_api, 'operator_ids', return_value=[STAFF, MOD]).start()
@@ -153,73 +151,14 @@ class SyncTest(LabsOpsCase):
         labs_ops._copy, labs_ops._copy_loaded = None, False
         self.assertEqual(labs_ops.free_days(), set())
 
-    async def test_changes_posted_to_log_channel_without_mentions(self):
-        self.request.return_value = response(changes=[{'id': 3, 'at': 0, 'by': '운영진A', 'text': '시드A를 추가했습니다.'}])
-
-        await labs_ops.sync(self.client)
-
-        self.assertEqual(len(self.posted()), 1)
-        self.assertIn("## 운영툴 변경\n**운영진A**: 시드A를 추가했습니다.", self.posted()[0])
-        mentions = self.channel.send.await_args.kwargs['allowed_mentions']
-        self.assertFalse(mentions.everyone or mentions.users or mentions.roles)
-
-    async def test_failed_post_keeps_rev_for_next_cycle(self):
-        self.request.return_value = response(rev=2, seeds=[], tests=[], sanctions=[])
-        await labs_ops.sync(self.client)
-        self.channel.send.side_effect = discord.HTTPException(MagicMock(status=500), 'down')
-        self.request.return_value = response(rev=5, changes=[{'id': 5, 'at': 0, 'by': '운영진A', 'text': '변경'}], seeds=[{'team_name': '새팀', 'players': []}])
-
-        self.assertTrue(await labs_ops.sync(self.client))
-
-        self.assertEqual(self.saved()['rev'], 2)
-        self.assertEqual(labs_ops.seeds(), [{'team_name': '새팀', 'players': []}])
-
-    async def test_long_changes_split_into_several_messages(self):
-        changes = [{'id': i, 'at': 0, 'by': '운영진A', 'text': '가' * 500} for i in range(20)]
-        self.request.return_value = response(rev=7, changes=changes)
-
-        await labs_ops.sync(self.client)
-
-        self.assertGreater(len(self.posted()), 1)
-        self.assertTrue(all(len(text) <= 4000 for text in self.posted()))
-        self.assertEqual(sum(text.count('**운영진A**') for text in self.posted()), 20)
-        self.assertEqual(self.saved()['rev'], 7)
-
-    async def test_rejected_post_is_not_sent_again(self):
-        self.channel.send.side_effect = discord.HTTPException(MagicMock(status=400), 'bad')
-        self.request.return_value = response(rev=5, changes=[{'id': 5, 'at': 0, 'by': '운영진A', 'text': '변경'}])
+    async def test_rev_follows_labs_without_posting(self):
+        # 화면에서 바꾼 내용은 Labs 기록 화면에만 남아 봇은 받은 번호만 따라감
+        self.request.return_value = response(rev=5, seeds=[{'team_name': '새팀', 'players': []}])
 
         await labs_ops.sync(self.client)
 
         self.assertEqual(self.saved()['rev'], 5)
-
-    async def test_rate_limited_post_is_sent_again(self):
-        self.request.return_value = response(rev=2, seeds=[], tests=[], sanctions=[])
-        await labs_ops.sync(self.client)
-        self.channel.send.side_effect = discord.HTTPException(MagicMock(status=429), 'slow')
-        self.request.return_value = response(rev=5, changes=[{'id': 5, 'at': 0, 'by': '운영진A', 'text': '변경'}])
-
-        await labs_ops.sync(self.client)
-
-        self.assertEqual(self.saved()['rev'], 2)
-
-    async def test_posted_part_is_not_repeated_after_partial_failure(self):
-        changes = [{'id': i, 'at': 0, 'by': '운영진A', 'text': f'{i}번 ' + '가' * 500} for i in range(20)]
-        self.request.return_value = response(rev=7, changes=changes)
-        self.channel.send.side_effect = [None, discord.HTTPException(MagicMock(status=500), 'down')]
-
-        await labs_ops.sync(self.client)
-        self.channel.send.side_effect = None
-        await labs_ops.sync(self.client)
-
-        text = '\n'.join(self.posted())
-        counts = [text.count(f': {i}번 ') for i in range(20)]
-        # 실패한 두 번째 묶음만 두 번 시도
-        self.assertEqual(counts[0], 1)
-        self.assertEqual(sorted(set(counts)), [1, 2])
-        self.assertEqual(counts[-1], 1)
-        self.assertEqual(self.saved()['rev'], 7)
-        self.assertEqual(labs_ops._posted, set())
+        self.channel.send.assert_not_awaited()
 
     async def test_skipped_until_members_loaded(self):
         self.guild.chunked = False
@@ -241,6 +180,9 @@ class SyncTest(LabsOpsCase):
 
         self.assertEqual(len(self.posted()), 2)
         self.assertIn("Labs 연결이 복구되었습니다.", self.posted()[1])
+        self.client.get_channel.assert_called_with(9)
+        mentions = self.channel.send.await_args.kwargs['allowed_mentions']
+        self.assertFalse(mentions.everyone or mentions.users or mentions.roles)
 
 
 class MembersTest(LabsOpsCase):
@@ -248,9 +190,9 @@ class MembersTest(LabsOpsCase):
         super().setUp()
         labs_ops._members_sent = ''
         self.guild.members = [
-            SimpleNamespace(id=30, display_name='나', name='b', bot=False),
-            SimpleNamespace(id=20, display_name='가', name='a', bot=False),
-            SimpleNamespace(id=10, display_name='봇', name='bot', bot=True),
+            SimpleNamespace(id=30, display_name='나', name='b', bot=False, avatar=None),
+            SimpleNamespace(id=20, display_name='가', name='a', bot=False, avatar=SimpleNamespace(key='a_' + '0' * 32)),
+            SimpleNamespace(id=10, display_name='봇', name='bot', bot=True, avatar=None),
         ]
         self.request.return_value = {'status': 'ok', 'members': 2}
 
@@ -258,7 +200,7 @@ class MembersTest(LabsOpsCase):
         self.assertTrue(await labs_ops.sync_members(self.client))
         self.assertTrue(await labs_ops.sync_members(self.client))
         self.request.assert_awaited_once_with('PUT', '/api/bot/scrim-members', {'members': [
-            {'id': '20', 'name': '가', 'username': 'a'}, {'id': '30', 'name': '나', 'username': 'b'}]})
+            {'id': '20', 'name': '가', 'username': 'a', 'avatar': 'a_' + '0' * 32}, {'id': '30', 'name': '나', 'username': 'b', 'avatar': ''}]})
         self.guild.members[0].display_name = '바뀐 이름'
         self.assertTrue(await labs_ops.sync_members(self.client))
         self.assertEqual(self.request.await_count, 2)

@@ -1,14 +1,14 @@
 import asyncio
 import os
 from datetime import datetime
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 import discord
 
 from bot.manager import BotManager
 from config.logging_config import get_logger
 from config.settings import settings
-from utils.layout_helpers import info_view
+from services import labs_logs
 from utils.helpers import build_member_lookup, effective_scrim_date, get_current_kst_time
 from utils.validators import member_name_keys, normalize_nickname_for_comparison, normalize_team_name
 
@@ -66,7 +66,6 @@ class TeamDataManager:
         self.auto_assignment_task: Optional[asyncio.Task] = None
         self.mmr_update_task: Optional[asyncio.Task] = None
         self.last_auto_assignment: Optional[datetime] = None
-        self.LOG_CHANNEL_ID: int = settings.LOG_CHANNEL_ID
         self.is_team_assignment_started: bool = False
         self.mmr_message: Optional[discord.Message] = None
         self.mmr_message_id: Optional[int] = None
@@ -381,43 +380,15 @@ class TeamDataManager:
         except Exception as exc:
             logger.warning(f"[팀데이터] 상태 스냅샷 로깅 실패: {exc}")
 
-    def log_action(self, action_type: str, user: discord.Member, team_name: str,
-                   *, detail: str = '') -> None:
+    def log_action(self, action_type: str, user: discord.abc.User, team_name: str, *,
+                   players: Iterable[str] = (), staff: Iterable[str] = (), change: str = '',
+                   applicant_id: Optional[object] = None) -> None:
+        """팀 신청, 수정, 취소를 Labs 운영 화면의 기록에 남김"""
         try:
-            current_time = get_current_kst_time()
-            self.spawn_task(
-                self._send_log_to_channel(action_type, user, team_name, current_time, detail)
-            )
+            labs_logs.record(action_type, user, team_name, players=players, staff=staff, change=change, applicant_id=applicant_id)
+            self.spawn_task(labs_logs.flush())
         except Exception as e:
-            logger.error(f"[팀데이터] 로그 전송 실패: {e}", exc_info=True)
-
-    async def _send_log_to_channel(
-        self,
-        action_type: str,
-        user: discord.Member,
-        team_name: str,
-        timestamp: datetime,
-        detail: str = '',
-    ) -> None:
-        try:
-            if not self.client:
-                return
-            channel = self.client.get_channel(self.LOG_CHANNEL_ID)
-            if not channel:
-                return
-
-            unix_ts = int(timestamp.timestamp())
-
-            msg = f"<t:{unix_ts}:t> **{team_name}** - {user.mention}"
-            if detail:
-                msg += f" / {detail}"
-
-            await channel.send(
-                view=info_view(msg, title=f"팀 {action_type}"),
-                allowed_mentions=discord.AllowedMentions(users=True),
-            )
-        except Exception as e:
-            logger.error(f"[팀데이터] 로그 채널 전송 실패: {e}", exc_info=True)
+            logger.error(f"[팀데이터] 기록 저장 실패: {e}", exc_info=True)
 
     async def add_team(
         self,
