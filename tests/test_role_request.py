@@ -653,6 +653,22 @@ class DecisionTest(StoreCase):
         )
         self.assertEqual(_sent_text(second), f"## 오류\n{role_request.CLOSED_TEXT}")
 
+    async def test_player_sanctioned_by_a_roster_change_is_not_sanctioned_again(self):
+        role_requests.mark_roster_sanctioned(["나"])
+        role_requests.add(500, _request())
+
+        first = self._click()
+        await role_request._decide(first, role_request.APPROVE)
+
+        self.warnings.assert_awaited_once_with(first, 'Team ER', ['가'], "대타", kind='주의')
+        self.assertEqual(
+            _text(first.followup.send.await_args.kwargs['view']),
+            f"## 대타 승인\n2명에게 주의를 부여했습니다.\n{role_request.ALREADY_SANCTIONED_TEXT}",
+        )
+
+        self.now = EARLY.replace(day=26)
+        self.assertEqual(role_requests.roster_sanctioned(), set())
+
     async def test_request_is_not_approved_after_the_groups_are_cleared(self):
         role_requests.add(500, _request())
         self.manager.is_team_assignment_started = False

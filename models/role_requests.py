@@ -24,12 +24,13 @@ def _today() -> str:
 def _load() -> dict:
     global _state
     if _state is None:
-        _state = {'panel_id': None, 'requests': {}}
+        _state = {'panel_id': None, 'requests': {}, 'roster_sanctioned': {}}
         try:
             with open(PATH, encoding='utf-8') as f:
                 saved = json.load(f)
             _state['panel_id'] = saved.get('panel_id')
             _state['requests'] = dict(saved.get('requests') or {})
+            _state['roster_sanctioned'] = dict(saved.get('roster_sanctioned') or {})
         except FileNotFoundError:
             pass
         except (OSError, ValueError, AttributeError) as e:
@@ -109,6 +110,22 @@ def sanctioned_out() -> Set[str]:
         if row.get('date') == today and row.get('status') == APPROVED and row.get('sanction')
         for name in row.get('out') or []
     }
+
+
+def mark_roster_sanctioned(names: Sequence[str]) -> None:
+    """로스터 변경으로 제재를 받은 선수를 그날 기록에 남김"""
+    state = _load()
+    today = _today()
+    row = state['roster_sanctioned']
+    earlier = row.get('names') or [] if row.get('date') == today else []
+    state['roster_sanctioned'] = {'date': today, 'names': sorted({*earlier, *names})}
+    _save()
+
+
+def roster_sanctioned() -> Set[str]:
+    """로스터 변경으로 이미 제재를 받은 선수. 신청 승인에서 같은 제재를 다시 부여하지 않게 함"""
+    row = _load()['roster_sanctioned']
+    return set(row.get('names') or []) if row.get('date') == _today() else set()
 
 
 def rename_team(letter: str, old: str, new: str) -> None:

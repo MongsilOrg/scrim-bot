@@ -412,6 +412,7 @@ async def process_team_edit(
             sanction_line = NO_ROSTER_WARNING_TARGET_TEXT
             if targets:
                 sanction_line = await apply_roster_warnings(interaction, original_team_name, targets, warning_reason)
+                role_requests.mark_roster_sanctioned(targets)
             if sanction_line:
                 await _send_edit_result(
                     temp_message, team_processor, original_team_name, new_team_data, new_team_mmr,

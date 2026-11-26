@@ -190,7 +190,9 @@ class RosterChangeSanctionTest(unittest.IsolatedAsyncioTestCase):
                 is_roster_change=True,
                 apply_warning=True,
             )
-        targets = warnings.await_args.args[2] if warnings.await_args else None
+            targets = warnings.await_args.args[2] if warnings.await_args else None
+            # 신청 승인이 같은 선수를 다시 제재하지 않게 그날 기록에 남김
+            self.assertEqual(role_requests.roster_sanctioned(), set(targets or ()))
         return targets, result.await_args.kwargs.get('sanction_line')
 
     async def test_only_the_players_who_left_the_roster_are_sanctioned(self):

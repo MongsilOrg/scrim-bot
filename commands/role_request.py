@@ -50,6 +50,7 @@ NOT_ASSIGNED_TEXT = "조편성 뒤에 신청할 수 있습니다."
 NOT_IN_TEAM_TEXT = "오늘 조에 편성된 팀의 선수와 스태프만 신청할 수 있습니다."
 ROSTER_CHANGED_TEXT = "로스터가 바뀌었습니다.\n다시 신청해주세요."
 CLOSED_TEXT = "이미 처리했거나 지난 신청입니다."
+ALREADY_SANCTIONED_TEXT = "로스터 변경으로 이미 제재를 받은 선수에게는 제재를 다시 부여하지 않았습니다."
 
 _decision_lock = asyncio.Lock()
 _roster_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
@@ -552,9 +553,14 @@ async def _close(interaction: discord.Interaction, action: str, note: str) -> No
         await update_group_announcement(request['letter'])
     if request['sanction']:
         reason = "대타" if request['sanction'] == '주의' else LATE_REASON
-        notes.append(await apply_roster_warnings(
-            interaction, request['team'], request['out'], reason, kind=request['sanction'],
-        ))
+        done = {normalize_nickname_for_comparison(name) for name in role_requests.roster_sanctioned()}
+        targets = [name for name in request['out'] if normalize_nickname_for_comparison(name) not in done]
+        if targets:
+            notes.append(await apply_roster_warnings(
+                interaction, request['team'], targets, reason, kind=request['sanction'],
+            ))
+        if len(targets) < len(request['out']):
+            notes.append(ALREADY_SANCTIONED_TEXT)
     if notes:
         view = info_view('\n'.join(notes), title=f"{TITLES[request['kind']]} 승인")
         if interaction.response.is_done():
