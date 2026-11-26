@@ -411,8 +411,11 @@ async def process_team_edit(
             ]
             sanction_line = NO_ROSTER_WARNING_TARGET_TEXT
             if targets:
-                sanction_line = await apply_roster_warnings(interaction, original_team_name, targets, warning_reason)
-                role_requests.mark_roster_sanctioned(targets)
+                granted: List[str] = []
+                sanction_line = await apply_roster_warnings(
+                    interaction, original_team_name, targets, warning_reason, granted=granted,
+                )
+                role_requests.mark_roster_sanctioned(granted)
             if sanction_line:
                 await _send_edit_result(
                     temp_message, team_processor, original_team_name, new_team_data, new_team_mmr,
@@ -788,8 +791,9 @@ async def apply_roster_warnings(
     reason: str,
     *,
     kind: str = REASON_TYPE["대타"],
+    granted: Optional[List[str]] = None,
 ) -> str:
-    """반환: 결과 카드에 추가할 제재 부여 결과, 처리 실패면 실패 안내 문구."""
+    """반환: 결과 카드에 추가할 제재 부여 결과, 처리 실패면 실패 안내 문구. granted에는 제재를 받은 선수를 담음."""
     try:
         admin_name = interaction.user.display_name or interaction.user.name
         warning_manager = BotManager.get_instance().get_warning_manager()
@@ -817,6 +821,8 @@ async def apply_roster_warnings(
 
             if success:
                 success_count += 1
+                if granted is not None:
+                    granted.append(player)
                 delivered = bool(discord_member) and await send_sanction_dm(
                     discord_member, kind, reason,
                     auto_warning=auto_warning,
