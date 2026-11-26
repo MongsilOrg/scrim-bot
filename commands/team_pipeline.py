@@ -382,10 +382,10 @@ async def process_team_edit(
             if not swapped:
                 # 승인 기록이 새 팀명을 따라가야 조별 이미지의 대타 표시와 조 역할 유지가 이어짐
                 role_requests.rename_team(group_letter, original_team_name, new_team_name)
-            # 대타로 빠진 선수의 조 역할은 남기고, 취소팀 자리에 들어온 예비팀이면 취소팀의 조 역할을 회수
+            # 선수 교체로 빠진 선수의 조 역할은 남기고, 팀이 통째로 바뀌면 빠진 팀의 조 역할을 회수
             await _update_changed_team(
                 group_letter, team_data_manager, original_team_name, new_team_name, new_team_mmr,
-                revoke_previous=bool(reserve),
+                revoke_previous=swapped,
             )
             _record_roster_change(team_data_manager, team_processor, new_team_name)
 

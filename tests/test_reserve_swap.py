@@ -93,6 +93,40 @@ class ReserveSwapTest(unittest.IsolatedAsyncioTestCase):
         redrawn.assert_awaited_once_with('A')
         announced.assert_not_awaited()
 
+    async def test_roster_change_into_another_team_takes_back_the_roles_of_the_team_that_left(self):
+        left = TeamData(name='빠진팀', players=['a1', 'a2', 'a3'], user_id='1', mmr=7000.0)
+        edited = TeamData(name='새팀', players=['n1', 'n2', 'n3'])
+        bot = mock.Mock()
+        mgr = bot.get_team_data_manager.return_value
+        mgr.replace_team = mock.AsyncMock(return_value=(True, ''))
+        mgr.find_reserve.return_value = None
+        mgr.unverified_teams = set()
+        bot.get_team_processor.return_value.ensure_test_accounts_loaded = mock.AsyncMock()
+        with mock.patch.object(team_pipeline, 'BotManager') as bm, \
+                mock.patch.object(team_pipeline, '_fetch_team_mmr_or', mock.AsyncMock(return_value=6900.0)), \
+                mock.patch.object(team_pipeline, '_save_user_cache'), \
+                mock.patch.object(team_pipeline, '_update_changed_team', mock.AsyncMock()) as changed, \
+                mock.patch.object(team_pipeline.role_requests, 'rename_team') as renamed, \
+                mock.patch.object(team_pipeline, '_record_roster_change'), \
+                mock.patch.object(team_pipeline, '_collect_roster_warnings', mock.AsyncMock(return_value=[])), \
+                mock.patch.object(team_pipeline, '_send_edit_result', mock.AsyncMock()), \
+                mock.patch.object(team_pipeline, '_announce_team_swap', mock.AsyncMock()) as announced, \
+                mock.patch.object(team_pipeline, 'update_group_announcement', mock.AsyncMock()):
+            bm.get_instance.return_value = bot
+            await team_pipeline.process_team_edit(
+                mock.Mock(),
+                group_letter='A',
+                original_team_name='빠진팀',
+                original_team_data=left,
+                new_team_data=edited,
+                temp_message=mock.Mock(),
+                is_roster_change=True,
+            )
+
+        self.assertEqual(changed.await_args.kwargs, {'revoke_previous': True})
+        renamed.assert_not_called()
+        announced.assert_awaited_once_with('A', '빠진팀', '새팀')
+
     def test_team_swap_means_a_new_name_with_no_player_left(self):
         before = TeamData(name='취소팀', players=['a', 'b', 'c'])
         cases = (
