@@ -73,7 +73,7 @@ def operator_ids(guild: discord.Guild) -> List[str]:
 
 async def request(method: str, path: str, body: Optional[dict] = None) -> Optional[dict]:
     headers = {'x-bot-token': settings.LABS_SCRIM_TOKEN, 'User-Agent': 'agent-local'}
-    url = f"{settings.LABS_URL.rstrip('/')}{path}"
+    url = f"{settings.LABS_API_URL.rstrip('/')}{path}"
     try:
         async with aiohttp.ClientSession(timeout=REQUEST_TIMEOUT, headers=headers) as session:
             async with session.request(method, url, json=body) as resp:

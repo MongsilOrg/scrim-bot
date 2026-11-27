@@ -54,6 +54,8 @@ class Settings:
     GROUP_CHANNEL_IDS: dict = _parse_group_channel_ids(os.getenv('GROUP_CHANNEL_IDS', ''))
 
     LABS_URL: str = os.getenv('LABS_URL', 'https://labs.mongsil.dev')
+    # 봇 API만 내부 주소로 보내 CloudFront 원본 전송 요금을 피함. 버튼 링크는 LABS_URL
+    LABS_API_URL: str = os.getenv('LABS_API_URL', '') or LABS_URL
     LABS_SCRIM_TOKEN: str = os.getenv('LABS_SCRIM_TOKEN', '')
     LABS_STATE_PATH: str = os.getenv('LABS_STATE_PATH', 'data/labs_scrim.json')
     LABS_OPS_PATH: str = os.getenv('LABS_OPS_PATH', 'data/labs_ops.json')
